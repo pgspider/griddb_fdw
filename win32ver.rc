@@ -1,0 +1,31 @@
+#include <winver.h>
+#include "pg_config.h"
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION    9,6,3,17165
+ PRODUCTVERSION 9,6,3,17165
+ FILEFLAGSMASK  0x17L
+ FILEFLAGS      0x0L
+ FILEOS         VOS_NT_WINDOWS32
+ FILETYPE	VFT_DLL
+ FILESUBTYPE    0x0L
+BEGIN
+ BLOCK "StringFileInfo"
+ BEGIN
+  BLOCK "000004b0"
+  BEGIN
+   VALUE "CompanyName",      "TOSHIBA CORPORATION"
+   VALUE "FileDescription",  "griddb_fdw - foreign data wrapper for GridDB"
+   VALUE "FileVersion",      1.0
+   VALUE "LegalCopyright", "Copyright (C) TOSHIBA CORPORATION, 2017, All Rights Reserved."
+   VALUE "ProductName",      "GridDB FDW"
+   VALUE "ProductVersion",   1.0
+  END
+ END
+ BLOCK "VarFileInfo"
+ BEGIN
+  VALUE "Translation", 0x0, 1200
+ END
+END
+
+
