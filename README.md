@@ -1,2 +1,2 @@
-# griddb_fdw
-GridDB Foreign Data Wrapper for PostgreSQL
+# GridDB Foreign Data Wrapper for PostgreSQL
+Coming soon.
