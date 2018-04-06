@@ -1,11 +1,11 @@
-GridDB Foreign Data Wrapper for PostgreSQL
+# GridDB Foreign Data Wrapper for PostgreSQL
 ==========================================
 
 This PostgreSQL extension is a Foreign Data Wrapper (FDW) for GridDB[1].
 This version of griddb_fdw can work for PostgreSQL 9.6 and 10.0.
 
 
-1. Installation
+## 1. Installation
 ---------------
 griddb_fdw requires GridDB's C client library. This library can be downloaded
 from the GridDB website on github[1].
@@ -24,7 +24,7 @@ from the GridDB website on github[1].
     If you want to build griddb_fdw in a source tree of PostgreSQL, use
     $ make NO_PGXS=1
 
-2. Usage
+## 2. Usage
 --------
 * load extension
 ```
@@ -59,13 +59,13 @@ recreate : 'true' or 'false'. If 'true', table schema will be updated.
 
 After schema is imported, we can access tables.
 
-3. Features
+## 3. Features
 -----------
 - Supprt SELECT and INSERT
 - Supprt UPDATE and DELETE with a limitation
 - WHERE clauses are pushdowned
 
-4. Limitations
+## 4. Limitations
 --------------
 Only simple update/delete SQL can work. During update/delete SQL processing, 
 records are selected to specify updating records. If the order of updating 
@@ -74,9 +74,9 @@ But a complex update/delete SQL which uses subquery or selected records are
 filtered in postgres engine, it does not work properly. This is because the 
 cursor movement for udating/deleting target record is not implemented completely.
 
-5. License
+## 5. License
 ----------
-Copyright (c) 2017, TOSHIBA Corporation
+Copyright (c) 2017-2018, TOSHIBA Corporation  
 Copyright (c) 2011 - 2016, EnterpriseDB Corporation
 
 Permission to use, copy, modify, and distribute this software and its
