@@ -1,13 +1,12 @@
-/*-------------------------------------------------------------------------
+/*
  *
  * GridDB Foreign Data Wrapper
  *
- * Portions Copyright (c) 2018, TOSHIBA COOPERATION
+ * Portions Copyright (c) 2018, TOSHIBA CORPORATION
  *
  * IDENTIFICATION
  *		  griddb_fdw.h
  *
- *-------------------------------------------------------------------------
  */
 #ifndef GRIDDB_FDW_H
 #define GRIDDB_FDW_H
@@ -27,6 +26,12 @@
 /* If no remote estimates, assume a sort costs 20% extra */
 #define DEFAULT_FDW_SORT_MULTIPLIER 1.2
 
+/* An area size for storing updated/deleted rows information. */
+#define INITIAL_TARGET_VALUE_ROWS 1000
+
+/* Record count fetched by random update feature. */
+#define BULK_ROWS_COUNT 100
+
 #define DEFAULT_GRIDDB_IP_ADDRESS	"239.0.0.1"
 #define DEFAULT_GRIDDB_PORT			"31999"
 
@@ -35,6 +40,31 @@
 #define GSFDW_INT8ARRAYOID		1016	/* Oid for INT8ARRAY */
 #define GSFDW_FLOAT8ARRAYOID	1022	/* Oid for FLOAT8ARRAY */
 #define GSFDW_TIMESTAMPARRAYOID 1115	/* Oid for TIMESTAMPARRAYOID */
+
+/* Option name for IMPORT FOREIGN SCHEMA. */
+#define OPTION_RECREATE "recreate"
+/* Option name for CREATE FOREIGN SERVER. */
+#define OPTION_HOST		"host"
+#define OPTION_PORT		"port"
+#define OPTION_CLUSTER	"clustername"
+/* Option name for CREATE USER MAPPING. */
+#define OPTION_USER		"username"
+#define OPTION_PWD		"password"
+
+/* Option name for CREATE FOREIGN TABLE. */
+#define OPTION_TABLE	"table_name"
+#define OPTION_ROWKEY	"rowkey"
+
+#define OPTION_UPDATABLE	   "updatable"
+#define OPTION_REMOTE_ESTIMATE "use_remote_estimate"
+#define OPTION_STARTUP_COST    "fdw_startup_cost"
+#define OPTION_TUPLE_COST	   "fdw_tuple_cost"
+
+/* Attribute number of rowkey column. 1st column is assigned rowkey in GridDB. */
+#define ROWKEY_ATTNO 1
+
+/* The index of rowkey for array storing rowkey and modified record values. It cannot be changed. */
+#define ROWKEY_IDX 0
 
 /*
  * Options structure to store the MySQL
@@ -108,7 +138,7 @@ extern griddb_opt *griddb_get_options(Oid foreigntableid);
 /* in connection.c */
 extern GSGridStore *griddb_get_connection(UserMapping *user, bool will_prep_stmt,
 					  Oid foreigntableid);
-extern bool griddb_add_cont_list(UserMapping *user, Oid id, GSContainer * cont);
+extern GSContainer *griddb_get_container(UserMapping *user, Oid relid, GSGridStore * store);
 extern void griddb_release_connection(GSGridStore * store);
 extern void griddb_report(int elevel, GSResult res, void *gsResource,
 			  const char *fname, unsigned int line);

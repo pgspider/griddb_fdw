@@ -59,20 +59,20 @@ recreate : 'true' or 'false'. If 'true', table schema will be updated.
 
 After schema is imported, we can access tables.
 
+* update and delete
+
+The container must have rowkey on GridDB in order to execute update and delete query.
+
+
 ## 3. Features
 -----------
 - Supprt SELECT and INSERT
-- Supprt UPDATE and DELETE with a limitation
+- Supprt UPDATE and DELETE
 - WHERE clauses are pushdowned
 
 ## 4. Limitations
 --------------
-Only simple update/delete SQL can work. During update/delete SQL processing, 
-records are selected to specify updating records. If the order of updating 
-record is a descending order for the selected resultset, it can work fine. 
-But a complex update/delete SQL which uses subquery or selected records are 
-filtered in postgres engine, it does not work properly. This is because the 
-cursor movement for udating/deleting target record is not implemented completely.
+Nothing.
 
 ## 5. License
 ----------

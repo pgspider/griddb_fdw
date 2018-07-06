@@ -1,7 +1,7 @@
 /*
  * GridDB Foreign Data Wrapper
  *
- * Portions Copyright (c) 2018, TOSHIBA COOPERATION
+ * Portions Copyright (c) 2018, TOSHIBA CORPORATION
  *
  * IDENTIFICATION
  *		  griddb_fdw.c
@@ -109,7 +109,8 @@ typedef struct GridDBFdwScanModifyRelay
 {
 	GSRowSet   *row_set;		/* result set */
 	GSRow	   *row;			/* row for the update */
-	GridDBFdwFieldInfo field_info;		/* column count */
+	GridDBFdwFieldInfo field_info;		/* column information */
+	Datum		rowkey_val;		/* rowkey the cursor is pointing */
 }	GridDBFdwScanModifyRelay;
 
 /*
@@ -154,6 +155,13 @@ typedef struct GridDBFdwModifyState
 
 	/* extracted fdw_private data */
 	List	   *target_attrs;	/* list of target attribute numbers */
+	bool		bulk_mode;		/* true if UPDATE/DELETE targets are pointing
+								 * different rows from result set cursor */
+	AttrNumber	junk_att_no;	/* rowkey attribute number */
+	Datum	  **target_values;	/* update or delete target row information */
+	uint64_t	num_target;		/* # of stored modified row */
+	uint64_t	max_target;		/* # of storable modified row */
+	CmdType		operation;		/* INSERT, UPDATE, or DELETE */
 }	GridDBFdwModifyState;
 
 /*
@@ -259,13 +267,25 @@ static void estimate_path_cost_size(PlannerInfo *root,
 static void griddb_make_column_info(GSContainerInfo * cont_info,
 						GridDBFdwFieldInfo * field_info);
 static void griddb_free_column_info(GridDBFdwFieldInfo * field_info);
-static GSContainer *griddb_get_container(GSGridStore * store, GSChar * tablename);
 static Oid	griddb_pgtyp_from_gstyp(GSType gs_type, const char **name);
 static Timestamp griddb_convert_gs2pg_timestamp(GSTimestamp ts);
 static GSTimestamp griddb_convert_pg2gs_timestamp(Timestamp dt);
 static Datum griddb_make_datum_from_row(GSRow * row, int32_t attid,
 						   GSType gs_type, Oid pg_type);
 static void griddb_execute_and_fetch(ForeignScanState *node);
+static void griddb_find_junk_attno(GridDBFdwModifyState * fmstate, List *targetlist);
+static int	(*griddb_get_comparator(GSType gs_type)) (const void *, const void *);
+static void griddb_modify_target_init(GridDBFdwModifyState * fmstate);
+static void griddb_modify_target_expand(GridDBFdwModifyState * fmstate);
+static void griddb_modify_target_fini(GridDBFdwModifyState * fmstate);
+static void griddb_modify_target_insert(GridDBFdwModifyState * fmstate,
+							TupleTableSlot *slot, TupleTableSlot *planSlot,
+							GridDBFdwFieldInfo * field_info);
+static void griddb_modify_target_sort(GridDBFdwModifyState * fmstate,
+						  GridDBFdwFieldInfo * field_info);
+static void griddb_judge_bulk_mode(GridDBFdwModifyState * fmstate, TupleTableSlot *planSlot);
+static void griddb_modify_targets_apply(GridDBFdwModifyState * fmstate, GridDBFdwFieldInfo * field_info);
+static void griddb_set_row_field(GSRow * row, Datum value, GSType gs_type, int pindex);
 static void griddb_bind_for_putrow(GridDBFdwModifyState * fmstate,
 					   TupleTableSlot *slot,
 					   GSRow * row, Relation rel,
@@ -700,7 +720,7 @@ griddbBeginForeignScan(ForeignScanState *node, int eflags)
 							  RelationGetRelid(node->ss.ss_currentRelation));
 
 	fsstate->cont_name = get_rel_name(rte->relid);
-	fsstate->cont = griddb_get_container(fsstate->store, fsstate->cont_name);
+	fsstate->cont = griddb_get_container(user, rte->relid, fsstate->store);
 
 	fsstate->query = strVal(list_nth(fsplan->fdw_private,
 									 FdwScanPrivateSelectSql));
@@ -729,7 +749,6 @@ griddbBeginForeignScan(ForeignScanState *node, int eflags)
 		fsstate->tupdesc = node->ss.ss_ScanTupleSlot->tts_tupleDescriptor;
 	}
 
-	griddb_add_cont_list(user, rte->relid, fsstate->cont);
 	griddb_execute_and_fetch(node);
 }
 
@@ -761,7 +780,7 @@ griddbIterateForeignScan(ForeignScanState *node)
 		ListCell   *lc = NULL;
 		GSType	   *column_types = fsstate->field_info.column_types;
 
-		Assert(gsHasNextRow(fsstate->row_set));
+		Assert(gsHasNextRow(fsstate->row_set) == GS_TRUE);
 		ret = gsGetNextRow(fsstate->row_set, fsstate->row);
 		if (!GS_SUCCEEDED(ret))
 			griddb_REPORT_ERROR(ERROR, ret, fsstate->row_set);
@@ -792,6 +811,10 @@ griddbIterateForeignScan(ForeignScanState *node)
 		ExecStoreVirtualTuple(tupleSlot);
 		fsstate->cursor++;
 	}
+
+	/* Memorize rowkey value which the cursor is pointing. */
+	if (fsstate->for_update)
+		griddb_sm_share.rowkey_val = tupleSlot->tts_values[ROWKEY_ATTNO - 1];
 
 	return tupleSlot;
 }
@@ -852,15 +875,41 @@ griddbEndForeignScan(ForeignScanState *node)
 /*
  * AddForeignUpdateTargets
  *	  Add resjunk column(s) needed for update/delete on a foreign table
- *	  We add first column forcibly in order to avoid there is no target column.
- *	  So we are adding that into target list.
+ *	  We add first column forcibly. So we are adding that into target list.
  */
 static void
 griddbAddForeignUpdateTargets(Query *parsetree,
 							  RangeTblEntry *target_rte,
 							  Relation target_relation)
 {
-	/* Do nothing */
+	Var		   *var = NULL;
+	const char *attrname = NULL;
+	TargetEntry *tle = NULL;
+
+	/*
+	 * What we need is the rowkey which is the first column
+	 */
+	Form_pg_attribute attr =
+	RelationGetDescr(target_relation)->attrs[ROWKEY_ATTNO - 1];
+
+	/* Make a Var representing the desired value */
+	var = makeVar(parsetree->resultRelation,
+				  ROWKEY_ATTNO,
+				  attr->atttypid,
+				  attr->atttypmod,
+				  attr->attcollation,
+				  0);
+
+	/* Wrap it in a TLE with the right name ... */
+	attrname = NameStr(attr->attname);
+
+	tle = makeTargetEntry((Expr *) var,
+						  list_length(parsetree->targetList) + 1,
+						  pstrdup(attrname),
+						  true);
+
+	/* ... and add it to the query's targetlist */
+	parsetree->targetList = lappend(parsetree->targetList, tle);
 }
 
 /*
@@ -885,8 +934,8 @@ griddbPlanForeignModify(PlannerInfo *root,
 	rel = heap_open(rte->relid, NoLock);
 
 	/*
-	 * In an INSERT and UPDATE, we transmit all columns that are defined in
-	 * the foreign table.
+	 * In an INSERT, we transmit all columns that are defined in the foreign
+	 * table.
 	 */
 	if (operation == CMD_INSERT)
 	{
@@ -920,8 +969,34 @@ griddbPlanForeignModify(PlannerInfo *root,
 
 			if (attno <= InvalidAttrNumber)		/* shouldn't happen */
 				elog(ERROR, "system-column update is not supported");
+
+			if (attno == ROWKEY_ATTNO)
+				elog(ERROR, "rowkey-column update is not supported");
 			targetAttrs = lappend_int(targetAttrs, attno);
 		}
+	}
+
+	if (operation == CMD_UPDATE || operation == CMD_DELETE)
+	{
+		List	   *options;
+		ListCell   *lc;
+		bool		hasRowKey = false;
+
+		/*
+		 * Check rowkey option is set. This option is required to modify
+		 * table. 1st column is rowkey column because of GridDB's
+		 * specification.
+		 */
+		options = GetForeignColumnOptions(rte->relid, ROWKEY_ATTNO);
+		foreach(lc, options)
+		{
+			DefElem    *def = (DefElem *) lfirst(lc);
+
+			if ((strcmp(def->defname, OPTION_ROWKEY) == 0) && (defGetBoolean(def) == true))
+				hasRowKey = true;
+		}
+		if (!hasRowKey)
+			elog(ERROR, "Cannot modify a table if rowkey is not assigned to the 1st column.");
 	}
 
 	/*
@@ -999,10 +1074,16 @@ griddbBeginForeignModify(ModifyTableState *mtstate,
 
 	/* get the row structure for gsPutRow */
 	fmstate->cont_name = get_rel_name(rte->relid);
-	fmstate->cont = griddb_get_container(fmstate->store, fmstate->cont_name);
-	griddb_add_cont_list(user, rte->relid, fmstate->cont);
+	fmstate->cont = griddb_get_container(user, rte->relid, fmstate->store);
 
 	resultRelInfo->ri_FdwState = fmstate;
+
+	if (mtstate->operation == CMD_UPDATE || mtstate->operation == CMD_DELETE)
+	{
+		griddb_find_junk_attno(fmstate, mtstate->mt_plans[subplan_index]->plan->targetlist);
+		griddb_modify_target_init(fmstate);
+	}
+	fmstate->operation = mtstate->operation;
 }
 
 /*
@@ -1068,15 +1149,29 @@ griddbExecForeignUpdate(EState *estate,
 	(GridDBFdwModifyState *) resultRelInfo->ri_FdwState;
 	GSResult	ret;
 
-	/* Create row structure for gsPutRow */
-	griddb_bind_for_putrow(fmstate, slot, griddb_sm_share.row,
-						   resultRelInfo->ri_RelationDesc,
-						   &griddb_sm_share.field_info);
+	if (!fmstate->bulk_mode)
+		griddb_judge_bulk_mode(fmstate, planSlot);
 
-	/* Update row */
-	ret = gsUpdateCurrentRow(griddb_sm_share.row_set, griddb_sm_share.row);
-	if (!GS_SUCCEEDED(ret))
-		griddb_REPORT_ERROR(ERROR, ret, fmstate->cont);
+	if (fmstate->bulk_mode)
+	{
+		/*
+		 * Memorize modified row information. They will be updated in
+		 * griddbEndForeignModify.
+		 */
+		griddb_modify_target_insert(fmstate, slot, planSlot, &griddb_sm_share.field_info);
+	}
+	else
+	{
+		/* Create row structure for gsPutRow */
+		griddb_bind_for_putrow(fmstate, slot, griddb_sm_share.row,
+							   resultRelInfo->ri_RelationDesc,
+							   &griddb_sm_share.field_info);
+
+		/* Update row */
+		ret = gsUpdateCurrentRow(griddb_sm_share.row_set, griddb_sm_share.row);
+		if (!GS_SUCCEEDED(ret))
+			griddb_REPORT_ERROR(ERROR, ret, fmstate->cont);
+	}
 
 	/* Return NULL if nothing was updated on the remote end */
 	return slot;
@@ -1096,10 +1191,24 @@ griddbExecForeignDelete(EState *estate,
 	(GridDBFdwModifyState *) resultRelInfo->ri_FdwState;
 	GSResult	ret;
 
-	/* Delete row */
-	ret = gsDeleteCurrentRow(griddb_sm_share.row_set);
-	if (!GS_SUCCEEDED(ret))
-		griddb_REPORT_ERROR(ERROR, ret, fmstate->cont);
+	if (!fmstate->bulk_mode)
+		griddb_judge_bulk_mode(fmstate, planSlot);
+
+	if (fmstate->bulk_mode)
+	{
+		/*
+		 * Memorize modified row information. They will be deleted in
+		 * griddbEndForeignModify.
+		 */
+		griddb_modify_target_insert(fmstate, slot, planSlot, &griddb_sm_share.field_info);
+	}
+	else
+	{
+		/* Delete row */
+		ret = gsDeleteCurrentRow(griddb_sm_share.row_set);
+		if (!GS_SUCCEEDED(ret))
+			griddb_REPORT_ERROR(ERROR, ret, fmstate->cont);
+	}
 
 	/* Return NULL if nothing was deleted on the remote end */
 	return slot;
@@ -1119,6 +1228,13 @@ griddbEndForeignModify(EState *estate,
 	/* If fmstate is NULL, we are in EXPLAIN; nothing to do */
 	if (fmstate == NULL)
 		return;
+
+	if (fmstate->operation == CMD_UPDATE || fmstate->operation == CMD_DELETE)
+	{
+		griddb_modify_target_sort(fmstate, &griddb_sm_share.field_info);
+		griddb_modify_targets_apply(fmstate, &griddb_sm_share.field_info);
+		griddb_modify_target_fini(fmstate);
+	}
 
 	/* Container will be closed by griddb_xact_callback */
 
@@ -1154,14 +1270,14 @@ griddbIsForeignRelUpdatable(Relation rel)
 	{
 		DefElem    *def = (DefElem *) lfirst(lc);
 
-		if (strcmp(def->defname, "updatable") == 0)
+		if (strcmp(def->defname, OPTION_UPDATABLE) == 0)
 			updatable = defGetBoolean(def);
 	}
 	foreach(lc, table->options)
 	{
 		DefElem    *def = (DefElem *) lfirst(lc);
 
-		if (strcmp(def->defname, "updatable") == 0)
+		if (strcmp(def->defname, OPTION_UPDATABLE) == 0)
 			updatable = defGetBoolean(def);
 	}
 
@@ -1273,7 +1389,7 @@ griddbImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 	{
 		DefElem    *def = (DefElem *) lfirst(lc);
 
-		if (strcmp(def->defname, "recreate") == 0)
+		if (strcmp(def->defname, OPTION_RECREATE) == 0)
 			recreate = defGetBoolean(def);
 		else
 			ereport(ERROR,
@@ -1588,25 +1704,6 @@ griddb_free_column_info(GridDBFdwFieldInfo * field_info)
 }
 
 /*
- * Get a GSCollection which can be used to execute queries on the remote GridDB
- */
-static GSContainer *
-griddb_get_container(GSGridStore * store, GSChar * tablename)
-{
-	GSResult	ret;
-	GSContainer *cont;
-
-	ret = gsGetContainerGeneral(store, tablename, &cont);
-	if (!GS_SUCCEEDED(ret))
-		griddb_REPORT_ERROR(ERROR, ret, store);
-
-	if (cont == NULL)
-		elog(ERROR, "No such container: %s", tablename);
-
-	return cont;
-}
-
-/*
  * Return PG type for GridDB data type
  */
 static Oid
@@ -1738,7 +1835,6 @@ griddb_convert_gs2pg_timestamp(GSTimestamp ts)
 	gsFormatTime(ts, buf, sizeof(buf));
 	sscanf(buf, "%4d-%2d-%2dT%2d:%2d:%2d.%3dZ", &tm.tm_year, &tm.tm_mon,
 		   &tm.tm_mday, &tm.tm_hour, &tm.tm_min, &tm.tm_sec, &fsec);
-	tm.tm_mon -= 1;				/* Because of 0 origin */
 	fsec *= 1000;				/* Because of micro second */
 
 	if (tm2timestamp(&tm, fsec, NULL, &timestamp) != 0)
@@ -1749,20 +1845,21 @@ griddb_convert_gs2pg_timestamp(GSTimestamp ts)
 	return timestamp;
 }
 
-/* Convert to GridDB format.
+
+/* Convert to GridDB timestamp format as a string.
  * USE_XSD_DATES format is YYYY-MM-DDThh:mm:ss.SSSSSS.
  *	 After the decimal point is optional.
  * GridDB format is YYYY-MM-DDThh:mm:ss.SSSZ.
  *	 After the decimal point is optional but always 3 digits.
+ *
+ * The 2nd argument is the output. The buffer must be allocated
+ * outside of this function. It requires MAXDATELEN+1.
  */
-static GSTimestamp
-griddb_convert_pg2gs_timestamp(Timestamp dt)
+static void
+griddb_convert_pg2gs_timestamp_string(Timestamp dt, char *buf)
 {
 	struct pg_tm tm;
 	fsec_t		fsec;			/* Micro seconds */
-	char		buf[MAXDATELEN + 1] = {0};
-	GSResult	ret;
-	GSTimestamp timestampVal;
 
 	if (timestamp2tm(dt, NULL, &tm, &fsec, NULL, NULL) == 0)
 		EncodeDateTime(&tm, fsec, false, 0, NULL, USE_XSD_DATES, buf);
@@ -1783,6 +1880,18 @@ griddb_convert_pg2gs_timestamp(Timestamp dt)
 			buf[22] = '0';
 	}
 	strcat(buf, "Z");
+}
+
+/* Convert from Timestamp to GSTimestamp.
+ */
+static GSTimestamp
+griddb_convert_pg2gs_timestamp(Timestamp dt)
+{
+	char		buf[MAXDATELEN + 1] = {0};
+	GSResult	ret;
+	GSTimestamp timestampVal;
+
+	griddb_convert_pg2gs_timestamp_string(dt, buf);
 
 	ret = gsParseTime(buf, &timestampVal);
 	if (ret != GS_TRUE)
@@ -2189,6 +2298,904 @@ griddb_execute_and_fetch(ForeignScanState *node)
 }
 
 /*
+ * griddb_update_rows_init
+ *		Check whether data type of slot is as expected.
+ */
+static void
+griddb_check_slot_type(TupleTableSlot *slot, int attnum, GridDBFdwFieldInfo * field_info)
+{
+	GSType		gs_type;
+	Oid			gs_type_oid;
+	Oid			pg_type;
+
+	gs_type = field_info->column_types[attnum - 1];
+	gs_type_oid = griddb_pgtyp_from_gstyp(gs_type, NULL);
+	pg_type = slot->tts_tupleDescriptor->attrs[attnum - 1]->atttypid;
+	if (pg_type != gs_type_oid)
+		elog(ERROR, "Unexpected data type. pgtype is %d, but GridDB expects %d.",
+			 pg_type, gs_type_oid);
+}
+
+static void
+griddb_find_junk_attno(GridDBFdwModifyState * fmstate, List *targetlist)
+{
+	Oid			relId = RelationGetRelid(fmstate->rel);
+	char	   *attName = get_relid_attribute_name(relId, ROWKEY_ATTNO);
+
+	fmstate->junk_att_no = ExecFindJunkAttributeInTlist(targetlist, attName);
+}
+
+/*
+ * griddb_update_rows_init
+ *		Initialize area for storing information of modified rows.
+ *		Size is INITIAL_TARGET_VALUE_ROWS rows.
+ */
+static void
+griddb_modify_target_init(GridDBFdwModifyState * fmstate)
+{
+	int			i;
+	int			nField = list_length(fmstate->target_attrs) + 1;		/* +1 is key column. */
+
+	fmstate->target_values = (Datum **) palloc0(sizeof(Datum *) * INITIAL_TARGET_VALUE_ROWS);
+	for (i = 0; i < INITIAL_TARGET_VALUE_ROWS; i++)
+		fmstate->target_values[i] = (Datum *) palloc0(sizeof(Datum) * nField);
+
+	fmstate->num_target = 0;
+	fmstate->max_target = INITIAL_TARGET_VALUE_ROWS;
+}
+
+/*
+ * griddb_modify_target_expand
+ *		Expand the area for storing information of modified rows.
+ *		Size is increased to double.
+ */
+static void
+griddb_modify_target_expand(GridDBFdwModifyState * fmstate)
+{
+	int			i;
+	int			nField = list_length(fmstate->target_attrs) + 1;		/* +1 is key column. */
+
+	fmstate->target_values = (Datum **) repalloc(fmstate->target_values, sizeof(Datum *) * fmstate->max_target * 2);
+	for (i = fmstate->max_target; i < fmstate->max_target * 2; i++)
+		fmstate->target_values[i] = (Datum *) palloc0(sizeof(Datum) * nField);
+	fmstate->max_target *= 2;
+}
+
+/*
+ * griddb_modify_target_fini
+ *		Free memory of modified rows information.
+ */
+static void
+griddb_modify_target_fini(GridDBFdwModifyState * fmstate)
+{
+	int			i;
+
+	for (i = 0; i < fmstate->max_target; i++)
+		pfree(fmstate->target_values[i]);
+	pfree(fmstate->target_values);
+	fmstate->target_values = NULL;
+}
+
+/*
+ * griddb_modify_target_insert
+ *		Store values of updated/deleted row information.
+ *		Values are stored in an array.
+ *		1st element is key column.
+ */
+static void
+griddb_modify_target_insert(GridDBFdwModifyState * fmstate, TupleTableSlot *slot,
+				   TupleTableSlot *planSlot, GridDBFdwFieldInfo * field_info)
+{
+	ListCell   *lc;
+	Datum	   *target_values;
+	int			pindex = 0;
+	Datum		value;
+	bool		isnull;
+	Form_pg_attribute attr;
+
+	/* Do nothing if there are free spaces. */
+	if (fmstate->num_target >= fmstate->max_target)
+		griddb_modify_target_expand(fmstate);
+
+	target_values = fmstate->target_values[fmstate->num_target];
+
+	/* Firstly, store a value of rowkey column which is the 1st column. */
+	value = ExecGetJunkAttribute(planSlot, fmstate->junk_att_no, &isnull);
+	Assert(isnull == false);
+	attr = planSlot->tts_tupleDescriptor->attrs[fmstate->junk_att_no - 1];
+	target_values[pindex] = datumCopy(value, attr->attbyval, attr->attlen);
+	pindex++;
+
+	/* Store modified column values. */
+	foreach(lc, fmstate->target_attrs)
+	{
+		int			attnum = lfirst_int(lc);
+
+		if (attnum < 0)
+			continue;
+
+		griddb_check_slot_type(slot, attnum, field_info);
+
+		value = slot_getattr(slot, attnum, &isnull);
+		Assert(isnull == false);
+		attr = slot->tts_tupleDescriptor->attrs[attnum - 1];
+		target_values[pindex] = datumCopy(value, attr->attbyval, attr->attlen);
+		pindex++;
+	}
+	fmstate->num_target++;
+}
+
+/* Comparison functions for pg_qsort. */
+static int
+griddb_compare_string(const void *a, const void *b)
+{
+	Datum	   *val1 = *(Datum **) a;
+	Datum	   *val2 = *(Datum **) b;
+	char	   *textVal1;
+	char	   *textVal2;
+	Oid			outputFunctionId;
+	bool		typeVarLength;
+
+	getTypeOutputInfo(TEXTOID, &outputFunctionId, &typeVarLength);
+	textVal1 = OidOutputFunctionCall(outputFunctionId, val1[0]);
+	textVal2 = OidOutputFunctionCall(outputFunctionId, val2[0]);
+
+	return strcmp((const char *) textVal1, (const char *) textVal2);
+}
+
+static int
+griddb_compare_integer(const void *a, const void *b)
+{
+	Datum	   *val1 = *(Datum **) a;
+	Datum	   *val2 = *(Datum **) b;
+	int32		intVal1 = DatumGetInt32(val1[0]);
+	int32		intVal2 = DatumGetInt32(val2[0]);
+
+	if (intVal1 == intVal2)
+	{
+		return 0;
+	}
+	else if (intVal1 > intVal2)
+	{
+		return 1;
+	}
+	else
+	{
+		return -1;
+	}
+}
+
+static int
+griddb_compare_long(const void *a, const void *b)
+{
+	Datum	   *val1 = *(Datum **) a;
+	Datum	   *val2 = *(Datum **) b;
+	int64		longVal1 = DatumGetInt64(val1[0]);
+	int64		longVal2 = DatumGetInt64(val2[0]);
+
+	if (longVal1 == longVal2)
+	{
+		return 0;
+	}
+	else if (longVal1 > longVal2)
+	{
+		return 1;
+	}
+	else
+	{
+		return -1;
+	}
+}
+
+static int
+griddb_compare_timestamp(const void *a, const void *b)
+{
+	Datum	   *val1 = *(Datum **) a;
+	Datum	   *val2 = *(Datum **) b;
+	Timestamp	timestamp1 = DatumGetTimestamp(val1[0]);
+	Timestamp	timestamp2 = DatumGetTimestamp(val2[0]);
+
+	if (timestamp1 == timestamp2)
+	{
+		return 0;
+	}
+	else if (timestamp1 > timestamp2)
+	{
+		return 1;
+	}
+	else
+	{
+		return -1;
+	}
+}
+
+/* Return comparator for gs_type */
+static int	(*
+		  griddb_get_comparator(GSType gs_type)) (const void *, const void *)
+{
+	switch (gs_type)
+	{
+		case GS_TYPE_STRING:
+			return griddb_compare_string;
+
+		case GS_TYPE_INTEGER:
+			return griddb_compare_integer;
+
+		case GS_TYPE_LONG:
+			return griddb_compare_long;
+
+		case GS_TYPE_TIMESTAMP:
+			return griddb_compare_timestamp;
+
+		default:
+
+			/*
+			 * Should not happen, we have already checked rowkey is assigned.
+			 * GridDB support rowkey for column of only GS_TYPE_STRING,
+			 * GS_TYPE_INTEGER, GS_TYPE_LONG and GS_TYPE_TIMESTAMP type.
+			 */
+			elog(ERROR, "Cannot compare rowkey type(GS) %d", gs_type);
+			return NULL;		/* keep compiler quiet */
+	}
+}
+
+/*
+ * target_values are stored in 2 dimentional array.
+ * 1st column is storing row key value.
+ * This function sorts target_values about row key value by pg_qsort().
+ * The comparator functions compare records which are rows in target_values about 1st element.
+ *
+ */
+static void
+griddb_modify_target_sort(GridDBFdwModifyState * fmstate, GridDBFdwFieldInfo * field_info)
+{
+	int			(*comparator) (const void *, const void *);
+	GSType		gs_type = field_info->column_types[ROWKEY_ATTNO - 1];
+
+	comparator = griddb_get_comparator(gs_type);
+	pg_qsort(fmstate->target_values, fmstate->num_target, sizeof(Datum *), comparator);
+}
+
+/*
+ * Check if the cursor pointing GridDB result set is same as slot value.
+ * If the cursor is pointing the different row, we change to the bulk
+ * mode.
+ */
+static void
+griddb_judge_bulk_mode(GridDBFdwModifyState * fmstate, TupleTableSlot *planSlot)
+{
+	Datum	   *value1[1];
+	Datum	   *value2[1];
+	Datum		val1;
+	int			(*comparator) (const void *, const void *);
+	bool		isnull;
+	GSType		gs_type = griddb_sm_share.field_info.column_types[ROWKEY_ATTNO - 1];
+
+	/* No need to judge if it is already bulk mode. */
+	if (fmstate->bulk_mode == true)
+		return;
+
+	/* Chenge to bulk mode if the cursor is poinitng NULL. */
+	if (!griddb_sm_share.rowkey_val)
+	{
+		fmstate->bulk_mode = true;
+		return;
+	}
+
+	val1 = ExecGetJunkAttribute(planSlot, fmstate->junk_att_no, &isnull);
+	Assert(isnull == false);
+
+	value1[0] = &val1;
+	value2[0] = &griddb_sm_share.rowkey_val;
+	comparator = griddb_get_comparator(gs_type);
+	if (comparator((const void *) &value1, (const void *) &value2) != 0)
+		fmstate->bulk_mode = true;
+}
+
+/* Create TQL for fetching UPDATE/DELETE targets. */
+static void
+griddb_modify_target_tql(GridDBFdwModifyState * fmstate, GridDBFdwFieldInfo * field_info, uint64_t iStart, uint64 iEnd, StringInfo buf)
+{
+	char	   *cont_name = (char *) fmstate->cont_name;
+	char	   *rowkey = (char *) field_info->column_names[ROWKEY_ATTNO - 1];
+	Datum	  **target_values = fmstate->target_values;
+	Oid			outputFunctionId;
+	bool		typeVarLength;
+	uint64_t	i;
+
+	Assert(iStart < iEnd);
+	Assert(iEnd <= fmstate->num_target);
+
+	/* Construct SELECT statement for fetching update targets. */
+	appendStringInfo(buf, "SELECT * FROM %s WHERE ", cont_name);
+
+	switch (field_info->column_types[ROWKEY_ATTNO - 1])
+	{
+		case GS_TYPE_INTEGER:
+			for (i = iStart; i < iEnd; i++)
+			{
+				Datum	   *values = target_values[i];
+				int			intVal = DatumGetInt32(values[ROWKEY_IDX]);
+
+				if (i != 0)
+					appendStringInfo(buf, " OR ");
+
+				appendStringInfo(buf, "%s = %d", rowkey, intVal);
+			}
+			break;
+
+		case GS_TYPE_LONG:
+			for (i = iStart; i < iEnd; i++)
+			{
+				Datum	   *values = target_values[i];
+				int64		longVal = DatumGetInt64(values[ROWKEY_IDX]);
+
+				if (i != 0)
+					appendStringInfo(buf, " OR ");
+
+				appendStringInfo(buf, "%s = %lld", rowkey, (long long int) longVal);
+			}
+			break;
+
+		case GS_TYPE_TIMESTAMP:
+			for (i = iStart; i < iEnd; i++)
+			{
+				Datum	   *values = target_values[i];
+				char		timestampVal[MAXDATELEN + 1] = {0};
+				Timestamp	timestamp = DatumGetTimestamp(values[ROWKEY_IDX]);
+
+				griddb_convert_pg2gs_timestamp_string(timestamp, timestampVal);
+
+				if (i != 0)
+					appendStringInfo(buf, " OR ");
+
+				appendStringInfo(buf, "%s = TIMESTAMP('%s')", rowkey, timestampVal);
+			}
+			break;
+
+		case GS_TYPE_STRING:
+			getTypeOutputInfo(TEXTOID, &outputFunctionId, &typeVarLength);
+			for (i = iStart; i < iEnd; i++)
+			{
+				Datum	   *values = target_values[i];
+				char	   *stringVal = OidOutputFunctionCall(outputFunctionId, values[ROWKEY_IDX]);
+
+				if (i != 0)
+					appendStringInfo(buf, " OR ");
+
+				appendStringInfo(buf, "%s = '%s'", rowkey, stringVal);
+			}
+			break;
+
+		default:
+			/* Should not happen. */
+			Assert(false);
+			break;				/* keep compiler quiet */
+	}
+
+	appendStringInfo(buf, " ORDER BY %s", rowkey);
+}
+
+/*
+ * Operate UPDATE or DELETE to GridDB.
+ * The record information is stored fmstate->target_values.
+ * Firstly, fetch update/delete target rows from GridDB.
+ * Then modify result set in case of UPDATE.
+ * And update or delete the current row which cursor is pointing.
+ */
+static void
+griddb_modify_targets_apply(GridDBFdwModifyState * fmstate, GridDBFdwFieldInfo * field_info)
+{
+	StringInfoData buf;
+	GSResult	ret;
+	uint64		iStart = 0;
+	GSRow	   *row;
+	TupleDesc	tupdesc = RelationGetDescr(fmstate->rel);
+	Oid			pgtype = tupdesc->attrs[ROWKEY_ATTNO - 1]->atttypid;
+	int			(*comparator) (const void *, const void *) = griddb_get_comparator(field_info->column_types[ROWKEY_ATTNO - 1]);
+
+	if (fmstate->num_target == 0)
+		return;
+
+	initStringInfo(&buf);
+
+	ret = gsCreateRowByContainer(fmstate->cont, &row);
+	if (!GS_SUCCEEDED(ret))
+		griddb_REPORT_ERROR(ERROR, ret, fmstate->cont);
+
+	while (iStart < fmstate->num_target)
+	{
+		GSQuery    *query;
+		GSRowSet   *row_set;
+		uint64		i;
+		uint64_t	iEnd = Min(fmstate->num_target, iStart + BULK_ROWS_COUNT);
+
+		/* Create TQL */
+		resetStringInfo(&buf);
+		griddb_modify_target_tql(fmstate, field_info, iStart, iEnd, &buf);
+		elog(DEBUG1, "TQL for modification: %s", buf.data);
+
+		/* Execute TQL */
+		ret = gsQuery(fmstate->cont, buf.data, &query);
+		if (!GS_SUCCEEDED(ret))
+			griddb_REPORT_ERROR(ERROR, ret, fmstate->cont);
+
+		/* Fetch result set for modification */
+		ret = gsFetch(query, GS_TRUE, &row_set);
+		if (!GS_SUCCEEDED(ret))
+			griddb_REPORT_ERROR(ERROR, ret, query);
+
+		for (i = iStart; i < iEnd; i++)
+		{
+			Datum		rowkey;
+			Datum	   *rowValues[1];
+			Datum	   *targets = fmstate->target_values[i];
+
+			Assert(gsHasNextRow(row_set) == GS_TRUE);
+			ret = gsGetNextRow(row_set, row);
+			if (!GS_SUCCEEDED(ret))
+				griddb_REPORT_ERROR(ERROR, ret, row_set);
+
+			/* Check the cursor is pointing the target. */
+			rowkey = griddb_make_datum_from_row(row, ROWKEY_IDX,
+								  field_info->column_types[ROWKEY_ATTNO - 1],
+												pgtype);
+			rowValues[0] = &rowkey;
+			if (comparator((const void *) &targets, (const void *) &rowValues))
+			{
+				Assert(false);
+				ereport(WARNING, (errmsg("Fetched rowkey is not same as expected")));
+				continue;
+			}
+
+			/* Do operation. */
+			if (fmstate->operation == CMD_UPDATE)
+			{
+				int			pindex = ROWKEY_IDX + 1;
+				ListCell   *lc;
+
+				foreach(lc, fmstate->target_attrs)
+				{
+					int			attnum = lfirst_int(lc);
+
+					if (attnum < 0)
+						continue;
+
+					griddb_set_row_field(row, targets[pindex], field_info->column_types[attnum - 1], attnum - 1);
+					pindex++;
+				}
+
+				/* Do UPDATE */
+				ret = gsUpdateCurrentRow(row_set, row);
+				if (!GS_SUCCEEDED(ret))
+					griddb_REPORT_ERROR(ERROR, ret, row_set);
+			}
+			else
+			{
+				/* Do DELETE */
+				ret = gsDeleteCurrentRow(row_set);
+				if (!GS_SUCCEEDED(ret))
+					griddb_REPORT_ERROR(ERROR, ret, row_set);
+			}
+		}
+
+		gsCloseRowSet(&row_set);
+		gsCloseQuery(&query);
+
+		/* For the next loop. */
+		iStart = iEnd;
+	}
+
+	gsCloseRow(&row);
+}
+
+/*
+ * Call gsSetRowFieldByXXX(). Data is given by the argument as a Datum type.
+ */
+static void
+griddb_set_row_field(GSRow * row, Datum value, GSType gs_type, int pindex)
+{
+	GSResult	ret;
+	ArrayType  *array;
+	Oid			elmtype;
+	int16		elmlen;
+	bool		elmbyval;
+	char		elmalign;
+	int			num_elems;
+	Datum	   *elem_values;
+	bool	   *elem_nulls;
+	Oid			outputFunctionId;
+	bool		typeVarLength;
+	int			i;
+
+	switch (gs_type)
+	{
+		case GS_TYPE_STRING:
+			{
+				char	   *textVal;
+				Oid			outputFunctionId;
+				bool		typeVarLength;
+
+				getTypeOutputInfo(TEXTOID, &outputFunctionId, &typeVarLength);
+				textVal = OidOutputFunctionCall(outputFunctionId, value);
+
+				ret = gsSetRowFieldByString(row, pindex, textVal);
+				if (!GS_SUCCEEDED(ret))
+					griddb_REPORT_ERROR(ERROR, ret, row);
+				break;
+			}
+
+		case GS_TYPE_GEOMETRY:
+			{
+				char	   *geomVal;
+				Oid			outputFunctionId;
+				bool		typeVarLength;
+
+				getTypeOutputInfo(TEXTOID, &outputFunctionId, &typeVarLength);
+				geomVal = OidOutputFunctionCall(outputFunctionId, value);
+
+				ret = gsSetRowFieldByGeometry(row, pindex, geomVal);
+				if (!GS_SUCCEEDED(ret))
+					griddb_REPORT_ERROR(ERROR, ret, row);
+				break;
+			}
+
+		case GS_TYPE_BOOL:
+			{
+				bool		boolVal = DatumGetBool(value);
+
+				ret = gsSetRowFieldByBool(row, pindex, boolVal);
+				if (!GS_SUCCEEDED(ret))
+					griddb_REPORT_ERROR(ERROR, ret, row);
+				break;
+			}
+
+		case GS_TYPE_BYTE:
+			{
+				char	   *textVal;
+				int8_t		byteVal;
+				Oid			outputFunctionId;
+				bool		typeVarLength;
+
+				getTypeOutputInfo(BPCHAROID, &outputFunctionId, &typeVarLength);
+				textVal = OidOutputFunctionCall(outputFunctionId, value);
+
+				byteVal = textVal[0];
+				ret = gsSetRowFieldByByte(row, pindex, byteVal);
+				if (!GS_SUCCEEDED(ret))
+					griddb_REPORT_ERROR(ERROR, ret, row);
+				break;
+			}
+
+		case GS_TYPE_SHORT:
+			{
+				int16		shortVal = DatumGetInt16(value);
+
+				ret = gsSetRowFieldByShort(row, pindex, shortVal);
+				if (!GS_SUCCEEDED(ret))
+					griddb_REPORT_ERROR(ERROR, ret, row);
+				break;
+			}
+
+		case GS_TYPE_INTEGER:
+			{
+				int32		intVal = DatumGetInt32(value);
+
+				ret = gsSetRowFieldByInteger(row, pindex, intVal);
+				if (!GS_SUCCEEDED(ret))
+					griddb_REPORT_ERROR(ERROR, ret, row);
+				break;
+			}
+
+		case GS_TYPE_LONG:
+			{
+				int64		longVal = DatumGetInt64(value);
+
+				ret = gsSetRowFieldByLong(row, pindex, longVal);
+				if (!GS_SUCCEEDED(ret))
+					griddb_REPORT_ERROR(ERROR, ret, row);
+				break;
+			}
+
+
+		case GS_TYPE_FLOAT:
+			{
+				float		floatVal = DatumGetFloat4(value);
+
+				ret = gsSetRowFieldByFloat(row, pindex, floatVal);
+				if (!GS_SUCCEEDED(ret))
+					griddb_REPORT_ERROR(ERROR, ret, row);
+				break;
+			}
+
+		case GS_TYPE_DOUBLE:
+			{
+				double		doubleVal = DatumGetFloat8(value);
+
+				ret = gsSetRowFieldByDouble(row, pindex, doubleVal);
+				if (!GS_SUCCEEDED(ret))
+					griddb_REPORT_ERROR(ERROR, ret, row);
+				break;
+			}
+
+		case GS_TYPE_TIMESTAMP:
+			{
+				Timestamp	timestamp = DatumGetTimestamp(value);
+				GSTimestamp timestampVal = griddb_convert_pg2gs_timestamp(timestamp);
+
+				ret = gsSetRowFieldByTimestamp(row, pindex, timestampVal);
+				if (!GS_SUCCEEDED(ret))
+					griddb_REPORT_ERROR(ERROR, ret, row);
+				break;
+			}
+
+		case GS_TYPE_BLOB:
+			{
+				GSBlob		blobVal;
+				char	   *result = DatumGetPointer(value);
+
+				if (VARATT_IS_1B(result))
+				{
+					blobVal.size = VARSIZE_1B(result) - VARHDRSZ_SHORT;
+					blobVal.data = (const void *) VARDATA_1B(result);
+				}
+				else
+				{
+					blobVal.size = VARSIZE_4B(result) - VARHDRSZ;
+					blobVal.data = (const void *) VARDATA_4B(result);
+				}
+
+				ret = gsSetRowFieldByBlob(row, pindex, &blobVal);
+				if (!GS_SUCCEEDED(ret))
+					griddb_REPORT_ERROR(ERROR, ret, row);
+				break;
+			}
+
+		case GS_TYPE_STRING_ARRAY:
+			{
+				const GSChar **stringaData;
+
+				array = DatumGetArrayTypeP(value);
+				elmtype = ARR_ELEMTYPE(array);
+
+				get_typlenbyvalalign(elmtype, &elmlen, &elmbyval, &elmalign);
+				deconstruct_array(array, elmtype, elmlen, elmbyval, elmalign,
+								  &elem_values, &elem_nulls, &num_elems);
+				getTypeOutputInfo(TEXTOID, &outputFunctionId, &typeVarLength);
+
+				stringaData = (const GSChar **) palloc0(sizeof(GSChar *) * num_elems);
+				for (i = 0; i < num_elems; i++)
+				{
+					Assert(!elem_nulls[i]);
+					stringaData[i] = OidOutputFunctionCall(outputFunctionId, elem_values[i]);
+				}
+
+				ret = gsSetRowFieldByStringArray(row, pindex, stringaData, num_elems);
+				if (!GS_SUCCEEDED(ret))
+					griddb_REPORT_ERROR(ERROR, ret, row);
+
+				pfree(stringaData);
+				pfree(elem_values);
+				pfree(elem_nulls);
+				break;
+			}
+
+		case GS_TYPE_BOOL_ARRAY:
+			{
+				GSBool	   *boolaData;
+
+				array = DatumGetArrayTypeP(value);
+				elmtype = ARR_ELEMTYPE(array);
+
+				get_typlenbyvalalign(elmtype, &elmlen, &elmbyval, &elmalign);
+				deconstruct_array(array, elmtype, elmlen, elmbyval, elmalign,
+								  &elem_values, &elem_nulls, &num_elems);
+
+				boolaData = (GSBool *) palloc0(sizeof(GSBool) * num_elems);
+				for (i = 0; i < num_elems; i++)
+					boolaData[i] = DatumGetBool(elem_values[i]);
+
+				ret = gsSetRowFieldByBoolArray(row, pindex, boolaData, num_elems);
+				if (!GS_SUCCEEDED(ret))
+					griddb_REPORT_ERROR(ERROR, ret, row);
+
+				pfree(boolaData);
+				pfree(elem_values);
+				pfree(elem_nulls);
+				break;
+			}
+
+		case GS_TYPE_BYTE_ARRAY:
+			{
+				int8_t	   *byteaData;
+
+				array = DatumGetArrayTypeP(value);
+				elmtype = ARR_ELEMTYPE(array);
+
+				get_typlenbyvalalign(elmtype, &elmlen, &elmbyval, &elmalign);
+				deconstruct_array(array, elmtype, elmlen, elmbyval, elmalign,
+								  &elem_values, &elem_nulls, &num_elems);
+				getTypeOutputInfo(BPCHAROID, &outputFunctionId, &typeVarLength);
+
+				byteaData = (int8_t *) palloc0(sizeof(int8_t) * num_elems);
+				for (i = 0; i < num_elems; i++)
+				{
+					char	   *textVal = OidOutputFunctionCall(outputFunctionId, elem_values[i]);
+
+					byteaData[i] = textVal[0];
+				}
+
+				ret = gsSetRowFieldByByteArray(row, pindex, byteaData, num_elems);
+				if (!GS_SUCCEEDED(ret))
+					griddb_REPORT_ERROR(ERROR, ret, row);
+
+				pfree(byteaData);
+				pfree(elem_values);
+				pfree(elem_nulls);
+				break;
+			}
+
+		case GS_TYPE_SHORT_ARRAY:
+			{
+				int16_t    *shortaData;
+
+				array = DatumGetArrayTypeP(value);
+				elmtype = ARR_ELEMTYPE(array);
+
+				get_typlenbyvalalign(elmtype, &elmlen, &elmbyval, &elmalign);
+				deconstruct_array(array, elmtype, elmlen, elmbyval, elmalign,
+								  &elem_values, &elem_nulls, &num_elems);
+
+				shortaData = (int16_t *) palloc0(sizeof(int16_t) * num_elems);
+				for (i = 0; i < num_elems; i++)
+					shortaData[i] = DatumGetInt16(elem_values[i]);
+
+				ret = gsSetRowFieldByShortArray(row, pindex, shortaData, num_elems);
+				if (!GS_SUCCEEDED(ret))
+					griddb_REPORT_ERROR(ERROR, ret, row);
+
+				pfree(shortaData);
+				pfree(elem_values);
+				pfree(elem_nulls);
+				break;
+			}
+
+		case GS_TYPE_INTEGER_ARRAY:
+			{
+				int32_t    *intaData;
+
+				array = DatumGetArrayTypeP(value);
+				elmtype = ARR_ELEMTYPE(array);
+
+				get_typlenbyvalalign(elmtype, &elmlen, &elmbyval, &elmalign);
+				deconstruct_array(array, elmtype, elmlen, elmbyval, elmalign,
+								  &elem_values, &elem_nulls, &num_elems);
+
+				intaData = (int32_t *) palloc0(sizeof(int32_t) * num_elems);
+				for (i = 0; i < num_elems; i++)
+					intaData[i] = DatumGetInt32(elem_values[i]);
+
+				ret = gsSetRowFieldByIntegerArray(row, pindex, intaData, num_elems);
+				if (!GS_SUCCEEDED(ret))
+					griddb_REPORT_ERROR(ERROR, ret, row);
+
+				pfree(intaData);
+				pfree(elem_values);
+				pfree(elem_nulls);
+				break;
+			}
+
+		case GS_TYPE_LONG_ARRAY:
+			{
+				int64_t    *longaData;
+
+				array = DatumGetArrayTypeP(value);
+				elmtype = ARR_ELEMTYPE(array);
+
+				get_typlenbyvalalign(elmtype, &elmlen, &elmbyval, &elmalign);
+				deconstruct_array(array, elmtype, elmlen, elmbyval, elmalign,
+								  &elem_values, &elem_nulls, &num_elems);
+
+				longaData = (int64_t *) palloc0(sizeof(int64_t) * num_elems);
+				for (i = 0; i < num_elems; i++)
+					longaData[i] = DatumGetInt64(elem_values[i]);
+
+				ret = gsSetRowFieldByLongArray(row, pindex, longaData, num_elems);
+				if (!GS_SUCCEEDED(ret))
+					griddb_REPORT_ERROR(ERROR, ret, row);
+
+				pfree(longaData);
+				pfree(elem_values);
+				pfree(elem_nulls);
+				break;
+			}
+
+		case GS_TYPE_FLOAT_ARRAY:
+			{
+				float	   *floataData;
+
+				array = DatumGetArrayTypeP(value);
+				elmtype = ARR_ELEMTYPE(array);
+
+				get_typlenbyvalalign(elmtype, &elmlen, &elmbyval, &elmalign);
+				deconstruct_array(array, elmtype, elmlen, elmbyval, elmalign,
+								  &elem_values, &elem_nulls, &num_elems);
+
+				floataData = (float *) palloc0(sizeof(float) * num_elems);
+				for (i = 0; i < num_elems; i++)
+					floataData[i] = DatumGetFloat4(elem_values[i]);
+
+				ret = gsSetRowFieldByFloatArray(row, pindex, floataData, num_elems);
+				if (!GS_SUCCEEDED(ret))
+					griddb_REPORT_ERROR(ERROR, ret, row);
+
+				pfree(floataData);
+				pfree(elem_values);
+				pfree(elem_nulls);
+				break;
+			}
+
+		case GS_TYPE_DOUBLE_ARRAY:
+			{
+				double	   *doubleaData;
+
+				array = DatumGetArrayTypeP(value);
+				elmtype = ARR_ELEMTYPE(array);
+
+				get_typlenbyvalalign(elmtype, &elmlen, &elmbyval, &elmalign);
+				deconstruct_array(array, elmtype, elmlen, elmbyval, elmalign,
+								  &elem_values, &elem_nulls, &num_elems);
+
+				doubleaData = (double *) palloc0(sizeof(double) * num_elems);
+				for (i = 0; i < num_elems; i++)
+					doubleaData[i] = DatumGetFloat8(elem_values[i]);
+
+				ret = gsSetRowFieldByDoubleArray(row, pindex, doubleaData, num_elems);
+				if (!GS_SUCCEEDED(ret))
+					griddb_REPORT_ERROR(ERROR, ret, row);
+
+				pfree(doubleaData);
+				pfree(elem_values);
+				pfree(elem_nulls);
+				break;
+			}
+
+		case GS_TYPE_TIMESTAMP_ARRAY:
+			{
+				GSTimestamp *tsaData;
+
+				array = DatumGetArrayTypeP(value);
+				elmtype = ARR_ELEMTYPE(array);
+
+				get_typlenbyvalalign(elmtype, &elmlen, &elmbyval, &elmalign);
+				deconstruct_array(array, elmtype, elmlen, elmbyval, elmalign,
+								  &elem_values, &elem_nulls, &num_elems);
+
+				tsaData = (GSTimestamp *) palloc0(sizeof(GSTimestamp) * num_elems);
+				for (i = 0; i < num_elems; i++)
+				{
+					Timestamp	timestamp = DatumGetTimestamp(elem_values[i]);
+
+					tsaData[i] = griddb_convert_pg2gs_timestamp(timestamp);
+				}
+
+				ret = gsSetRowFieldByTimestampArray(row, pindex, tsaData, num_elems);
+				if (!GS_SUCCEEDED(ret))
+					griddb_REPORT_ERROR(ERROR, ret, row);
+
+				pfree(tsaData);
+				pfree(elem_values);
+				pfree(elem_nulls);
+				break;
+			}
+
+		default:
+			/* Should not happen, we have just check this above */
+			elog(ERROR, "unsupported field type(GS) %d", gs_type);
+	}
+}
+
+/*
  * griddb_bind_for_putrow
  *		Generate new GSRow value which will be updated by gsPutRow.
  */
@@ -2198,427 +3205,22 @@ griddb_bind_for_putrow(GridDBFdwModifyState * fmstate,
 					   Relation rel, GridDBFdwFieldInfo * field_info)
 {
 	ListCell   *lc;
-	int			pindex = 0;
 
 	foreach(lc, fmstate->target_attrs)
 	{
 		int			attnum = lfirst_int(lc);
 		bool		isnull;
 		Datum		value;
-		GSResult	ret;
-		GSType		gs_type;
-		Oid			gs_type_oid;
-		Oid			pg_type;
-		ArrayType  *array;
-		Oid			elmtype;
-		int16		elmlen;
-		bool		elmbyval;
-		char		elmalign;
-		int			num_elems;
-		Datum	   *elem_values;
-		bool	   *elem_nulls;
-		Oid			outputFunctionId;
-		bool		typeVarLength;
-		int			i;
 
 		if (attnum < 0)
 			continue;
 
+		griddb_check_slot_type(slot, attnum, field_info);
+
 		value = slot_getattr(slot, attnum, &isnull);
 		Assert(isnull == false);
-		gs_type = field_info->column_types[attnum - 1];
-		gs_type_oid = griddb_pgtyp_from_gstyp(gs_type, NULL);
-		pg_type = slot->tts_tupleDescriptor->attrs[attnum - 1]->atttypid;
-		if (pg_type != gs_type_oid)
-			elog(ERROR, "Unexpected data type. pgtype is %d, but GridDB expects %d.",
-				 pg_type, gs_type_oid);
-		pindex = attnum - 1;
 
-		switch (gs_type)
-		{
-			case GS_TYPE_STRING:
-				{
-					char	   *textVal;
-					Oid			outputFunctionId;
-					bool		typeVarLength;
-
-					getTypeOutputInfo(TEXTOID, &outputFunctionId, &typeVarLength);
-					textVal = OidOutputFunctionCall(outputFunctionId, value);
-
-					ret = gsSetRowFieldByString(row, pindex, textVal);
-					if (!GS_SUCCEEDED(ret))
-						griddb_REPORT_ERROR(ERROR, ret, row);
-					break;
-				}
-
-			case GS_TYPE_GEOMETRY:
-				{
-					char	   *geomVal;
-					Oid			outputFunctionId;
-					bool		typeVarLength;
-
-					getTypeOutputInfo(TEXTOID, &outputFunctionId, &typeVarLength);
-					geomVal = OidOutputFunctionCall(outputFunctionId, value);
-
-					ret = gsSetRowFieldByGeometry(row, pindex, geomVal);
-					if (!GS_SUCCEEDED(ret))
-						griddb_REPORT_ERROR(ERROR, ret, row);
-					break;
-				}
-
-			case GS_TYPE_BOOL:
-				{
-					bool		boolVal = DatumGetBool(value);
-
-					ret = gsSetRowFieldByBool(row, pindex, boolVal);
-					if (!GS_SUCCEEDED(ret))
-						griddb_REPORT_ERROR(ERROR, ret, row);
-					break;
-				}
-
-			case GS_TYPE_BYTE:
-				{
-					char	   *textVal;
-					int8_t		byteVal;
-					Oid			outputFunctionId;
-					bool		typeVarLength;
-
-					getTypeOutputInfo(BPCHAROID, &outputFunctionId, &typeVarLength);
-					textVal = OidOutputFunctionCall(outputFunctionId, value);
-
-					byteVal = textVal[0];
-					ret = gsSetRowFieldByByte(row, pindex, byteVal);
-					if (!GS_SUCCEEDED(ret))
-						griddb_REPORT_ERROR(ERROR, ret, row);
-					break;
-				}
-
-			case GS_TYPE_SHORT:
-				{
-					int16		shortVal = DatumGetInt16(value);
-
-					ret = gsSetRowFieldByShort(row, pindex, shortVal);
-					if (!GS_SUCCEEDED(ret))
-						griddb_REPORT_ERROR(ERROR, ret, row);
-					break;
-				}
-
-			case GS_TYPE_INTEGER:
-				{
-					int32		intVal = DatumGetInt32(value);
-
-					ret = gsSetRowFieldByInteger(row, pindex, intVal);
-					if (!GS_SUCCEEDED(ret))
-						griddb_REPORT_ERROR(ERROR, ret, row);
-					break;
-				}
-
-			case GS_TYPE_LONG:
-				{
-					int64		longVal = DatumGetInt64(value);
-
-					ret = gsSetRowFieldByLong(row, pindex, longVal);
-					if (!GS_SUCCEEDED(ret))
-						griddb_REPORT_ERROR(ERROR, ret, row);
-					break;
-				}
-
-
-			case GS_TYPE_FLOAT:
-				{
-					float		floatVal = DatumGetFloat4(value);
-
-					ret = gsSetRowFieldByFloat(row, pindex, floatVal);
-					if (!GS_SUCCEEDED(ret))
-						griddb_REPORT_ERROR(ERROR, ret, row);
-					break;
-				}
-
-			case GS_TYPE_DOUBLE:
-				{
-					double		doubleVal = DatumGetFloat8(value);
-
-					ret = gsSetRowFieldByDouble(row, pindex, doubleVal);
-					if (!GS_SUCCEEDED(ret))
-						griddb_REPORT_ERROR(ERROR, ret, row);
-					break;
-				}
-
-			case GS_TYPE_TIMESTAMP:
-				{
-					Timestamp	timestamp = DatumGetTimestamp(value);
-					GSTimestamp timestampVal = griddb_convert_pg2gs_timestamp(timestamp);
-
-					ret = gsSetRowFieldByTimestamp(row, pindex, timestampVal);
-					if (!GS_SUCCEEDED(ret))
-						griddb_REPORT_ERROR(ERROR, ret, row);
-					break;
-				}
-
-			case GS_TYPE_BLOB:
-				{
-					GSBlob		blobVal;
-					char	   *result = DatumGetPointer(value);
-
-					if (VARATT_IS_1B(result))
-					{
-						blobVal.size = VARSIZE_1B(result) - VARHDRSZ_SHORT;
-						blobVal.data = (GSBlob *) VARDATA_1B(result);
-					}
-					else
-					{
-						blobVal.size = VARSIZE_4B(result) - VARHDRSZ;
-						blobVal.data = (GSBlob *) VARDATA_4B(result);
-					}
-
-					ret = gsSetRowFieldByBlob(row, pindex, &blobVal);
-					if (!GS_SUCCEEDED(ret))
-						griddb_REPORT_ERROR(ERROR, ret, row);
-					break;
-				}
-
-			case GS_TYPE_STRING_ARRAY:
-				{
-					const GSChar **stringaData;
-
-					array = DatumGetArrayTypeP(value);
-					elmtype = ARR_ELEMTYPE(array);
-
-					get_typlenbyvalalign(elmtype, &elmlen, &elmbyval, &elmalign);
-					deconstruct_array(array, elmtype, elmlen, elmbyval, elmalign,
-									  &elem_values, &elem_nulls, &num_elems);
-					getTypeOutputInfo(TEXTOID, &outputFunctionId, &typeVarLength);
-
-					stringaData = (const GSChar **) palloc0(sizeof(GSChar *) * num_elems);
-					for (i = 0; i < num_elems; i++)
-					{
-						Assert(!elem_nulls[i]);
-						stringaData[i] = OidOutputFunctionCall(outputFunctionId, elem_values[i]);
-					}
-
-					ret = gsSetRowFieldByStringArray(row, pindex, stringaData, num_elems);
-					if (!GS_SUCCEEDED(ret))
-						griddb_REPORT_ERROR(ERROR, ret, row);
-
-					pfree(stringaData);
-					pfree(elem_values);
-					pfree(elem_nulls);
-					break;
-				}
-
-			case GS_TYPE_BOOL_ARRAY:
-				{
-					GSBool	   *boolaData;
-
-					array = DatumGetArrayTypeP(value);
-					elmtype = ARR_ELEMTYPE(array);
-
-					get_typlenbyvalalign(elmtype, &elmlen, &elmbyval, &elmalign);
-					deconstruct_array(array, elmtype, elmlen, elmbyval, elmalign,
-									  &elem_values, &elem_nulls, &num_elems);
-
-					boolaData = (GSBool *) palloc0(sizeof(GSBool) * num_elems);
-					for (i = 0; i < num_elems; i++)
-						boolaData[i] = DatumGetBool(elem_values[i]);
-
-					ret = gsSetRowFieldByBoolArray(row, pindex, boolaData, num_elems);
-					if (!GS_SUCCEEDED(ret))
-						griddb_REPORT_ERROR(ERROR, ret, row);
-
-					pfree(boolaData);
-					pfree(elem_values);
-					pfree(elem_nulls);
-					break;
-				}
-
-			case GS_TYPE_BYTE_ARRAY:
-				{
-					int8_t	   *byteaData;
-
-					array = DatumGetArrayTypeP(value);
-					elmtype = ARR_ELEMTYPE(array);
-
-					get_typlenbyvalalign(elmtype, &elmlen, &elmbyval, &elmalign);
-					deconstruct_array(array, elmtype, elmlen, elmbyval, elmalign,
-									  &elem_values, &elem_nulls, &num_elems);
-					getTypeOutputInfo(BPCHAROID, &outputFunctionId, &typeVarLength);
-
-					byteaData = (int8_t *) palloc0(sizeof(int8_t) * num_elems);
-					for (i = 0; i < num_elems; i++)
-					{
-						char	   *textVal = OidOutputFunctionCall(outputFunctionId, elem_values[i]);
-
-						byteaData[i] = textVal[0];
-					}
-
-					ret = gsSetRowFieldByByteArray(row, pindex, byteaData, num_elems);
-					if (!GS_SUCCEEDED(ret))
-						griddb_REPORT_ERROR(ERROR, ret, row);
-
-					pfree(byteaData);
-					pfree(elem_values);
-					pfree(elem_nulls);
-					break;
-				}
-
-			case GS_TYPE_SHORT_ARRAY:
-				{
-					int16_t    *shortaData;
-
-					array = DatumGetArrayTypeP(value);
-					elmtype = ARR_ELEMTYPE(array);
-
-					get_typlenbyvalalign(elmtype, &elmlen, &elmbyval, &elmalign);
-					deconstruct_array(array, elmtype, elmlen, elmbyval, elmalign,
-									  &elem_values, &elem_nulls, &num_elems);
-
-					shortaData = (int16_t *) palloc0(sizeof(int16_t) * num_elems);
-					for (i = 0; i < num_elems; i++)
-						shortaData[i] = DatumGetInt16(elem_values[i]);
-
-					ret = gsSetRowFieldByShortArray(row, pindex, shortaData, num_elems);
-					if (!GS_SUCCEEDED(ret))
-						griddb_REPORT_ERROR(ERROR, ret, row);
-
-					pfree(shortaData);
-					pfree(elem_values);
-					pfree(elem_nulls);
-					break;
-				}
-
-			case GS_TYPE_INTEGER_ARRAY:
-				{
-					int32_t    *intaData;
-
-					array = DatumGetArrayTypeP(value);
-					elmtype = ARR_ELEMTYPE(array);
-
-					get_typlenbyvalalign(elmtype, &elmlen, &elmbyval, &elmalign);
-					deconstruct_array(array, elmtype, elmlen, elmbyval, elmalign,
-									  &elem_values, &elem_nulls, &num_elems);
-
-					intaData = (int32_t *) palloc0(sizeof(int32_t) * num_elems);
-					for (i = 0; i < num_elems; i++)
-						intaData[i] = DatumGetInt32(elem_values[i]);
-
-					ret = gsSetRowFieldByIntegerArray(row, pindex, intaData, num_elems);
-					if (!GS_SUCCEEDED(ret))
-						griddb_REPORT_ERROR(ERROR, ret, row);
-
-					pfree(intaData);
-					pfree(elem_values);
-					pfree(elem_nulls);
-					break;
-				}
-
-			case GS_TYPE_LONG_ARRAY:
-				{
-					int64_t    *longaData = (int64_t *) VARDATA(value);
-
-					array = DatumGetArrayTypeP(value);
-					elmtype = ARR_ELEMTYPE(array);
-
-					get_typlenbyvalalign(elmtype, &elmlen, &elmbyval, &elmalign);
-					deconstruct_array(array, elmtype, elmlen, elmbyval, elmalign,
-									  &elem_values, &elem_nulls, &num_elems);
-
-					longaData = (int64_t *) palloc0(sizeof(int64_t) * num_elems);
-					for (i = 0; i < num_elems; i++)
-						longaData[i] = DatumGetInt64(elem_values[i]);
-
-					ret = gsSetRowFieldByLongArray(row, pindex, longaData, num_elems);
-					if (!GS_SUCCEEDED(ret))
-						griddb_REPORT_ERROR(ERROR, ret, row);
-
-					pfree(longaData);
-					pfree(elem_values);
-					pfree(elem_nulls);
-					break;
-				}
-
-			case GS_TYPE_FLOAT_ARRAY:
-				{
-					float	   *floataData;
-
-					array = DatumGetArrayTypeP(value);
-					elmtype = ARR_ELEMTYPE(array);
-
-					get_typlenbyvalalign(elmtype, &elmlen, &elmbyval, &elmalign);
-					deconstruct_array(array, elmtype, elmlen, elmbyval, elmalign,
-									  &elem_values, &elem_nulls, &num_elems);
-
-					floataData = (float *) palloc0(sizeof(float) * num_elems);
-					for (i = 0; i < num_elems; i++)
-						floataData[i] = DatumGetFloat4(elem_values[i]);
-
-					ret = gsSetRowFieldByFloatArray(row, pindex, floataData, num_elems);
-					if (!GS_SUCCEEDED(ret))
-						griddb_REPORT_ERROR(ERROR, ret, row);
-
-					pfree(floataData);
-					pfree(elem_values);
-					pfree(elem_nulls);
-					break;
-				}
-
-			case GS_TYPE_DOUBLE_ARRAY:
-				{
-					double	   *doubleaData;
-
-					array = DatumGetArrayTypeP(value);
-					elmtype = ARR_ELEMTYPE(array);
-
-					get_typlenbyvalalign(elmtype, &elmlen, &elmbyval, &elmalign);
-					deconstruct_array(array, elmtype, elmlen, elmbyval, elmalign,
-									  &elem_values, &elem_nulls, &num_elems);
-
-					doubleaData = (double *) palloc0(sizeof(double) * num_elems);
-					for (i = 0; i < num_elems; i++)
-						doubleaData[i] = DatumGetFloat8(elem_values[i]);
-
-					ret = gsSetRowFieldByDoubleArray(row, pindex, doubleaData, num_elems);
-					if (!GS_SUCCEEDED(ret))
-						griddb_REPORT_ERROR(ERROR, ret, row);
-
-					pfree(doubleaData);
-					pfree(elem_values);
-					pfree(elem_nulls);
-					break;
-				}
-
-			case GS_TYPE_TIMESTAMP_ARRAY:
-				{
-					GSTimestamp *tsaData;
-
-					array = DatumGetArrayTypeP(value);
-					elmtype = ARR_ELEMTYPE(array);
-
-					get_typlenbyvalalign(elmtype, &elmlen, &elmbyval, &elmalign);
-					deconstruct_array(array, elmtype, elmlen, elmbyval, elmalign,
-									  &elem_values, &elem_nulls, &num_elems);
-
-					tsaData = (GSTimestamp *) palloc0(sizeof(GSTimestamp) * num_elems);
-					for (i = 0; i < num_elems; i++)
-					{
-						Timestamp	timestamp = DatumGetTimestamp(elem_values[i]);
-
-						tsaData[i] = griddb_convert_pg2gs_timestamp(timestamp);
-					}
-
-					ret = gsSetRowFieldByTimestampArray(row, pindex, tsaData, num_elems);
-					if (!GS_SUCCEEDED(ret))
-						griddb_REPORT_ERROR(ERROR, ret, row);
-
-					pfree(tsaData);
-					pfree(elem_values);
-					pfree(elem_nulls);
-					break;
-				}
-
-			default:
-				/* Should not happen, we have just check this above */
-				elog(ERROR, "unsupported field type(GS) %d", gs_type);
-		}
+		griddb_set_row_field(row, value, field_info->column_types[attnum - 1], attnum - 1);
 	}
 }
 
@@ -2632,7 +3234,6 @@ static void
 griddb_add_column_name_and_type(StringInfoData *buf, GSContainerInfo * info)
 {
 	size_t		iCol;
-	bool		first_item = true;
 
 	/* Add column information */
 	for (iCol = 0; iCol < info->columnCount; iCol++)
@@ -2642,15 +3243,17 @@ griddb_add_column_name_and_type(StringInfoData *buf, GSContainerInfo * info)
 
 		griddb_pgtyp_from_gstyp(info->columnInfoList[iCol].type, &type_name);
 
-		if (first_item)
-			first_item = false;
-		else
+		if (iCol != 0)
 			appendStringInfoString(buf, ",");
 
 		/* Print column name and type */
-		appendStringInfo(buf, "  %s %s",
+		appendStringInfo(buf, " %s %s",
 						 quote_identifier(attname),
 						 type_name);
+
+		/* Add option if the column is rowkey. */
+		if (iCol == 0 && info->rowKeyAssigned)
+			appendStringInfo(buf, " OPTIONS (%s 'true')", OPTION_ROWKEY);
 	}
 }
 

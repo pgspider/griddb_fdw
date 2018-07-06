@@ -5,11 +5,11 @@ CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS(username 'admin', passw
 IMPORT FOREIGN SCHEMA griddb_schema FROM SERVER griddb_svr INTO public;
 -- GridDB containers must be created for this test on GridDB server
 /*
-CREATE FOREIGN TABLE department (department_id int, department_name text)
-CREATE FOREIGN TABLE employee (emp_id int, emp_name text, emp_dept_id int)
-CREATE FOREIGN TABLE empdata (emp_id int, emp_dat blob)
-CREATE FOREIGN TABLE numbers (a int, b text)
-CREATE FOREIGN TABLE shorty (id int, c text)
+CREATE TABLE department (department_id integer primary key, department_name text)
+CREATE TABLE employee (emp_id integer primary key, emp_name text, emp_dept_id integer)
+CREATE TABLE empdata (emp_id integer primary key, emp_dat blob)
+CREATE TABLE numbers (a integer primary key, b text)
+CREATE TABLE shorty (id integer primary key, c text)
 */
 
 DELETE FROM department;

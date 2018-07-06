@@ -1,7 +1,7 @@
 /*
  * GridDB Foreign Data Wrapper
  *
- * Portions Copyright (c) 2018, TOSHIBA COOPERATION
+ * Portions Copyright (c) 2018, TOSHIBA CORPORATION
  *
  * IDENTIFICATION
  *		  connection.c
@@ -14,6 +14,7 @@
 #include "access/xact.h"
 #include "foreign/foreign.h"
 #include "utils/hsearch.h"
+#include "utils/lsyscache.h"
 #include "utils/memutils.h"
 
 /*
@@ -183,15 +184,14 @@ griddb_connect_server(char *address, char *port, char *cluster, char *user,
 	return store;
 }
 
-
-
 /*
- * Memorize container information associating with connection.
+ * Get a GSContainer which can be used to execute queries on the remote GridDB
+ * It is memorized by associating with connection.
  * When transaction is ended, each container has to be commited or
  * aborted by griddb_end_transaction().
  */
-bool
-griddb_add_cont_list(UserMapping *user, Oid id, GSContainer * cont)
+GSContainer *
+griddb_get_container(UserMapping *user, Oid relid, GSGridStore * store)
 {
 	bool		found;
 	ConnCacheEntry *conn_entry;
@@ -218,15 +218,25 @@ griddb_add_cont_list(UserMapping *user, Oid id, GSContainer * cont)
 									  HASH_ELEM | HASH_BLOBS | HASH_CONTEXT);
 	}
 
-	cont_key = id;
+	cont_key = relid;
 
 	/* Search container from hash and create new entry if not exists. */
 	cont_entry = (ContCacheEntry *) hash_search(conn_entry->cont_hash, &cont_key, HASH_ENTER, &found);
 	if (!found)
 	{
 		GSResult	ret;
+		GSContainer *cont;
+		char	   *tablename = get_rel_name(relid);
+
+		ret = gsGetContainerGeneral(store, tablename, &cont);
+		if (!GS_SUCCEEDED(ret))
+			griddb_REPORT_ERROR(ERROR, ret, store);
+
+		if (cont == NULL)
+			elog(ERROR, "No such container: %s", tablename);
 
 		cont_entry->cont = cont;
+
 		ret = gsSetAutoCommit(cont, GS_FALSE);
 		if (!GS_SUCCEEDED(ret))
 			griddb_REPORT_ERROR(ERROR, ret, cont);
@@ -236,8 +246,7 @@ griddb_add_cont_list(UserMapping *user, Oid id, GSContainer * cont)
 		 * accessed.
 		 */
 	}
-	Assert(cont_entry->cont == cont);
-	return found;
+	return cont_entry->cont;
 }
 
 /*

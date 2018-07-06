@@ -1,7 +1,7 @@
 /*
  * GridDB Foreign Data Wrapper
  *
- * Portions Copyright (c) 2018, TOSHIBA COOPERATION
+ * Portions Copyright (c) 2018, TOSHIBA CORPORATION
  *
  * IDENTIFICATION
  *		  option.c
@@ -37,18 +37,19 @@ typedef struct GridDBFdwOption
 static GridDBFdwOption griddb_options[] =
 {
 	/* Connection options */
-	{"host", ForeignServerRelationId},
-	{"port", ForeignServerRelationId},
-	{"clustername", ForeignServerRelationId},
-	{"username", UserMappingRelationId},
-	{"password", UserMappingRelationId},
-	{"table_name", ForeignTableRelationId},
+	{OPTION_HOST, ForeignServerRelationId},
+	{OPTION_PORT, ForeignServerRelationId},
+	{OPTION_CLUSTER, ForeignServerRelationId},
+	{OPTION_USER, UserMappingRelationId},
+	{OPTION_PWD, UserMappingRelationId},
+	{OPTION_TABLE, ForeignTableRelationId},
+	{OPTION_ROWKEY, AttributeRelationId},
 	/* updatable is available on both server and table */
-	{"updatable", ForeignServerRelationId},
-	{"updatable", ForeignTableRelationId},
+	{OPTION_UPDATABLE, ForeignServerRelationId},
+	{OPTION_UPDATABLE, ForeignTableRelationId},
 	/* cost factors */
-	{"fdw_startup_cost", ForeignServerRelationId},
-	{"fdw_tuple_cost", ForeignServerRelationId},
+	{OPTION_STARTUP_COST, ForeignServerRelationId},
+	{OPTION_TUPLE_COST, ForeignServerRelationId},
 	/* Sentinel */
 	{NULL, InvalidOid}
 };
@@ -60,7 +61,7 @@ PG_FUNCTION_INFO_V1(griddb_fdw_validator);
 
 /*
  * Validate the generic options given to a FOREIGN DATA WRAPPER, SERVER,
- * USER MAPPING or FOREIGN TABLE that uses file_fdw.
+ * USER MAPPING or FOREIGN TABLE that uses griddb_fdw.
  *
  * Raise an ERROR if the option or its value is considered invalid.
  */
@@ -72,7 +73,7 @@ griddb_fdw_validator(PG_FUNCTION_ARGS)
 	ListCell   *cell;
 
 	/*
-	 * Check that only options supported by mysql_fdw, and allowed for the
+	 * Check that only options supported by griddb_fdw, and allowed for the
 	 * current object type, are given.
 	 */
 	foreach(cell, options_list)
@@ -172,28 +173,28 @@ griddb_get_options(Oid foreignoid)
 	{
 		DefElem    *def = (DefElem *) lfirst(lc);
 
-		if (strcmp(def->defname, "host") == 0)
+		if (strcmp(def->defname, OPTION_HOST) == 0)
 			opt->svr_address = defGetString(def);
 
-		if (strcmp(def->defname, "port") == 0)
+		if (strcmp(def->defname, OPTION_PORT) == 0)
 			opt->svr_port = defGetString(def);
 
-		if (strcmp(def->defname, "username") == 0)
+		if (strcmp(def->defname, OPTION_USER) == 0)
 			opt->svr_username = defGetString(def);
 
-		if (strcmp(def->defname, "password") == 0)
+		if (strcmp(def->defname, OPTION_PWD) == 0)
 			opt->svr_password = defGetString(def);
 
-		if (strcmp(def->defname, "clustername") == 0)
+		if (strcmp(def->defname, OPTION_CLUSTER) == 0)
 			opt->svr_clustername = defGetString(def);
 
-		if (strcmp(def->defname, "use_remote_estimate") == 0)
+		if (strcmp(def->defname, OPTION_REMOTE_ESTIMATE) == 0)
 			opt->use_remote_estimate = defGetBoolean(def);
 
-		if (strcmp(def->defname, "fdw_startup_cost") == 0)
+		if (strcmp(def->defname, OPTION_STARTUP_COST) == 0)
 			opt->use_remote_estimate = strtod(defGetString(def), NULL);
 
-		if (strcmp(def->defname, "fdw_tuple_cost") == 0)
+		if (strcmp(def->defname, OPTION_TUPLE_COST) == 0)
 			opt->use_remote_estimate = strtod(defGetString(def), NULL);
 
 	}

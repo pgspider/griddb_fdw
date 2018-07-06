@@ -1,7 +1,7 @@
 /*
  * GridDB Foreign Data Wrapper
  *
- * Portions Copyright (c) 2018, TOSHIBA COOPERATION
+ * Portions Copyright (c) 2018, TOSHIBA CORPORATION
  *
  * IDENTIFICATION
  *		  deparse.c
@@ -124,7 +124,7 @@ griddb_deparse_relation(StringInfo buf, Relation rel)
 	{
 		DefElem    *def = (DefElem *) lfirst(lc);
 
-		if (strcmp(def->defname, "table_name") == 0)
+		if (strcmp(def->defname, OPTION_TABLE) == 0)
 			relname = defGetString(def);
 	}
 
