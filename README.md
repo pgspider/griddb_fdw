@@ -21,7 +21,7 @@ $ make install
 </pre>
 
 
-    If you want to build griddb_fdw in a source tree of PostgreSQL, use
+If you want to build griddb_fdw in a source tree of PostgreSQL, use
 
 
 <pre>
@@ -29,7 +29,6 @@ $ make NO_PGXS=1
 </pre>
 
 ## 2. Usage
---------
 ### load extension
 ```
 CREATE EXTENSION griddb_fdw;
@@ -71,17 +70,14 @@ The container must have rowkey on [GridDB][1] in order to execute update and del
 
 
 ## 3. Features
------------
 - Supprt SELECT and INSERT
 - Supprt UPDATE and DELETE
 - WHERE clauses are pushdowned
 
 ## 4. Limitations
---------------
 Nothing.
 
 ## 5. License
-----------
 Copyright (c) 2017-2018, TOSHIBA Corporation  
 Copyright (c) 2011 - 2016, EnterpriseDB Corporation
 
