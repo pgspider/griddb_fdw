@@ -228,7 +228,7 @@ griddb_deparse_target_list(StringInfo buf,
 	*retrieved_attrs = NIL;
 	for (i = 1; i <= tupdesc->natts; i++)
 	{
-		Form_pg_attribute attr = tupdesc->attrs[i - 1];
+		Form_pg_attribute attr = TupleDescAttr(tupdesc, i - 1);
 
 		/* Ignore dropped attributes. */
 		if (attr->attisdropped)
@@ -315,7 +315,11 @@ griddb_deparse_column_ref(StringInfo buf, int varno, int varattno, PlannerInfo *
 	 * option, use attribute name.
 	 */
 	if (colname == NULL)
-		colname = get_relid_attribute_name(rte->relid, varattno);
+		colname = get_attname(rte->relid, varattno 
+#if (PG_VERSION_NUM >= 110000)
+							  ,false 
+#endif
+			);
 
 	appendStringInfoString(buf, quote_identifier(colname));
 }
@@ -773,7 +777,7 @@ griddb_deparse_scalar_array_op_expr(ScalarArrayOpExpr *node, deparse_expr_cxt *c
 		/* Remove '\"' and process the next character. */
 		if (ch == '\"' && !isEscape)
 		{
-			inString = ~inString;
+			inString = !inString;
 			continue;
 		}
 		/* Add escape character '\'' for '\'' */

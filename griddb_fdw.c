@@ -800,7 +800,7 @@ griddbIterateForeignScan(ForeignScanState *node)
 					tupdesc = RelationGetDescr(rel);
 				else
 					tupdesc = fsstate->tupdesc;
-				pgtype = tupdesc->attrs[attnum - 1]->atttypid;
+				pgtype = TupleDescAttr(tupdesc, attnum - 1)->atttypid;
 				tupleSlot->tts_values[attnum - 1] =
 					griddb_make_datum_from_row(fsstate->row, attnum - 1,
 											   column_types[attnum - 1],
@@ -890,7 +890,7 @@ griddbAddForeignUpdateTargets(Query *parsetree,
 	 * What we need is the rowkey which is the first column
 	 */
 	Form_pg_attribute attr =
-	RelationGetDescr(target_relation)->attrs[ROWKEY_ATTNO - 1];
+	TupleDescAttr(RelationGetDescr(target_relation), ROWKEY_ATTNO - 1);
 
 	/* Make a Var representing the desired value */
 	var = makeVar(parsetree->resultRelation,
@@ -944,7 +944,7 @@ griddbPlanForeignModify(PlannerInfo *root,
 
 		for (attnum = 1; attnum <= tupdesc->natts; attnum++)
 		{
-			Form_pg_attribute attr = tupdesc->attrs[attnum - 1];
+			Form_pg_attribute attr = TupleDescAttr(tupdesc, attnum - 1);
 
 			if (!attr->attisdropped)
 				targetAttrs = lappend_int(targetAttrs, attnum);
@@ -2310,7 +2310,7 @@ griddb_check_slot_type(TupleTableSlot *slot, int attnum, GridDBFdwFieldInfo * fi
 
 	gs_type = field_info->column_types[attnum - 1];
 	gs_type_oid = griddb_pgtyp_from_gstyp(gs_type, NULL);
-	pg_type = slot->tts_tupleDescriptor->attrs[attnum - 1]->atttypid;
+	pg_type = TupleDescAttr(slot->tts_tupleDescriptor, attnum - 1)->atttypid;
 	if (pg_type != gs_type_oid)
 		elog(ERROR, "Unexpected data type. pgtype is %d, but GridDB expects %d.",
 			 pg_type, gs_type_oid);
@@ -2320,8 +2320,11 @@ static void
 griddb_find_junk_attno(GridDBFdwModifyState * fmstate, List *targetlist)
 {
 	Oid			relId = RelationGetRelid(fmstate->rel);
-	char	   *attName = get_relid_attribute_name(relId, ROWKEY_ATTNO);
-
+	char	   *attName = get_attname(relId, ROWKEY_ATTNO
+#if (PG_VERSION_NUM >= 110000)
+				, false
+#endif
+				);
 	fmstate->junk_att_no = ExecFindJunkAttributeInTlist(targetlist, attName);
 }
 
@@ -2402,7 +2405,7 @@ griddb_modify_target_insert(GridDBFdwModifyState * fmstate, TupleTableSlot *slot
 	/* Firstly, store a value of rowkey column which is the 1st column. */
 	value = ExecGetJunkAttribute(planSlot, fmstate->junk_att_no, &isnull);
 	Assert(isnull == false);
-	attr = planSlot->tts_tupleDescriptor->attrs[fmstate->junk_att_no - 1];
+	attr = TupleDescAttr(planSlot->tts_tupleDescriptor, fmstate->junk_att_no - 1);
 	target_values[pindex] = datumCopy(value, attr->attbyval, attr->attlen);
 	pindex++;
 
@@ -2418,7 +2421,7 @@ griddb_modify_target_insert(GridDBFdwModifyState * fmstate, TupleTableSlot *slot
 
 		value = slot_getattr(slot, attnum, &isnull);
 		Assert(isnull == false);
-		attr = slot->tts_tupleDescriptor->attrs[attnum - 1];
+		attr = TupleDescAttr(slot->tts_tupleDescriptor, attnum - 1);
 		target_values[pindex] = datumCopy(value, attr->attbyval, attr->attlen);
 		pindex++;
 	}
@@ -2691,7 +2694,7 @@ griddb_modify_targets_apply(GridDBFdwModifyState * fmstate, GridDBFdwFieldInfo *
 	uint64		iStart = 0;
 	GSRow	   *row;
 	TupleDesc	tupdesc = RelationGetDescr(fmstate->rel);
-	Oid			pgtype = tupdesc->attrs[ROWKEY_ATTNO - 1]->atttypid;
+	Oid			pgtype = TupleDescAttr(tupdesc, ROWKEY_ATTNO - 1)->atttypid;
 	int			(*comparator) (const void *, const void *) = griddb_get_comparator(field_info->column_types[ROWKEY_ATTNO - 1]);
 
 	if (fmstate->num_target == 0)
