@@ -102,16 +102,16 @@ typedef struct GridDBFdwFieldInfo
 	size_t		column_count;	/* column count */
 	GSChar	  **column_names;	/* column name */
 	GSType	   *column_types;	/* column type */
-}	GridDBFdwFieldInfo;
+}			GridDBFdwFieldInfo;
 
 /* This structure is used for passing data from the scan to the modify */
 typedef struct GridDBFdwScanModifyRelay
 {
 	GSRowSet   *row_set;		/* result set */
 	GSRow	   *row;			/* row for the update */
-	GridDBFdwFieldInfo field_info;		/* column information */
+	GridDBFdwFieldInfo field_info;	/* column information */
 	Datum		rowkey_val;		/* rowkey the cursor is pointing */
-}	GridDBFdwScanModifyRelay;
+}			GridDBFdwScanModifyRelay;
 
 /*
  * Execution state of a foreign scan using griddb_fdw.
@@ -131,7 +131,7 @@ typedef struct GridDBFdwScanState
 	GSChar	   *cont_name;		/* container name */
 	GSContainer *cont;			/* container to be selected */
 	GSBool		for_update;		/* GS_TRUE if UPDATE/DELETE target */
-	GridDBFdwFieldInfo field_info;		/* field information */
+	GridDBFdwFieldInfo field_info;	/* field information */
 	GSRowSet   *row_set;		/* result set */
 	GSRow	   *row;			/* row for the update */
 
@@ -139,7 +139,7 @@ typedef struct GridDBFdwScanState
 	int32_t		num_tuples;		/* # of tuples in array */
 	unsigned int cursor;		/* result set cursor pointing current index */
 
-}	GridDBFdwScanState;
+}			GridDBFdwScanState;
 
 /*
  * Execution state of a foreign insert/update/delete operation.
@@ -162,7 +162,7 @@ typedef struct GridDBFdwModifyState
 	uint64_t	num_target;		/* # of stored modified row */
 	uint64_t	max_target;		/* # of storable modified row */
 	CmdType		operation;		/* INSERT, UPDATE, or DELETE */
-}	GridDBFdwModifyState;
+}			GridDBFdwModifyState;
 
 /*
  * In griddb_fdw, the data modification (UPDATE/DELETE) is done via rowset
@@ -292,9 +292,9 @@ static void griddb_bind_for_putrow(GridDBFdwModifyState * fmstate,
 					   GridDBFdwFieldInfo * field_info);
 static void griddb_add_column_name_and_type(StringInfoData *buf,
 								GSContainerInfo * info);
-static GSChar **grifddb_name_list_dup(const GSChar * const * src,
-					  size_t cont_size);
-static void grifddb_name_list_free(GSChar ** p, size_t cont_size);
+static GSChar * *grifddb_name_list_dup(const GSChar * const *src,
+									   size_t cont_size);
+static void grifddb_name_list_free(GSChar * *p, size_t cont_size);
 static void griddb_execute_commands(List *cmd_list);
 
 
@@ -528,14 +528,14 @@ griddbGetForeignPaths(PlannerInfo *root,
 	 * to estimate cost and size of this path.
 	 */
 	path = create_foreignscan_path(root, baserel,
-								   NULL,		/* default pathtarget */
+								   NULL,	/* default pathtarget */
 								   fpinfo->rows,
 								   fpinfo->startup_cost,
 								   fpinfo->total_cost,
 								   NIL, /* no pathkeys */
-								   NULL,		/* no outer rel either */
-								   NULL,		/* no extra plan */
-								   NIL);		/* no fdw_private list */
+								   NULL,	/* no outer rel either */
+								   NULL,	/* no extra plan */
+								   NIL);	/* no fdw_private list */
 	add_path(baserel, (Path *) path);
 
 	/*
@@ -717,7 +717,7 @@ griddbBeginForeignScan(ForeignScanState *node, int eflags)
 	 * establish new connection if necessary.
 	 */
 	fsstate->store = griddb_get_connection(user, false,
-							  RelationGetRelid(node->ss.ss_currentRelation));
+										   RelationGetRelid(node->ss.ss_currentRelation));
 
 	fsstate->cont_name = get_rel_name(rte->relid);
 	fsstate->cont = griddb_get_container(user, rte->relid, fsstate->store);
@@ -725,7 +725,7 @@ griddbBeginForeignScan(ForeignScanState *node, int eflags)
 	fsstate->query = strVal(list_nth(fsplan->fdw_private,
 									 FdwScanPrivateSelectSql));
 	fsstate->retrieved_attrs = (List *) list_nth(fsplan->fdw_private,
-											   FdwScanPrivateRetrievedAttrs);
+												 FdwScanPrivateRetrievedAttrs);
 	for_update = intVal(list_nth(fsplan->fdw_private,
 								 FdwScanPrivateForUpdate));
 	fsstate->for_update = for_update ? GS_TRUE : GS_FALSE;
@@ -967,7 +967,7 @@ griddbPlanForeignModify(PlannerInfo *root,
 			/* bit numbers are offset by FirstLowInvalidHeapAttributeNumber */
 			AttrNumber	attno = col + FirstLowInvalidHeapAttributeNumber;
 
-			if (attno <= InvalidAttrNumber)		/* shouldn't happen */
+			if (attno <= InvalidAttrNumber) /* shouldn't happen */
 				elog(ERROR, "system-column update is not supported");
 
 			if (attno == ROWKEY_ATTNO)
@@ -1420,7 +1420,7 @@ griddbImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 	for (part_idx = 0; part_idx < partition_count; part_idx++)
 	{
 		int			i;
-		const GSChar *const * name_list = NULL;
+		const		GSChar *const *name_list = NULL;
 		GSChar	  **cont_name_list;
 		size_t		cont_size;
 
@@ -1442,7 +1442,7 @@ griddbImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 		{
 			GSContainerInfo info = GS_CONTAINER_INFO_INITIALIZER;
 			GSBool		exists;
-			const GSChar *cont_name = cont_name_list[i];
+			const		GSChar *cont_name = cont_name_list[i];
 
 			/* Get schema of container */
 			ret = gsGetContainerInfo(store, cont_name, &info, &exists);
@@ -1678,7 +1678,7 @@ griddb_make_column_info(GSContainerInfo * cont_info,
 	field_info->column_count = cont_info->columnCount;
 
 	field_info->column_names =
-		(GSChar **) palloc0(sizeof(GSChar *) * cont_info->columnCount);
+		(GSChar * *) palloc0(sizeof(GSChar *) * cont_info->columnCount);
 	for (i = 0; i < cont_info->columnCount; i++)
 		field_info->column_names[i] =
 			pstrdup(cont_info->columnInfoList[i].name);
@@ -1940,7 +1940,7 @@ griddb_make_datum_from_row(GSRow * row, int32_t attid, GSType gs_type,
 	{
 		case GS_TYPE_STRING:
 			{
-				const GSChar *strVal;
+				const		GSChar *strVal;
 
 				griddb_get_datatype_for_convertion(pg_type, &typeinput, &typemod);
 				ret = gsGetRowFieldAsString(row, attid, &strVal);
@@ -1955,7 +1955,7 @@ griddb_make_datum_from_row(GSRow * row, int32_t attid, GSType gs_type,
 
 		case GS_TYPE_GEOMETRY:
 			{
-				const GSChar *strVal;
+				const		GSChar *strVal;
 
 				griddb_get_datatype_for_convertion(pg_type, &typeinput, &typemod);
 				ret = gsGetRowFieldAsGeometry(row, attid, &strVal);
@@ -2081,7 +2081,7 @@ griddb_make_datum_from_row(GSRow * row, int32_t attid, GSType gs_type,
 
 		case GS_TYPE_STRING_ARRAY:
 			{
-				const GSChar *const * strVal;
+				const		GSChar *const *strVal;
 
 				griddb_get_datatype_for_convertion(TEXTOID, &typeinput, &typemod);
 				ret = gsGetRowFieldAsStringArray(row, attid, &strVal, &size);
@@ -2093,8 +2093,8 @@ griddb_make_datum_from_row(GSRow * row, int32_t attid, GSType gs_type,
 				{
 					value_datum = CStringGetDatum(strVal[i]);
 					value_datums[i] = OidFunctionCall3(typeinput, value_datum,
-												ObjectIdGetDatum(InvalidOid),
-													 Int32GetDatum(typemod));
+													   ObjectIdGetDatum(InvalidOid),
+													   Int32GetDatum(typemod));
 				}
 				arry = construct_array(value_datums, size, TEXTOID,
 									   -1, false, 'i');
@@ -2104,7 +2104,7 @@ griddb_make_datum_from_row(GSRow * row, int32_t attid, GSType gs_type,
 
 		case GS_TYPE_BOOL_ARRAY:
 			{
-				const GSBool *boolVal;
+				const		GSBool *boolVal;
 
 				ret = gsGetRowFieldAsBoolArray(row, attid, &boolVal, &size);
 				if (!GS_SUCCEEDED(ret))
@@ -2121,7 +2121,7 @@ griddb_make_datum_from_row(GSRow * row, int32_t attid, GSType gs_type,
 
 		case GS_TYPE_BYTE_ARRAY:
 			{
-				const int8_t *byteVal;
+				const		int8_t *byteVal;
 
 				ret = gsGetRowFieldAsByteArray(row, attid, &byteVal, &size);
 				if (!GS_SUCCEEDED(ret))
@@ -2138,7 +2138,7 @@ griddb_make_datum_from_row(GSRow * row, int32_t attid, GSType gs_type,
 
 		case GS_TYPE_SHORT_ARRAY:
 			{
-				const int16_t *shortVal;
+				const		int16_t *shortVal;
 
 				ret = gsGetRowFieldAsShortArray(row, attid, &shortVal, &size);
 				if (!GS_SUCCEEDED(ret))
@@ -2172,7 +2172,7 @@ griddb_make_datum_from_row(GSRow * row, int32_t attid, GSType gs_type,
 
 		case GS_TYPE_LONG_ARRAY:
 			{
-				const int64_t *longVal;
+				const		int64_t *longVal;
 
 				ret = gsGetRowFieldAsLongArray(row, attid, &longVal, &size);
 				if (!GS_SUCCEEDED(ret))
@@ -2227,7 +2227,7 @@ griddb_make_datum_from_row(GSRow * row, int32_t attid, GSType gs_type,
 
 		case GS_TYPE_TIMESTAMP_ARRAY:
 			{
-				const GSTimestamp *tsVal;
+				const		GSTimestamp *tsVal;
 
 				ret = gsGetRowFieldAsTimestampArray(row, attid, &tsVal, &size);
 				if (!GS_SUCCEEDED(ret))
@@ -2320,11 +2320,12 @@ static void
 griddb_find_junk_attno(GridDBFdwModifyState * fmstate, List *targetlist)
 {
 	Oid			relId = RelationGetRelid(fmstate->rel);
-	char	   *attName = get_attname(relId, ROWKEY_ATTNO
+	char	   *attName = get_attname(relId, ROWKEY_ATTNO 
 #if (PG_VERSION_NUM >= 110000)
-				, false
-#endif
-				);
+									  ,false 
+#endif	/*  */
+	);
+
 	fmstate->junk_att_no = ExecFindJunkAttributeInTlist(targetlist, attName);
 }
 
@@ -2337,7 +2338,7 @@ static void
 griddb_modify_target_init(GridDBFdwModifyState * fmstate)
 {
 	int			i;
-	int			nField = list_length(fmstate->target_attrs) + 1;		/* +1 is key column. */
+	int			nField = list_length(fmstate->target_attrs) + 1;	/* +1 is key column. */
 
 	fmstate->target_values = (Datum **) palloc0(sizeof(Datum *) * INITIAL_TARGET_VALUE_ROWS);
 	for (i = 0; i < INITIAL_TARGET_VALUE_ROWS; i++)
@@ -2356,7 +2357,7 @@ static void
 griddb_modify_target_expand(GridDBFdwModifyState * fmstate)
 {
 	int			i;
-	int			nField = list_length(fmstate->target_attrs) + 1;		/* +1 is key column. */
+	int			nField = list_length(fmstate->target_attrs) + 1;	/* +1 is key column. */
 
 	fmstate->target_values = (Datum **) repalloc(fmstate->target_values, sizeof(Datum *) * fmstate->max_target * 2);
 	for (i = fmstate->max_target; i < fmstate->max_target * 2; i++)
@@ -2387,7 +2388,7 @@ griddb_modify_target_fini(GridDBFdwModifyState * fmstate)
  */
 static void
 griddb_modify_target_insert(GridDBFdwModifyState * fmstate, TupleTableSlot *slot,
-				   TupleTableSlot *planSlot, GridDBFdwFieldInfo * field_info)
+							TupleTableSlot *planSlot, GridDBFdwFieldInfo * field_info)
 {
 	ListCell   *lc;
 	Datum	   *target_values;
@@ -2514,7 +2515,7 @@ griddb_compare_timestamp(const void *a, const void *b)
 
 /* Return comparator for gs_type */
 static int	(*
-		  griddb_get_comparator(GSType gs_type)) (const void *, const void *)
+			 griddb_get_comparator(GSType gs_type)) (const void *, const void *)
 {
 	switch (gs_type)
 	{
@@ -2741,7 +2742,7 @@ griddb_modify_targets_apply(GridDBFdwModifyState * fmstate, GridDBFdwFieldInfo *
 
 			/* Check the cursor is pointing the target. */
 			rowkey = griddb_make_datum_from_row(row, ROWKEY_IDX,
-								  field_info->column_types[ROWKEY_ATTNO - 1],
+												field_info->column_types[ROWKEY_ATTNO - 1],
 												pgtype);
 			rowValues[0] = &rowkey;
 			if (comparator((const void *) &targets, (const void *) &rowValues))
@@ -2956,7 +2957,7 @@ griddb_set_row_field(GSRow * row, Datum value, GSType gs_type, int pindex)
 
 		case GS_TYPE_STRING_ARRAY:
 			{
-				const GSChar **stringaData;
+				const		GSChar **stringaData;
 
 				array = DatumGetArrayTypeP(value);
 				elmtype = ARR_ELEMTYPE(array);
@@ -2966,7 +2967,7 @@ griddb_set_row_field(GSRow * row, Datum value, GSType gs_type, int pindex)
 								  &elem_values, &elem_nulls, &num_elems);
 				getTypeOutputInfo(TEXTOID, &outputFunctionId, &typeVarLength);
 
-				stringaData = (const GSChar **) palloc0(sizeof(GSChar *) * num_elems);
+				stringaData = (const GSChar * *) palloc0(sizeof(GSChar *) * num_elems);
 				for (i = 0; i < num_elems; i++)
 				{
 					Assert(!elem_nulls[i]);
@@ -3260,11 +3261,10 @@ griddb_add_column_name_and_type(StringInfoData *buf, GSContainerInfo * info)
 	}
 }
 
-static GSChar **
-grifddb_name_list_dup(const GSChar * const * src, size_t cont_size)
+static GSChar * *grifddb_name_list_dup(const GSChar * const *src, size_t cont_size)
 {
 	size_t		i;
-	GSChar	  **dst = (GSChar **) palloc0(sizeof(GSChar *) * cont_size);
+	GSChar	  **dst = (GSChar * *) palloc0(sizeof(GSChar *) * cont_size);
 
 	for (i = 0; i < cont_size; i++)
 		dst[i] = pstrdup(src[i]);
@@ -3273,7 +3273,7 @@ grifddb_name_list_dup(const GSChar * const * src, size_t cont_size)
 }
 
 static void
-grifddb_name_list_free(GSChar ** p, size_t cont_size)
+grifddb_name_list_free(GSChar * *p, size_t cont_size)
 {
 	size_t		i;
 

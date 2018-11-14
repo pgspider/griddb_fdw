@@ -50,7 +50,7 @@ typedef struct ContCacheEntry
 {
 	ConnCacheKey key;			/* hash key (must be first) */
 	GSContainer *cont;
-}	ContCacheEntry;
+}			ContCacheEntry;
 
 /*
  * Connection cache (initialized on first use)
@@ -61,9 +61,9 @@ static HTAB *ConnectionHash = NULL;
 static bool xact_got_connection = false;
 
 /* prototypes of private functions */
-static GSGridStore *griddb_connect_server(char *address, char *port,
-					  char *cluster, char *user,
-					  char *passwd);
+static GSGridStore * griddb_connect_server(char *address, char *port,
+										   char *cluster, char *user,
+										   char *passwd);
 static void griddb_begin_xact(ConnCacheEntry *entry);
 static void griddb_end_xact(ConnCacheEntry *entry, bool isCommit,
 				GSGridStore * store);
@@ -164,7 +164,7 @@ griddb_connect_server(char *address, char *port, char *cluster, char *user,
 					  char *passwd)
 {
 	GSGridStore *store = NULL;
-	const GSPropertyEntry props[] = {
+	const		GSPropertyEntry props[] = {
 		{"notificationAddress", address},
 		{"notificationPort", port},
 		{"clusterName", cluster},
@@ -178,8 +178,8 @@ griddb_connect_server(char *address, char *port, char *cluster, char *user,
 	if (!GS_SUCCEEDED(ret))
 		ereport(ERROR,
 				(errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION),
-		errmsg("could not connect to server \"%s\", port %s, cluster \"%s\"",
-			   address, port, cluster)));
+				 errmsg("could not connect to server \"%s\", port %s, cluster \"%s\"",
+						address, port, cluster)));
 
 	return store;
 }
@@ -215,7 +215,7 @@ griddb_get_container(UserMapping *user, Oid relid, GSGridStore * store)
 		ctl.entrysize = sizeof(ContCacheEntry);
 		conn_entry->cont_hash = hash_create("griddb_fdw containers", 8,
 											&ctl,
-									  HASH_ELEM | HASH_BLOBS | HASH_CONTEXT);
+											HASH_ELEM | HASH_BLOBS | HASH_CONTEXT);
 	}
 
 	cont_key = relid;

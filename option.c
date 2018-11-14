@@ -27,7 +27,7 @@ typedef struct GridDBFdwOption
 {
 	const char *optname;
 	Oid			optcontext;		/* Oid of catalog in which option may appear */
-}	GridDBFdwOption;
+}			GridDBFdwOption;
 
 
 /*
@@ -37,21 +37,45 @@ typedef struct GridDBFdwOption
 static GridDBFdwOption griddb_options[] =
 {
 	/* Connection options */
-	{OPTION_HOST, ForeignServerRelationId},
-	{OPTION_PORT, ForeignServerRelationId},
-	{OPTION_CLUSTER, ForeignServerRelationId},
-	{OPTION_USER, UserMappingRelationId},
-	{OPTION_PWD, UserMappingRelationId},
-	{OPTION_TABLE, ForeignTableRelationId},
-	{OPTION_ROWKEY, AttributeRelationId},
+	{
+		OPTION_HOST, ForeignServerRelationId
+	},
+	{
+		OPTION_PORT, ForeignServerRelationId
+	},
+	{
+		OPTION_CLUSTER, ForeignServerRelationId
+	},
+	{
+		OPTION_USER, UserMappingRelationId
+	},
+	{
+		OPTION_PWD, UserMappingRelationId
+	},
+	{
+		OPTION_TABLE, ForeignTableRelationId
+	},
+	{
+		OPTION_ROWKEY, AttributeRelationId
+	},
 	/* updatable is available on both server and table */
-	{OPTION_UPDATABLE, ForeignServerRelationId},
-	{OPTION_UPDATABLE, ForeignTableRelationId},
+	{
+		OPTION_UPDATABLE, ForeignServerRelationId
+	},
+	{
+		OPTION_UPDATABLE, ForeignTableRelationId
+	},
 	/* cost factors */
-	{OPTION_STARTUP_COST, ForeignServerRelationId},
-	{OPTION_TUPLE_COST, ForeignServerRelationId},
+	{
+		OPTION_STARTUP_COST, ForeignServerRelationId
+	},
+	{
+		OPTION_TUPLE_COST, ForeignServerRelationId
+	},
 	/* Sentinel */
-	{NULL, InvalidOid}
+	{
+		NULL, InvalidOid
+	}
 };
 
 extern Datum griddb_fdw_validator(PG_FUNCTION_ARGS);

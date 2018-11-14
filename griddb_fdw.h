@@ -81,7 +81,7 @@ typedef struct griddb_opt
 	bool		use_remote_estimate;	/* use remote estimate for rows */
 	Cost		fdw_startup_cost;
 	Cost		fdw_tuple_cost;
-}	griddb_opt;
+}			griddb_opt;
 
 /*
  * FDW-specific planner information kept in RelOptInfo.fdw_private for a
@@ -129,16 +129,16 @@ typedef struct GriddbFdwRelationInfo
 	ForeignTable *table;
 	ForeignServer *server;
 	UserMapping *user;			/* only set in use_remote_estimate mode */
-}	GriddbFdwRelationInfo;
+}			GriddbFdwRelationInfo;
 
 /* option.c headers */
 extern bool griddb_is_valid_option(const char *option, Oid context);
-extern griddb_opt *griddb_get_options(Oid foreigntableid);
+extern griddb_opt * griddb_get_options(Oid foreigntableid);
 
 /* in connection.c */
-extern GSGridStore *griddb_get_connection(UserMapping *user, bool will_prep_stmt,
-					  Oid foreigntableid);
-extern GSContainer *griddb_get_container(UserMapping *user, Oid relid, GSGridStore * store);
+extern GSGridStore * griddb_get_connection(UserMapping *user, bool will_prep_stmt,
+										   Oid foreigntableid);
+extern GSContainer * griddb_get_container(UserMapping *user, Oid relid, GSGridStore * store);
 extern void griddb_release_connection(GSGridStore * store);
 extern void griddb_report(int elevel, GSResult res, void *gsResource,
 			  const char *fname, unsigned int line);
@@ -164,4 +164,4 @@ extern void griddb_deparse_select(StringInfo buf, PlannerInfo *root,
 extern void griddb_deparse_locking_clause(PlannerInfo *root, RelOptInfo *rel,
 							  int *for_update);
 
-#endif   /* GRIDDB_FDW_H */
+#endif							/* GRIDDB_FDW_H */
