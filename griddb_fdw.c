@@ -854,7 +854,6 @@ griddbEndForeignScan(ForeignScanState *node)
 	if (fsstate == NULL)
 		return;
 
-	Assert(fsstate->cursor == fsstate->num_tuples);
 	gsCloseRow(&fsstate->row);
 	gsCloseRowSet(&fsstate->row_set);
 
@@ -2323,7 +2322,8 @@ griddb_find_junk_attno(GridDBFdwModifyState * fmstate, List *targetlist)
 	char	   *attName = get_attname(relId, ROWKEY_ATTNO 
 #if (PG_VERSION_NUM >= 110000)
 									  ,false 
-#endif	/*  */
+#endif	/* 
+ */
 	);
 
 	fmstate->junk_att_no = ExecFindJunkAttributeInTlist(targetlist, attName);
