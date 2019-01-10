@@ -719,7 +719,7 @@ griddbBeginForeignScan(ForeignScanState *node, int eflags)
 	fsstate->store = griddb_get_connection(user, false,
 										   RelationGetRelid(node->ss.ss_currentRelation));
 
-	fsstate->cont_name = get_rel_name(rte->relid);
+	fsstate->cont_name = griddb_get_rel_name(rte->relid);
 	fsstate->cont = griddb_get_container(user, rte->relid, fsstate->store);
 
 	fsstate->query = strVal(list_nth(fsplan->fdw_private,
@@ -1072,7 +1072,7 @@ griddbBeginForeignModify(ModifyTableState *mtstate,
 											  FdwModifyPrivateTargetAttnums);
 
 	/* get the row structure for gsPutRow */
-	fmstate->cont_name = get_rel_name(rte->relid);
+	fmstate->cont_name = griddb_get_rel_name(rte->relid);
 	fmstate->cont = griddb_get_container(user, rte->relid, fmstate->store);
 
 	resultRelInfo->ri_FdwState = fmstate;

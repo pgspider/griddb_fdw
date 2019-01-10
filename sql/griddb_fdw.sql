@@ -10,11 +10,14 @@ CREATE TABLE employee (emp_id integer primary key, emp_name text, emp_dept_id in
 CREATE TABLE empdata (emp_id integer primary key, emp_dat blob)
 CREATE TABLE numbers (a integer primary key, b text)
 CREATE TABLE shorty (id integer primary key, c text)
+CREATE TABLE evennumbers (a integer primary key, b text)
 */
 
 DELETE FROM department;
 DELETE FROM employee;
 DELETE FROM empdata;
+DELETE FROM numbers;
+DELETE FROM evennumbers;
 
 SELECT * FROM department LIMIT 10;
 SELECT * FROM employee LIMIT 10;
@@ -33,6 +36,11 @@ INSERT INTO numbers VALUES(6, 'Six');
 INSERT INTO numbers VALUES(7, 'Seven');
 INSERT INTO numbers VALUES(8, 'Eight');
 INSERT INTO numbers VALUES(9, 'Nine');
+
+INSERT INTO evennumbers VALUES(2, 'Two');
+INSERT INTO evennumbers VALUES(4, 'Four');
+INSERT INTO evennumbers VALUES(6, 'Six');
+INSERT INTO evennumbers VALUES(8, 'Eight');
 
 SELECT count(*) FROM department;
 SELECT count(*) FROM employee;
@@ -81,6 +89,10 @@ END
 $$ LANGUAGE plpgsql;
 
 SELECT test_param_where();
+
+ALTER FOREIGN TABLE numbers OPTIONS (table_name 'evennumbers');
+INSERT INTO numbers VALUES(10, 'Ten');
+SELECT * FROM numbers;
 
 DELETE FROM employee;
 DELETE FROM department;

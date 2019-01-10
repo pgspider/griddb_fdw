@@ -12,6 +12,7 @@
 #include "griddb_fdw.h"
 
 #include "access/xact.h"
+#include "commands/defrem.h"
 #include "foreign/foreign.h"
 #include "utils/hsearch.h"
 #include "utils/lsyscache.h"
@@ -185,6 +186,33 @@ griddb_connect_server(char *address, char *port, char *cluster, char *user,
 }
 
 /*
+ * Returns the name of a given relation in foreign server by confirming
+ * a table name option.
+ * Returns a palloc'd copy of the string, or NULL if no such relation.
+ */
+char *
+griddb_get_rel_name(Oid relid)
+{
+	ForeignTable *table;
+	ListCell   *lc;
+
+	table = GetForeignTable(relid);
+
+	/*
+	 * Use value of FDW options if any, instead of the name of object itself.
+	 */
+	foreach(lc, table->options)
+	{
+		DefElem    *def = (DefElem *) lfirst(lc);
+
+		if (strcmp(def->defname, OPTION_TABLE) == 0)
+			return pstrdup(defGetString(def));
+	}
+
+	return get_rel_name(relid);
+}
+
+/*
  * Get a GSContainer which can be used to execute queries on the remote GridDB
  * It is memorized by associating with connection.
  * When transaction is ended, each container has to be commited or
@@ -226,9 +254,10 @@ griddb_get_container(UserMapping *user, Oid relid, GSGridStore * store)
 	{
 		GSResult	ret;
 		GSContainer *cont;
-		char	   *tablename = get_rel_name(relid);
+		char	   *tablename = griddb_get_rel_name(relid);
 
 		ret = gsGetContainerGeneral(store, tablename, &cont);
+		pfree(tablename);
 		if (!GS_SUCCEEDED(ret))
 			griddb_REPORT_ERROR(ERROR, ret, store);
 

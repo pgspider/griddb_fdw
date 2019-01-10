@@ -138,6 +138,7 @@ extern griddb_opt * griddb_get_options(Oid foreigntableid);
 /* in connection.c */
 extern GSGridStore * griddb_get_connection(UserMapping *user, bool will_prep_stmt,
 										   Oid foreigntableid);
+extern char *griddb_get_rel_name(Oid relid);
 extern GSContainer * griddb_get_container(UserMapping *user, Oid relid, GSGridStore * store);
 extern void griddb_release_connection(GSGridStore * store);
 extern void griddb_report(int elevel, GSResult res, void *gsResource,
