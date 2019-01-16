@@ -75,11 +75,30 @@ The container must have rowkey on [GridDB][1] in order to execute update and del
 - WHERE clauses are pushdowned
 
 ## 4. Limitations
-Nothing.
+#### Don't support the query execution which is satisfied with all of follwoing conditions:  
+- It requres to get record locks in a transaction.
+- Records are locked by the other foreign table which links the same container in GridDB.
+
+If such query is executed, it is no response.
+
+Example1:  
+Foreign table ft1 and ft2 are linked to same container in GridDB.
+```
+BEGIN;
+SELECT * FROM ft1 FOR UPDATE;
+SELECT * FROM ft2 FOR UPDATE; -- No response
+```
+Example2:
+```
+BEGIN;
+SELECT * FROM ft1, ft2 WHERE ft1.a = ft2.a FOR UPDATE; -- No response
+```
+This is because GridDB manages a transaction by container unit and griddb_fdw creates GSContainer instances for each foreign tables even if the container is same in GridDB.
+
 
 ## 5. License
-Copyright (c) 2017-2018, TOSHIBA Corporation  
-Copyright (c) 2011 - 2016, EnterpriseDB Corporation
+Copyright (c) 2017-2019, TOSHIBA Corporation  
+Copyright (c) 2011-2016, EnterpriseDB Corporation
 
 Permission to use, copy, modify, and distribute this software and its
 documentation for any purpose, without fee, and without a written agreement is
