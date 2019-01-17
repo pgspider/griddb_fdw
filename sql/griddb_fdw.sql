@@ -155,6 +155,10 @@ DEALLOCATE stmt;
 -- test NULL parameter
 SELECT id FROM shorty WHERE c = (SELECT NULL::text);
 
+-- Use of system column
+SELECT tableoid::regclass, * from shorty WHERE id = 1;
+SELECT * from shorty WHERE id = 1 AND tableoid = 'shorty'::regclass;
+
 -- Clean up
 DROP FOREIGN TABLE shorty;
 

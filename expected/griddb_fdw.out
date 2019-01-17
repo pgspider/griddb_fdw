@@ -476,6 +476,19 @@ SELECT id FROM shorty WHERE c = (SELECT NULL::text);
 ----
 (0 rows)
 
+-- Use of system column
+SELECT tableoid::regclass, * from shorty WHERE id = 1;
+ tableoid | id | c 
+----------+----+---
+ shorty   |  1 | Z
+(1 row)
+
+SELECT * from shorty WHERE id = 1 AND tableoid = 'shorty'::regclass;
+ id | c 
+----+---
+  1 | Z
+(1 row)
+
 -- Clean up
 DROP FOREIGN TABLE shorty;
 CREATE OR REPLACE FUNCTION drop_all_foreign_tables() RETURNS void AS $$

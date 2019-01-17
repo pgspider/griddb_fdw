@@ -946,7 +946,7 @@ foreign_expr_walker(Node *node,
 				 * non-default collation.
 				 */
 				if (var->varno == glob_cxt->foreignrel->relid &&
-					var->varlevelsup == 0)
+					var->varlevelsup == 0 && var->varattno > 0)
 				{
 					/* Var belongs to foreign table */
 					collation = var->varcollid;
