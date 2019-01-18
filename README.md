@@ -63,6 +63,7 @@ We can use the following parameters for import schema:
 recreate : 'true' or 'false'. If 'true', table schema will be updated.  
 
 After schema is imported, we can access tables.
+To use CREATE FOREIGN TABLE is not recommended.
 
 ### update and delete
 
@@ -94,6 +95,30 @@ BEGIN;
 SELECT * FROM ft1, ft2 WHERE ft1.a = ft2.a FOR UPDATE; -- No response
 ```
 This is because GridDB manages a transaction by container unit and griddb_fdw creates GSContainer instances for each foreign tables even if the container is same in GridDB.
+
+#### Don't support an arbitrary column mapping.
+griddb_fdw is assumed that a column structure on PostgreSQL is same as that of griddb.
+It is recommended to create a schema on PostgreSQL by IMPORT FOREIGN SCHEMA.
+griddb_fdw might return an error when DML is executed.
+
+For example, container on GridDB has 3 columns. The 1st column is "c1" as integer, the 2nd is "c2" as float, and the 3rd is "c3" as text.  
+Schema must be created as
+```
+CREATE FOREIGN TABLE ft1 (c1 integer, c2 float, c3 text) SERVER griddb_svr;
+```
+
+You should not execute following queries.  
+
+Types are not match.
+```
+CREATE FOREIGN TABLE ft1 (c1 text, c2 float, c3 integer) SERVER griddb_svr;
+```
+There is unknown column.
+Even if unknown column is dropped, griddb cannot access ft1 correctly.
+```
+CREATE FOREIGN TABLE ft1 (c0 integer, c1 integer, c2 float, c3 text) SERVER griddb_svr;
+ALTER FOREIGN TABLE ft1 DROP COLUMN c0;
+```
 
 
 ## 5. License
