@@ -792,21 +792,34 @@ griddbIterateForeignScan(ForeignScanState *node)
 
 			if (attnum > 0)
 			{
-				Oid			pgtype;
-				Relation	rel = fsstate->rel;
-				TupleDesc	tupdesc;
+				GSBool		isnull;
 
-				if (rel)
-					tupdesc = RelationGetDescr(rel);
+				ret = gsGetRowFieldNull(fsstate->row, attnum - 1, &isnull);
+				if (!GS_SUCCEEDED(ret))
+					griddb_REPORT_ERROR(ERROR, ret, fsstate->row);
+
+				if (isnull == GS_TRUE)
+				{
+					tupleSlot->tts_isnull[attnum - 1] = true;
+				}
 				else
-					tupdesc = fsstate->tupdesc;
-				pgtype = TupleDescAttr(tupdesc, attnum - 1)->atttypid;
-				tupleSlot->tts_values[attnum - 1] =
-					griddb_make_datum_from_row(fsstate->row, attnum - 1,
-											   column_types[attnum - 1],
-											   pgtype);
+				{
+					Oid			pgtype;
+					Relation	rel = fsstate->rel;
+					TupleDesc	tupdesc;
+
+					if (rel)
+						tupdesc = RelationGetDescr(rel);
+					else
+						tupdesc = fsstate->tupdesc;
+					pgtype = TupleDescAttr(tupdesc, attnum - 1)->atttypid;
+					tupleSlot->tts_values[attnum - 1] =
+						griddb_make_datum_from_row(fsstate->row, attnum - 1,
+												   column_types[attnum - 1],
+												   pgtype);
+					tupleSlot->tts_isnull[attnum - 1] = false;
+				}
 			}
-			tupleSlot->tts_isnull[attnum - 1] = false;
 		}
 		ExecStoreVirtualTuple(tupleSlot);
 		fsstate->cursor++;
@@ -3193,6 +3206,12 @@ griddb_set_row_field(GSRow * row, Datum value, GSType gs_type, int pindex)
 				break;
 			}
 
+		case GS_TYPE_NULL:
+			ret = gsSetRowFieldNull(row, pindex);
+			if (!GS_SUCCEEDED(ret))
+				griddb_REPORT_ERROR(ERROR, ret, row);
+			break;
+
 		default:
 			/* Should not happen, we have just check this above */
 			elog(ERROR, "unsupported field type(GS) %d", gs_type);
@@ -3215,6 +3234,7 @@ griddb_bind_for_putrow(GridDBFdwModifyState * fmstate,
 		int			attnum = lfirst_int(lc);
 		bool		isnull;
 		Datum		value;
+		GSType		type;
 
 		if (attnum < 0)
 			continue;
@@ -3222,9 +3242,13 @@ griddb_bind_for_putrow(GridDBFdwModifyState * fmstate,
 		griddb_check_slot_type(slot, attnum, field_info);
 
 		value = slot_getattr(slot, attnum, &isnull);
-		Assert(isnull == false);
 
-		griddb_set_row_field(row, value, field_info->column_types[attnum - 1], attnum - 1);
+		if (isnull)
+			type = GS_TYPE_NULL;
+		else
+			type = field_info->column_types[attnum - 1];
+
+		griddb_set_row_field(row, value, type, attnum - 1);
 	}
 }
 

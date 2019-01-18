@@ -862,18 +862,19 @@ griddb_deparse_bool_expr(BoolExpr *node, deparse_expr_cxt *context)
 
 /*
  * Deparse IS [NOT] NULL expression.
- * GridDB is not support NULL value.
- * So we treat IS NULL as false and IS NOT NULL as true.
  */
 static void
 griddb_deparse_null_test(NullTest *node, deparse_expr_cxt *context)
 {
 	StringInfo	buf = context->buf;
 
+	appendStringInfoChar(buf, '(');
+	deparseExpr(node->arg, context);
+
 	if (node->nulltesttype == IS_NULL)
-		appendStringInfoString(buf, "(1=0)");
+		appendStringInfoString(buf, " IS NULL)");
 	else
-		appendStringInfoString(buf, "(1=1)");
+		appendStringInfoString(buf, " IS NOT NULL)");
 }
 
 

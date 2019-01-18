@@ -146,6 +146,13 @@ DELETE FROM shorty;
 ROLLBACK;
 SELECT id, c FROM shorty;
 
+-- Use of NULL value
+BEGIN;
+INSERT INTO shorty VALUES(99, NULL);
+UPDATE shorty SET c = NULL WHERE id = 3;
+SELECT id FROM shorty WHERE c IS NULL;
+ROLLBACK;
+
 -- parameters.
 PREPARE stmt(integer) AS SELECT * FROM shorty WHERE id = $1;
 EXECUTE stmt(1);
