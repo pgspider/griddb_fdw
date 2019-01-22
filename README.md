@@ -76,6 +76,9 @@ The container must have rowkey on [GridDB][1] in order to execute update and del
 - WHERE clauses are pushdowned
 
 ## 4. Limitations
+#### Don't support SAVEPOINT.
+Savepoint does not work. Warning is returned.
+
 #### Don't support the query execution which is satisfied with all of follwoing conditions:  
 - It requres to get record locks in a transaction.
 - Records are locked by the other foreign table which links the same container in GridDB.

@@ -499,20 +499,5 @@ static void
 griddb_subxact_callback(SubXactEvent event, SubTransactionId mySubid,
 						SubTransactionId parentSubid, void *arg)
 {
-	switch (event)
-	{
-		case SUBXACT_EVENT_START_SUB:
-			/* Do nothing */
-			break;
-		case SUBXACT_EVENT_COMMIT_SUB:
-			griddb_xact_callback(XACT_EVENT_COMMIT, arg);
-			break;
-		case SUBXACT_EVENT_ABORT_SUB:
-			griddb_xact_callback(XACT_EVENT_ABORT, arg);
-			break;
-		case SUBXACT_EVENT_PRE_COMMIT_SUB:
-			griddb_xact_callback(XACT_EVENT_PRE_COMMIT, arg);
-			break;
-	}
-	elog(ERROR, "Subtransaction is not supported. It is handled as Main transaction.");
+	elog(WARNING, "Subtransaction is not supported. So griddb_fdw do nothing.");
 }
