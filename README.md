@@ -76,6 +76,12 @@ The container must have rowkey on [GridDB][1] in order to execute update and del
 - WHERE clauses are pushdowned
 
 ## 4. Limitations
+#### Limitations related in rowkey-column attribute.
+GridDB can set a rowkey attribute to the 1st column.
+griddb_fdw uses it for identifying a record.
+- It is required that a container have the rowley attribute for executing UPDATE or DELETE.
+- It is not supported to update a rowkey-column.
+
 #### Don't support SAVEPOINT.
 Savepoint does not work. Warning is returned.
 
