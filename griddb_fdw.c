@@ -235,6 +235,12 @@ static TupleTableSlot *griddbExecForeignDelete(EState *estate,
 						TupleTableSlot *planSlot);
 static void griddbEndForeignModify(EState *estate,
 					   ResultRelInfo *resultRelInfo);
+#if (PG_VERSION_NUM >= 110000)
+static void griddbEndForeignInsert(EState *estate,
+					   ResultRelInfo *resultRelInfo);
+static void griddbBeginForeignInsert(ModifyTableState *mtstate,
+						 ResultRelInfo *resultRelInfo);
+#endif
 static int	griddbIsForeignRelUpdatable(Relation rel);
 static bool griddbPlanDirectModify(PlannerInfo *root,
 					   ModifyTable *plan,
@@ -341,7 +347,10 @@ griddb_fdw_handler(PG_FUNCTION_ARGS)
 	routine->ExecForeignDelete = griddbExecForeignDelete;
 	routine->EndForeignModify = griddbEndForeignModify;
 	routine->IsForeignRelUpdatable = griddbIsForeignRelUpdatable;
-
+#if (PG_VERSION_NUM >= 110000)
+	routine->BeginForeignInsert = griddbBeginForeignInsert;
+	routine->EndForeignInsert = griddbEndForeignInsert;
+#endif
 	routine->PlanDirectModify = griddbPlanDirectModify;
 	routine->BeginDirectModify = NULL;
 	routine->IterateDirectModify = NULL;
@@ -1036,6 +1045,49 @@ griddbPlanForeignModify(PlannerInfo *root,
 	return list_make1(targetAttrs);
 }
 
+static GridDBFdwModifyState *
+create_foreign_modify(EState *estate,
+					  RangeTblEntry *rte,
+					  ResultRelInfo *resultRelInfo,
+					  CmdType operation,
+					  Plan *subplan,
+					  List *target_attrs)
+{
+	GridDBFdwModifyState *fmstate;
+	Relation	rel = resultRelInfo->ri_RelationDesc;
+	ForeignTable *table;
+	UserMapping *user;
+	Oid			serverOid;
+
+	/* Begin constructing PgFdwModifyState. */
+	fmstate = (GridDBFdwModifyState *) palloc0(sizeof(GridDBFdwModifyState));
+	fmstate->rel = rel;
+
+	/* Get info about foreign table. */
+	table = GetForeignTable(RelationGetRelid(rel));
+	serverOid = table->serverid;
+	user = GetUserMapping(GetUserId(), serverOid);
+
+	/* Open connection; report that we'll create a prepared statement. */
+	fmstate->store = griddb_get_connection(user, false, serverOid);
+
+	/* Set up remote query information. */
+	fmstate->target_attrs = target_attrs;
+
+	/* Get the row structure for gsPutRow */
+	fmstate->cont_name = griddb_get_rel_name(rte->relid);
+	fmstate->cont = griddb_get_container(user, rte->relid, fmstate->store);
+
+	if (operation == CMD_UPDATE || operation == CMD_DELETE)
+	{
+		griddb_find_junk_attno(fmstate, subplan->targetlist);
+		griddb_modify_target_init(fmstate);
+	}
+	fmstate->operation = operation;
+
+	return fmstate;
+}
+
 /*
  * griddbBeginForeignModify
  *		Begin an insert/update/delete operation on a foreign table
@@ -1049,11 +1101,8 @@ griddbBeginForeignModify(ModifyTableState *mtstate,
 {
 	GridDBFdwModifyState *fmstate;
 	EState	   *estate = mtstate->ps.state;
-	Relation	rel = resultRelInfo->ri_RelationDesc;
+	List	   *target_attrs;
 	RangeTblEntry *rte;
-	ForeignTable *table;
-	UserMapping *user;
-	Oid			serverOid;
 
 	/*
 	 * Do nothing in EXPLAIN (no ANALYZE) case.  resultRelInfo->ri_FdwState
@@ -1062,9 +1111,9 @@ griddbBeginForeignModify(ModifyTableState *mtstate,
 	if (eflags & EXEC_FLAG_EXPLAIN_ONLY)
 		return;
 
-	/* Begin constructing PgFdwModifyState. */
-	fmstate = (GridDBFdwModifyState *) palloc0(sizeof(GridDBFdwModifyState));
-	fmstate->rel = rel;
+	/* Deconstruct fdw_private data. */
+	target_attrs = (List *) list_nth(fdw_private,
+									 FdwModifyPrivateTargetAttnums);
 
 	/*
 	 * Identify which user to do the remote access as.  This should match what
@@ -1072,30 +1121,14 @@ griddbBeginForeignModify(ModifyTableState *mtstate,
 	 */
 	rte = rt_fetch(resultRelInfo->ri_RangeTableIndex, estate->es_range_table);
 
-	/* Get info about foreign table. */
-	table = GetForeignTable(RelationGetRelid(rel));
-	serverOid = table->serverid;
-	user = GetUserMapping(GetUserId(), serverOid);
-
-	/* Open connection; report that we'll create a prepared statement. */
-	fmstate->store = griddb_get_connection(user, false, serverOid);
-
-	/* Deconstruct fdw_private data. */
-	fmstate->target_attrs = (List *) list_nth(fdw_private,
-											  FdwModifyPrivateTargetAttnums);
-
-	/* get the row structure for gsPutRow */
-	fmstate->cont_name = griddb_get_rel_name(rte->relid);
-	fmstate->cont = griddb_get_container(user, rte->relid, fmstate->store);
+	fmstate = create_foreign_modify(mtstate->ps.state,
+									rte,
+									resultRelInfo,
+									mtstate->operation,
+									mtstate->mt_plans[subplan_index]->plan,
+									target_attrs);
 
 	resultRelInfo->ri_FdwState = fmstate;
-
-	if (mtstate->operation == CMD_UPDATE || mtstate->operation == CMD_DELETE)
-	{
-		griddb_find_junk_attno(fmstate, mtstate->mt_plans[subplan_index]->plan->targetlist);
-		griddb_modify_target_init(fmstate);
-	}
-	fmstate->operation = mtstate->operation;
 }
 
 /*
@@ -1254,6 +1287,112 @@ griddbEndForeignModify(EState *estate,
 	griddb_release_connection(fmstate->store);
 	fmstate->store = NULL;
 }
+
+#if (PG_VERSION_NUM >= 110000)
+/*
+ * griddBeginForeignInsert
+ *		Begin an insert operation on a foreign table
+ */
+static void
+griddbBeginForeignInsert(ModifyTableState *mtstate,
+						 ResultRelInfo *resultRelInfo)
+{
+	GridDBFdwModifyState *fmstate;
+	ModifyTable *plan = castNode(ModifyTable, mtstate->ps.plan);
+	EState	   *estate = mtstate->ps.state;
+	Index		resultRelation = resultRelInfo->ri_RangeTableIndex;
+	Relation	rel = resultRelInfo->ri_RelationDesc;
+	RangeTblEntry *rte;
+	TupleDesc	tupdesc = RelationGetDescr(rel);
+	int			attnum;
+	StringInfoData sql;
+	List	   *targetAttrs = NIL;
+
+	initStringInfo(&sql);
+
+	/* We transmit all columns that are defined in the foreign table. */
+	for (attnum = 1; attnum <= tupdesc->natts; attnum++)
+	{
+		Form_pg_attribute attr = TupleDescAttr(tupdesc, attnum - 1);
+
+		if (!attr->attisdropped)
+			targetAttrs = lappend_int(targetAttrs, attnum);
+	}
+
+
+	/* Check if we add the ON CONFLICT clause to the remote query. */
+	if (plan)
+	{
+		OnConflictAction onConflictAction = plan->onConflictAction;
+
+		/*
+		 * Only DO UPDATE is supported for ON CONFLICT.
+		 */
+		if (onConflictAction == ONCONFLICT_NOTHING)
+			elog(ERROR, "unsupported ON CONFLICT specification: %d",
+				 (int) onConflictAction);
+		else if (onConflictAction != ONCONFLICT_NONE)
+			elog(ERROR, "unexpected ON CONFLICT specification: %d",
+				 (int) onConflictAction);
+	}
+
+	/*
+	 * If the foreign table is a partition, we need to create a new RTE
+	 * describing the foreign table for use by deparseInsertSql and
+	 * create_foreign_modify() below, after first copying the parent's RTE and
+	 * modifying some fields to describe the foreign partition to work on.
+	 * However, if this is invoked by UPDATE, the existing RTE may already
+	 * correspond to this partition if it is one of the UPDATE subplan target
+	 * rels; in that case, we can just use the existing RTE as-is.
+	 */
+	rte = (RangeTblEntry *) list_nth(estate->es_range_table, resultRelation - 1);
+	if (rte->relid != RelationGetRelid(rel))
+	{
+		rte = (RangeTblEntry *) copyObject(rte);
+		rte->relid = RelationGetRelid(rel);
+		rte->relkind = RELKIND_FOREIGN_TABLE;
+
+		/*
+		 * For UPDATE, we must use the RT index of the first subplan target
+		 * rel's RTE, because the core code would have built expressions for
+		 * the partition, such as RETURNING, using that RT index as varno of
+		 * Vars contained in those expressions.
+		 */
+		if (plan && plan->operation == CMD_UPDATE &&
+			resultRelation == plan->nominalRelation)
+			resultRelation = mtstate->resultRelInfo[0].ri_RangeTableIndex;
+	}
+
+	/* Construct an execution state. */
+	fmstate = create_foreign_modify(mtstate->ps.state,
+									rte,
+									resultRelInfo,
+									CMD_INSERT,
+									NULL,
+									targetAttrs);
+
+	resultRelInfo->ri_FdwState = fmstate;
+}
+
+/*
+ * griddbEndForeignInsert
+ *		Finish an insert operation on a foreign table
+ */
+static void
+griddbEndForeignInsert(EState *estate,
+					   ResultRelInfo *resultRelInfo)
+{
+	GridDBFdwModifyState *fmstate = (GridDBFdwModifyState *) resultRelInfo->ri_FdwState;
+
+	elog(DEBUG1, "griddb_fdw: %s for %s", __FUNCTION__, fmstate->cont_name);
+
+	Assert(fmstate != NULL);
+
+	/* Release remote connection */
+	griddb_release_connection(fmstate->store);
+	fmstate->store = NULL;
+}
+#endif
 
 /*
  * griddbIsForeignRelUpdatable
@@ -2332,11 +2471,10 @@ static void
 griddb_find_junk_attno(GridDBFdwModifyState * fmstate, List *targetlist)
 {
 	Oid			relId = RelationGetRelid(fmstate->rel);
-	char	   *attName = get_attname(relId, ROWKEY_ATTNO 
+	char	   *attName = get_attname(relId, ROWKEY_ATTNO
 #if (PG_VERSION_NUM >= 110000)
-									  ,false 
-#endif	/* 
- */
+									  ,false
+#endif
 	);
 
 	fmstate->junk_att_no = ExecFindJunkAttributeInTlist(targetlist, attName);
