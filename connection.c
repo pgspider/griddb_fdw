@@ -328,7 +328,7 @@ griddb_error_message(void *gsResource, StringInfoData *str)
 	size_t		stack_size = gsGetErrorStackSize(gsResource);
 	size_t		i;
 	size_t		buf_size = 0;
-	GSChar	   *buf;
+	GSChar	   *buf = NULL;
 
 	for (i = 0; i < stack_size; i++)
 	{
