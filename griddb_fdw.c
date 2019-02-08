@@ -97,6 +97,11 @@ enum FdwDirectModifyPrivateIndex
 	FdwDirectModifyPrivateSetProcessed
 };
 
+/*
+ * When a schema information is acqured from GridDB, it is stored a
+ * temporary space in GridDB client library. So griddb_fdw copies it
+ * to griddb_fdw library.
+ */
 typedef struct GridDBFdwFieldInfo
 {
 	size_t		column_count;	/* column count */
@@ -104,14 +109,24 @@ typedef struct GridDBFdwFieldInfo
 	GSType	   *column_types;	/* column type */
 }			GridDBFdwFieldInfo;
 
-/* This structure is used for passing data from the scan to the modify */
-typedef struct GridDBFdwScanModifyRelay
+/*
+ * The following structures are used for sharing data between scaning
+ * functions and modification functions.
+ * In griddb_fdw, the data modification (UPDATE/DELETE) is done via rowset
+ * which is created by ForeignScan. So rowset must be passed from ForeignScan
+ * to ForeignModify.
+ */
+typedef Oid GridDBFdwSMRelayKey;	/* foreigntableid */
+typedef struct GridDBFdwSMRelay
 {
+	GridDBFdwSMRelayKey key;	/* hash key (must be first) */
 	GSRowSet   *row_set;		/* result set */
 	GSRow	   *row;			/* row for the update */
 	GridDBFdwFieldInfo field_info;	/* column information */
 	Datum		rowkey_val;		/* rowkey the cursor is pointing */
-}			GridDBFdwScanModifyRelay;
+}			GridDBFdwSMRelay;
+
+static HTAB *griddb_sm_share = NULL;
 
 /*
  * Execution state of a foreign scan using griddb_fdw.
@@ -139,6 +154,8 @@ typedef struct GridDBFdwScanState
 	int32_t		num_tuples;		/* # of tuples in array */
 	unsigned int cursor;		/* result set cursor pointing current index */
 
+	/* for sharing data with ForeignModify */
+	GridDBFdwSMRelay *smrelay;	/* cache of the relay */
 }			GridDBFdwScanState;
 
 /*
@@ -162,21 +179,10 @@ typedef struct GridDBFdwModifyState
 	uint64_t	num_target;		/* # of stored modified row */
 	uint64_t	max_target;		/* # of storable modified row */
 	CmdType		operation;		/* INSERT, UPDATE, or DELETE */
+
+	/* for sharing data with ForeignScan */
+	GridDBFdwSMRelay *smrelay;	/* cache of the relay */
 }			GridDBFdwModifyState;
-
-/*
- * In griddb_fdw, the data modification (UPDATE/DELETE) is done via rowset
- * which is created by ForeignScan. So rowset must be passed from ForeignScan
- * to ForeignModify.
- */
-static
-#ifdef WIN32
-__declspec(thread)
-#else
-__thread
-#endif
-GridDBFdwScanModifyRelay griddb_sm_share;
-
 
 /*
  * SQL functions
@@ -374,6 +380,61 @@ griddb_fdw_handler(PG_FUNCTION_ARGS)
 	routine->GetForeignJoinPaths = NULL;
 
 	PG_RETURN_POINTER(routine);
+}
+
+/*
+ * Get a hash entry of GridDBFdwScanModifyRelay corresponding to
+ * the foreign table oid from a global hash variable.
+ */
+static GridDBFdwSMRelay *
+griddb_get_smrelay(Oid foreigntableid)
+{
+	bool		found;
+	GridDBFdwSMRelay *entry;
+	GridDBFdwSMRelayKey key;
+
+	/* First time through, initialize connection cache hashtable */
+	if (griddb_sm_share == NULL)
+	{
+		HASHCTL		ctl;
+
+		MemSet(&ctl, 0, sizeof(ctl));
+		ctl.keysize = sizeof(GridDBFdwSMRelayKey);
+		ctl.entrysize = sizeof(GridDBFdwSMRelay);
+		/* allocate ConnectionHash in the cache context */
+		ctl.hcxt = CacheMemoryContext;
+		griddb_sm_share = hash_create("griddb_fdw scan modify relay", 8,
+									  &ctl,
+									  HASH_ELEM | HASH_BLOBS | HASH_CONTEXT);
+	}
+
+	/* Create hash key for the entry.  Assume no pad bytes in key struct */
+	key = foreigntableid;
+
+	/*
+	 * Find or create cached entry for requested connection.
+	 */
+	entry = (GridDBFdwSMRelay *) hash_search(griddb_sm_share, &key, HASH_ENTER,
+											 &found);
+	if (!found)
+	{
+		/* initialize new hashtable entry (key is already filled in) */
+		entry->row_set = NULL;
+		entry->row = NULL;
+		memset(&entry->field_info, 0, sizeof(GridDBFdwFieldInfo));
+		entry->rowkey_val = 0;
+	}
+
+	return entry;
+}
+
+static void
+griddb_close_smrelay(Oid foreigntableid)
+{
+	GridDBFdwSMRelayKey key = foreigntableid;
+
+	Assert(griddb_sm_share);
+	hash_search(griddb_sm_share, &key, HASH_REMOVE, NULL);
 }
 
 /*
@@ -738,6 +799,8 @@ griddbBeginForeignScan(ForeignScanState *node, int eflags)
 	for_update = intVal(list_nth(fsplan->fdw_private,
 								 FdwScanPrivateForUpdate));
 	fsstate->for_update = for_update ? GS_TRUE : GS_FALSE;
+	if (for_update)
+		fsstate->smrelay = griddb_get_smrelay(rte->relid);
 	fsstate->row_set = NULL;
 	fsstate->row = NULL;
 	fsstate->num_tuples = 0;
@@ -836,7 +899,7 @@ griddbIterateForeignScan(ForeignScanState *node)
 
 	/* Memorize rowkey value which the cursor is pointing. */
 	if (fsstate->for_update)
-		griddb_sm_share.rowkey_val = tupleSlot->tts_values[ROWKEY_ATTNO - 1];
+		fsstate->smrelay->rowkey_val = tupleSlot->tts_values[ROWKEY_ATTNO - 1];
 
 	return tupleSlot;
 }
@@ -882,8 +945,8 @@ griddbEndForeignScan(ForeignScanState *node)
 	griddb_free_column_info(&fsstate->field_info);
 	if (fsstate->for_update)
 	{
-		griddb_free_column_info(&griddb_sm_share.field_info);
-		memset(&griddb_sm_share, 0, sizeof(GridDBFdwScanModifyRelay));
+		griddb_free_column_info(&fsstate->smrelay->field_info);
+		fsstate->smrelay = NULL;
 	}
 
 	/* Release remote connection */
@@ -1082,6 +1145,7 @@ create_foreign_modify(EState *estate,
 	{
 		griddb_find_junk_attno(fmstate, subplan->targetlist);
 		griddb_modify_target_init(fmstate);
+		fmstate->smrelay = griddb_get_smrelay(rte->relid);
 	}
 	fmstate->operation = operation;
 
@@ -1193,6 +1257,7 @@ griddbExecForeignUpdate(EState *estate,
 	GridDBFdwModifyState *fmstate =
 	(GridDBFdwModifyState *) resultRelInfo->ri_FdwState;
 	GSResult	ret;
+	GridDBFdwSMRelay *smrelay = fmstate->smrelay;
 
 	if (!fmstate->bulk_mode)
 		griddb_judge_bulk_mode(fmstate, planSlot);
@@ -1203,17 +1268,17 @@ griddbExecForeignUpdate(EState *estate,
 		 * Memorize modified row information. They will be updated in
 		 * griddbEndForeignModify.
 		 */
-		griddb_modify_target_insert(fmstate, slot, planSlot, &griddb_sm_share.field_info);
+		griddb_modify_target_insert(fmstate, slot, planSlot, &smrelay->field_info);
 	}
 	else
 	{
 		/* Create row structure for gsPutRow */
-		griddb_bind_for_putrow(fmstate, slot, griddb_sm_share.row,
+		griddb_bind_for_putrow(fmstate, slot, smrelay->row,
 							   resultRelInfo->ri_RelationDesc,
-							   &griddb_sm_share.field_info);
+							   &smrelay->field_info);
 
 		/* Update row */
-		ret = gsUpdateCurrentRow(griddb_sm_share.row_set, griddb_sm_share.row);
+		ret = gsUpdateCurrentRow(smrelay->row_set, smrelay->row);
 		if (!GS_SUCCEEDED(ret))
 			griddb_REPORT_ERROR(ERROR, ret, fmstate->cont);
 	}
@@ -1235,6 +1300,7 @@ griddbExecForeignDelete(EState *estate,
 	GridDBFdwModifyState *fmstate =
 	(GridDBFdwModifyState *) resultRelInfo->ri_FdwState;
 	GSResult	ret;
+	GridDBFdwSMRelay *smrelay = fmstate->smrelay;
 
 	if (!fmstate->bulk_mode)
 		griddb_judge_bulk_mode(fmstate, planSlot);
@@ -1245,12 +1311,12 @@ griddbExecForeignDelete(EState *estate,
 		 * Memorize modified row information. They will be deleted in
 		 * griddbEndForeignModify.
 		 */
-		griddb_modify_target_insert(fmstate, slot, planSlot, &griddb_sm_share.field_info);
+		griddb_modify_target_insert(fmstate, slot, planSlot, &smrelay->field_info);
 	}
 	else
 	{
 		/* Delete row */
-		ret = gsDeleteCurrentRow(griddb_sm_share.row_set);
+		ret = gsDeleteCurrentRow(smrelay->row_set);
 		if (!GS_SUCCEEDED(ret))
 			griddb_REPORT_ERROR(ERROR, ret, fmstate->cont);
 	}
@@ -1269,6 +1335,7 @@ griddbEndForeignModify(EState *estate,
 {
 	GridDBFdwModifyState *fmstate =
 	(GridDBFdwModifyState *) resultRelInfo->ri_FdwState;
+	GridDBFdwSMRelay *smrelay = fmstate->smrelay;
 
 	/* If fmstate is NULL, we are in EXPLAIN; nothing to do */
 	if (fmstate == NULL)
@@ -1276,9 +1343,11 @@ griddbEndForeignModify(EState *estate,
 
 	if (fmstate->operation == CMD_UPDATE || fmstate->operation == CMD_DELETE)
 	{
-		griddb_modify_target_sort(fmstate, &griddb_sm_share.field_info);
-		griddb_modify_targets_apply(fmstate, &griddb_sm_share.field_info);
+		griddb_modify_target_sort(fmstate, &smrelay->field_info);
+		griddb_modify_targets_apply(fmstate, &smrelay->field_info);
 		griddb_modify_target_fini(fmstate);
+		griddb_close_smrelay(fmstate->rel->rd_id);
+		fmstate->smrelay = NULL;
 	}
 
 	/* Container will be closed by griddb_xact_callback */
@@ -2439,12 +2508,14 @@ griddb_execute_and_fetch(ForeignScanState *node)
 	if (!GS_SUCCEEDED(ret))
 		griddb_REPORT_ERROR(ERROR, ret, fsstate->cont);
 
-	/* griddb_sm_share is shared with ForeignModify */
+	/* smrelay is shared with ForeignModify */
 	if (fsstate->for_update)
 	{
-		griddb_sm_share.row_set = fsstate->row_set;
-		griddb_sm_share.row = fsstate->row;
-		griddb_make_column_info(&cont_info, &griddb_sm_share.field_info);
+		GridDBFdwSMRelay *smrelay = fsstate->smrelay;
+
+		smrelay->row_set = fsstate->row_set;
+		smrelay->row = fsstate->row;
+		griddb_make_column_info(&cont_info, &smrelay->field_info);
 	}
 }
 
@@ -2724,14 +2795,15 @@ griddb_judge_bulk_mode(GridDBFdwModifyState * fmstate, TupleTableSlot *planSlot)
 	Datum		val1;
 	int			(*comparator) (const void *, const void *);
 	bool		isnull;
-	GSType		gs_type = griddb_sm_share.field_info.column_types[ROWKEY_ATTNO - 1];
+	GridDBFdwSMRelay *smrelay = fmstate->smrelay;
+	GSType		gs_type = smrelay->field_info.column_types[ROWKEY_ATTNO - 1];
 
 	/* No need to judge if it is already bulk mode. */
 	if (fmstate->bulk_mode == true)
 		return;
 
 	/* Chenge to bulk mode if the cursor is poinitng NULL. */
-	if (!griddb_sm_share.rowkey_val)
+	if (!smrelay->rowkey_val)
 	{
 		fmstate->bulk_mode = true;
 		return;
@@ -2741,7 +2813,7 @@ griddb_judge_bulk_mode(GridDBFdwModifyState * fmstate, TupleTableSlot *planSlot)
 	Assert(isnull == false);
 
 	value1[0] = &val1;
-	value2[0] = &griddb_sm_share.rowkey_val;
+	value2[0] = &smrelay->rowkey_val;
 	comparator = griddb_get_comparator(gs_type);
 	if (comparator((const void *) &value1, (const void *) &value2) != 0)
 		fmstate->bulk_mode = true;
