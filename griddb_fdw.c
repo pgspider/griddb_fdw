@@ -163,6 +163,7 @@ typedef struct GridDBFdwModifyState
 	bool		bulk_mode;		/* true if UPDATE/DELETE targets are pointing
 								 * different rows from result set cursor */
 	AttrNumber	junk_att_no;	/* rowkey attribute number */
+	HTAB	   *modified_rowkeys;	/* rowkey hash */
 	GridDBFdwModifiedRows modified_rows;
 	CmdType		operation;		/* INSERT, UPDATE, or DELETE */
 
@@ -1119,6 +1120,7 @@ create_foreign_modify(EState *estate,
 		griddb_find_junk_attno(fmstate, subplan->targetlist);
 		griddb_modify_target_init(&fmstate->modified_rows, list_length(fmstate->target_attrs));
 		fmstate->smrelay = griddb_get_smrelay(rte->relid);
+		fmstate->modified_rowkeys = griddb_rowkey_hash_create(&fmstate->smrelay->field_info);
 	}
 	fmstate->operation = operation;
 
@@ -1231,6 +1233,17 @@ griddbExecForeignUpdate(EState *estate,
 	(GridDBFdwModifyState *) resultRelInfo->ri_FdwState;
 	GSResult	ret;
 	GridDBFdwSMRelay *smrelay = fmstate->smrelay;
+	Datum		rowkey;
+	bool		isnull;
+	bool		found;
+	GridDBFdwRowKeyHashEntry *rowket_hash_entry;
+
+	/* Check if it is already modified or not. */
+	rowkey = ExecGetJunkAttribute(planSlot, fmstate->junk_att_no, &isnull);
+	Assert(isnull == false);
+	rowket_hash_entry = griddb_rowkey_hash_search(fmstate->modified_rowkeys, rowkey, &found);
+	if (found)
+		return NULL;
 
 	if (!fmstate->bulk_mode)
 		griddb_judge_bulk_mode(fmstate, planSlot);
@@ -1241,10 +1254,14 @@ griddbExecForeignUpdate(EState *estate,
 		 * Memorize modified row information. They will be updated in
 		 * griddbEndForeignModify.
 		 */
-		griddb_modify_target_insert(&fmstate->modified_rows, slot, planSlot, fmstate->junk_att_no, fmstate->target_attrs, &smrelay->field_info);
+		Datum		rowkey_datum = griddb_modify_target_insert(&fmstate->modified_rows, slot, planSlot, fmstate->junk_att_no, fmstate->target_attrs, &smrelay->field_info);
+
+		griddb_rowkey_hash_set(rowket_hash_entry, rowkey_datum, NULL);
 	}
 	else
 	{
+		Form_pg_attribute attr;
+
 		/* Create row structure for gsPutRow */
 		griddb_bind_for_putrow(fmstate, slot, smrelay->row,
 							   resultRelInfo->ri_RelationDesc,
@@ -1254,6 +1271,9 @@ griddbExecForeignUpdate(EState *estate,
 		ret = gsUpdateCurrentRow(smrelay->row_set, smrelay->row);
 		if (!GS_SUCCEEDED(ret))
 			griddb_REPORT_ERROR(ERROR, ret, fmstate->cont);
+
+		attr = TupleDescAttr(planSlot->tts_tupleDescriptor, fmstate->junk_att_no - 1);
+		griddb_rowkey_hash_set(rowket_hash_entry, rowkey, attr);
 	}
 
 	/* Return NULL if nothing was updated on the remote end */
@@ -1274,6 +1294,17 @@ griddbExecForeignDelete(EState *estate,
 	(GridDBFdwModifyState *) resultRelInfo->ri_FdwState;
 	GSResult	ret;
 	GridDBFdwSMRelay *smrelay = fmstate->smrelay;
+	Datum		rowkey;
+	bool		isnull;
+	bool		found;
+	GridDBFdwRowKeyHashEntry *rowket_hash_entry;
+
+	/* Check if it is already modified or not. */
+	rowkey = ExecGetJunkAttribute(planSlot, fmstate->junk_att_no, &isnull);
+	Assert(isnull == false);
+	rowket_hash_entry = griddb_rowkey_hash_search(fmstate->modified_rowkeys, rowkey, &found);
+	if (found)
+		return NULL;
 
 	if (!fmstate->bulk_mode)
 		griddb_judge_bulk_mode(fmstate, planSlot);
@@ -1284,14 +1315,21 @@ griddbExecForeignDelete(EState *estate,
 		 * Memorize modified row information. They will be deleted in
 		 * griddbEndForeignModify.
 		 */
-		griddb_modify_target_insert(&fmstate->modified_rows, slot, planSlot, fmstate->junk_att_no, fmstate->target_attrs, &smrelay->field_info);
+		Datum		rowkey_datum = griddb_modify_target_insert(&fmstate->modified_rows, slot, planSlot, fmstate->junk_att_no, fmstate->target_attrs, &smrelay->field_info);
+
+		griddb_rowkey_hash_set(rowket_hash_entry, rowkey_datum, NULL);
 	}
 	else
 	{
+		Form_pg_attribute attr;
+
 		/* Delete row */
 		ret = gsDeleteCurrentRow(smrelay->row_set);
 		if (!GS_SUCCEEDED(ret))
 			griddb_REPORT_ERROR(ERROR, ret, fmstate->cont);
+
+		attr = TupleDescAttr(planSlot->tts_tupleDescriptor, fmstate->junk_att_no - 1);
+		griddb_rowkey_hash_set(rowket_hash_entry, rowkey, attr);
 	}
 
 	/* Return NULL if nothing was deleted on the remote end */
@@ -1322,6 +1360,7 @@ griddbEndForeignModify(EState *estate,
 		griddb_modify_target_sort(&fmstate->modified_rows, &smrelay->field_info);
 		griddb_modify_targets_apply(&fmstate->modified_rows, fmstate->cont_name, fmstate->cont, fmstate->target_attrs, &smrelay->field_info, pgkeytype, fmstate->operation);
 		griddb_modify_target_fini(&fmstate->modified_rows);
+		griddb_rowkey_hash_free(fmstate->modified_rowkeys);
 		griddb_close_smrelay(fmstate->rel->rd_id);
 		fmstate->smrelay = NULL;
 	}
@@ -2559,7 +2598,7 @@ griddb_judge_bulk_mode(GridDBFdwModifyState * fmstate, TupleTableSlot *planSlot)
 
 	value1[0] = &val1;
 	value2[0] = &smrelay->rowkey_val;
-	comparator = griddb_get_comparator(gs_type);
+	comparator = griddb_get_comparator_tuplekey(gs_type);
 	if (comparator((const void *) &value1, (const void *) &value2) != 0)
 		fmstate->bulk_mode = true;
 }

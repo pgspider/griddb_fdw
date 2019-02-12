@@ -42,7 +42,7 @@
  */
 
 static int
-griddb_compare_string(const void *a, const void *b)
+griddb_compare_tuplekey_string(const void *a, const void *b)
 {
 	Datum	   *val1 = *(Datum **) a;
 	Datum	   *val2 = *(Datum **) b;
@@ -59,7 +59,7 @@ griddb_compare_string(const void *a, const void *b)
 }
 
 static int
-griddb_compare_integer(const void *a, const void *b)
+griddb_compare_tuplekey_integer(const void *a, const void *b)
 {
 	Datum	   *val1 = *(Datum **) a;
 	Datum	   *val2 = *(Datum **) b;
@@ -70,7 +70,7 @@ griddb_compare_integer(const void *a, const void *b)
 }
 
 static int
-griddb_compare_long(const void *a, const void *b)
+griddb_compare_tuplekey_long(const void *a, const void *b)
 {
 	Datum	   *val1 = *(Datum **) a;
 	Datum	   *val2 = *(Datum **) b;
@@ -81,7 +81,7 @@ griddb_compare_long(const void *a, const void *b)
 }
 
 static int
-griddb_compare_timestamp(const void *a, const void *b)
+griddb_compare_tuplekey_timestamp(const void *a, const void *b)
 {
 	Datum	   *val1 = *(Datum **) a;
 	Datum	   *val2 = *(Datum **) b;
@@ -91,23 +91,108 @@ griddb_compare_timestamp(const void *a, const void *b)
 	COMPARE_RETURN(timestamp1, timestamp2);
 }
 
-/* Return comparator for gs_type */
+/* Return comparator based on gs_type for pg_qsort used in griddb_fdw. */
 int			(*
-			 griddb_get_comparator(GSType gs_type)) (const void *, const void *)
+			 griddb_get_comparator_tuplekey(GSType gs_type)) (const void *, const void *)
 {
 	switch (gs_type)
 	{
 		case GS_TYPE_STRING:
-			return griddb_compare_string;
+			return griddb_compare_tuplekey_string;
 
 		case GS_TYPE_INTEGER:
-			return griddb_compare_integer;
+			return griddb_compare_tuplekey_integer;
 
 		case GS_TYPE_LONG:
-			return griddb_compare_long;
+			return griddb_compare_tuplekey_long;
 
 		case GS_TYPE_TIMESTAMP:
-			return griddb_compare_timestamp;
+			return griddb_compare_tuplekey_timestamp;
+
+		default:
+
+			/*
+			 * Should not happen, we have already checked rowkey is assigned.
+			 * GridDB support rowkey for column of only GS_TYPE_STRING,
+			 * GS_TYPE_INTEGER, GS_TYPE_LONG and GS_TYPE_TIMESTAMP type.
+			 */
+			elog(ERROR, "Cannot compare rowkey type(GS) %d", gs_type);
+			return NULL;		/* keep compiler quiet */
+	}
+}
+
+/*
+ * Comparison functions for hash key.
+ * Arguments are a pointer of Datum.
+ */
+
+static int
+griddb_compare_datum_string(const void *a, const void *b)
+{
+	Datum		val1 = *(Datum *) a;
+	Datum		val2 = *(Datum *) b;
+	char	   *textVal1;
+	char	   *textVal2;
+	Oid			outputFunctionId;
+	bool		typeVarLength;
+
+	getTypeOutputInfo(TEXTOID, &outputFunctionId, &typeVarLength);
+	textVal1 = OidOutputFunctionCall(outputFunctionId, val1);
+	textVal2 = OidOutputFunctionCall(outputFunctionId, val2);
+
+	return strcmp((const char *) textVal1, (const char *) textVal2);
+}
+
+static int
+griddb_compare_datum_integer(const void *a, const void *b)
+{
+	Datum		val1 = *(Datum *) a;
+	Datum		val2 = *(Datum *) b;
+	int32		intVal1 = DatumGetInt32(val1);
+	int32		intVal2 = DatumGetInt32(val2);
+
+	COMPARE_RETURN(intVal1, intVal2);
+}
+
+static int
+griddb_compare_datum_long(const void *a, const void *b)
+{
+	Datum		val1 = *(Datum *) a;
+	Datum		val2 = *(Datum *) b;
+	int64		longVal1 = DatumGetInt64(val1);
+	int64		longVal2 = DatumGetInt64(val2);
+
+	COMPARE_RETURN(longVal1, longVal2);
+}
+
+static int
+griddb_compare_datum_timestamp(const void *a, const void *b)
+{
+	Datum		val1 = *(Datum *) a;
+	Datum		val2 = *(Datum *) b;
+	Timestamp	timestamp1 = DatumGetTimestamp(val1);
+	Timestamp	timestamp2 = DatumGetTimestamp(val2);
+
+	COMPARE_RETURN(timestamp1, timestamp2);
+}
+
+/* Return comparator based on gs_type for hash used in griddb_fdw. */
+int			(*
+			 griddb_get_comparator_datum(GSType gs_type)) (const void *, const void *)
+{
+	switch (gs_type)
+	{
+		case GS_TYPE_STRING:
+			return griddb_compare_datum_string;
+
+		case GS_TYPE_INTEGER:
+			return griddb_compare_datum_integer;
+
+		case GS_TYPE_LONG:
+			return griddb_compare_datum_long;
+
+		case GS_TYPE_TIMESTAMP:
+			return griddb_compare_datum_timestamp;
 
 		default:
 

@@ -20,6 +20,79 @@
 #include "catalog/pg_type.h"
 
 /*
+ * griddb_rowkey_hash_create
+ *		Create hash table for storing keys of modified row.
+ *      This hash table is used for checking the row is already modified/deleted or not.
+ *
+ *      ForeignModifyUpdate/ForeignModifyDelete are called one or more times to modify rows having the same rowkey.
+ *      griddb_fdw's update/delete operation is based on modifying result set fetched from GridDB.
+ *      griddb_fdw stores modified row information without rowkey overlap.
+ *      In order to check the rowkey existence, this hash table is used.
+ */
+HTAB *
+griddb_rowkey_hash_create(GridDBFdwFieldInfo * field_info)
+{
+	HASHCTL		ctl;
+	int			(*comparator) (const void *, const void *) = griddb_get_comparator_datum(field_info->column_types[ROWKEY_ATTNO - 1]);
+
+	MemSet(&ctl, 0, sizeof(ctl));
+	ctl.keysize = sizeof(GridDBFdwRowKeyHashKey);
+	ctl.entrysize = sizeof(GridDBFdwRowKeyHashEntry);
+	/* allocate rowkey hash in the cache context */
+	ctl.hcxt = CacheMemoryContext;
+	ctl.match = (HashCompareFunc) comparator;
+	return hash_create("griddb_fdw rowkeys of modified record", 256,
+					   &ctl,
+					   HASH_ELEM | HASH_BLOBS | HASH_COMPARE | HASH_CONTEXT);
+}
+
+/*
+ * griddb_rowkey_hash_search
+ *		Search an entry from hash. If not found, new entry is created. If rowkey is a temporal
+ *      value for the search, please call griddb_rowkey_hash_set for setting rowkey later.
+ */
+GridDBFdwRowKeyHashEntry *
+griddb_rowkey_hash_search(HTAB *modified_rowkeys, Datum rowkey, bool *found)
+{
+	return (GridDBFdwRowKeyHashEntry *) hash_search(modified_rowkeys, &rowkey, HASH_ENTER, found);
+}
+
+/*
+ * griddb_rowkey_hash_set
+ *		Set value into hash. If attr is not NULL, rowkey is copied.
+ */
+void
+griddb_rowkey_hash_set(GridDBFdwRowKeyHashEntry * entry, Datum rowkey, Form_pg_attribute attr)
+{
+	if (attr)
+	{
+		entry->rowkey = datumCopy(rowkey, attr->attbyval, attr->attlen);
+		entry->allocated = !attr->attbyval;
+	}
+	else
+	{
+		entry->rowkey = rowkey;
+		entry->allocated = false;
+	}
+}
+
+/*
+ * griddb_rowkey_hash_free
+ *		Free all entries in hash.
+ */
+void
+griddb_rowkey_hash_free(HTAB *modified_rowkeys)
+{
+	HASH_SEQ_STATUS scan;
+	GridDBFdwRowKeyHashEntry *entry;
+
+	hash_seq_init(&scan, modified_rowkeys);
+	while ((entry = (GridDBFdwRowKeyHashEntry *) hash_seq_search(&scan)))
+		if (entry->allocated)
+			pfree((void *) entry->rowkey);
+}
+
+/*
  * griddb_update_rows_init
  *		Initialize area for storing information of modified rows.
  *		Size is INITIAL_TARGET_VALUE_ROWS rows.
@@ -78,8 +151,9 @@ griddb_modify_target_fini(GridDBFdwModifiedRows * modified_rows)
  *		Store values of updated/deleted row information.
  *		Values are stored in an array.
  *		1st element is key column.
+ * Return inserted rowkey.
  */
-void
+Datum
 griddb_modify_target_insert(GridDBFdwModifiedRows * modified_rows, TupleTableSlot *slot,
 							TupleTableSlot *planSlot, AttrNumber junk_att_no,
 							List *target_attrs, GridDBFdwFieldInfo * field_info)
@@ -121,6 +195,8 @@ griddb_modify_target_insert(GridDBFdwModifiedRows * modified_rows, TupleTableSlo
 		pindex++;
 	}
 	modified_rows->num_target++;
+
+	return target_values[0];
 }
 
 /*
@@ -136,7 +212,7 @@ griddb_modify_target_sort(GridDBFdwModifiedRows * modified_rows, GridDBFdwFieldI
 	int			(*comparator) (const void *, const void *);
 	GSType		gs_type = field_info->column_types[ROWKEY_ATTNO - 1];
 
-	comparator = griddb_get_comparator(gs_type);
+	comparator = griddb_get_comparator_tuplekey(gs_type);
 	pg_qsort(modified_rows->target_values, modified_rows->num_target, sizeof(Datum *), comparator);
 }
 
@@ -242,7 +318,7 @@ griddb_modify_targets_apply(GridDBFdwModifiedRows * modified_rows, char *cont_na
 	GSResult	ret;
 	uint64		iStart = 0;
 	GSRow	   *row;
-	int			(*comparator) (const void *, const void *) = griddb_get_comparator(field_info->column_types[ROWKEY_ATTNO - 1]);
+	int			(*comparator) (const void *, const void *) = griddb_get_comparator_tuplekey(field_info->column_types[ROWKEY_ATTNO - 1]);
 
 	if (modified_rows->num_target == 0)
 		return;

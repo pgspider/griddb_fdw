@@ -18,6 +18,7 @@
 #include "executor/tuptable.h"
 #include "foreign/foreign.h"
 #include "nodes/relation.h"
+#include "utils/hsearch.h"
 #include "utils/relcache.h"
 #include "utils/timestamp.h"
 
@@ -148,6 +149,16 @@ typedef struct GridDBFdwFieldInfo
 }			GridDBFdwFieldInfo;
 
 /*
+ * Modified rowkey information.
+ */
+typedef Datum GridDBFdwRowKeyHashKey;
+typedef struct GridDBFdwRowKeyHashEntry
+{
+	GridDBFdwRowKeyHashKey rowkey;
+	bool		allocated;		/* True if rowkey should be freed */
+}			GridDBFdwRowKeyHashEntry;
+
+/*
  * Modified row information.
  */
 typedef struct GridDBFdwModifiedRows
@@ -199,10 +210,14 @@ extern void griddb_deparse_locking_clause(PlannerInfo *root, RelOptInfo *rel,
 							  int *for_update);
 
 /* in store.c */
+extern HTAB *griddb_rowkey_hash_create(GridDBFdwFieldInfo * field_info);
+extern GridDBFdwRowKeyHashEntry * griddb_rowkey_hash_search(HTAB *modified_rowkeys, Datum rowkey, bool *found);
+extern void griddb_rowkey_hash_set(GridDBFdwRowKeyHashEntry * entry, Datum rowkey, Form_pg_attribute attr);
+extern void griddb_rowkey_hash_free(HTAB *modified_rowkeys);
 extern void griddb_modify_target_init(GridDBFdwModifiedRows * modified_rows, int attnum);
 extern void griddb_modify_target_expand(GridDBFdwModifiedRows * modified_rows);
 extern void griddb_modify_target_fini(GridDBFdwModifiedRows * modified_rows);
-extern void griddb_modify_target_insert(GridDBFdwModifiedRows * modified_rows,
+extern Datum griddb_modify_target_insert(GridDBFdwModifiedRows * modified_rows,
 							TupleTableSlot *slot, TupleTableSlot *planSlot,
 							AttrNumber junk_att_no, List *target_attrs,
 							GridDBFdwFieldInfo * field_info);
@@ -213,6 +228,7 @@ extern void griddb_modify_targets_apply(GridDBFdwModifiedRows * modified_rows,
 							GridDBFdwFieldInfo * field_info, Oid pgkeytype, CmdType operation);
 
 /* in compare.c */
-extern int	(*griddb_get_comparator(GSType gs_type)) (const void *, const void *);
+extern int	(*griddb_get_comparator_tuplekey(GSType gs_type)) (const void *, const void *);
+extern int	(*griddb_get_comparator_datum(GSType gs_type)) (const void *, const void *);
 
 #endif							/* GRIDDB_FDW_H */
