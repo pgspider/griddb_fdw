@@ -1,7 +1,7 @@
 # contrib/griddb_fdw/Makefile
 
 MODULE_big = griddb_fdw
-OBJS = griddb_fdw.o option.o deparse.o connection.o $(WIN32RES)
+OBJS = griddb_fdw.o option.o deparse.o connection.o compare.o store.o $(WIN32RES)
 PGFILEDESC = "griddb_fdw - foreign data wrapper for GridDB"
 
 GRIDDB_INCLUDE = griddb/client/c/include

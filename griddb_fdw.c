@@ -98,18 +98,6 @@ enum FdwDirectModifyPrivateIndex
 };
 
 /*
- * When a schema information is acqured from GridDB, it is stored a
- * temporary space in GridDB client library. So griddb_fdw copies it
- * to griddb_fdw library.
- */
-typedef struct GridDBFdwFieldInfo
-{
-	size_t		column_count;	/* column count */
-	GSChar	  **column_names;	/* column name */
-	GSType	   *column_types;	/* column type */
-}			GridDBFdwFieldInfo;
-
-/*
  * The following structures are used for sharing data between scaning
  * functions and modification functions.
  * In griddb_fdw, the data modification (UPDATE/DELETE) is done via rowset
@@ -175,9 +163,7 @@ typedef struct GridDBFdwModifyState
 	bool		bulk_mode;		/* true if UPDATE/DELETE targets are pointing
 								 * different rows from result set cursor */
 	AttrNumber	junk_att_no;	/* rowkey attribute number */
-	Datum	  **target_values;	/* update or delete target row information */
-	uint64_t	num_target;		/* # of stored modified row */
-	uint64_t	max_target;		/* # of storable modified row */
+	GridDBFdwModifiedRows modified_rows;
 	CmdType		operation;		/* INSERT, UPDATE, or DELETE */
 
 	/* for sharing data with ForeignScan */
@@ -282,22 +268,9 @@ static void griddb_free_column_info(GridDBFdwFieldInfo * field_info);
 static Oid	griddb_pgtyp_from_gstyp(GSType gs_type, const char **name);
 static Timestamp griddb_convert_gs2pg_timestamp(GSTimestamp ts);
 static GSTimestamp griddb_convert_pg2gs_timestamp(Timestamp dt);
-static Datum griddb_make_datum_from_row(GSRow * row, int32_t attid,
-						   GSType gs_type, Oid pg_type);
 static void griddb_execute_and_fetch(ForeignScanState *node);
 static void griddb_find_junk_attno(GridDBFdwModifyState * fmstate, List *targetlist);
-static int	(*griddb_get_comparator(GSType gs_type)) (const void *, const void *);
-static void griddb_modify_target_init(GridDBFdwModifyState * fmstate);
-static void griddb_modify_target_expand(GridDBFdwModifyState * fmstate);
-static void griddb_modify_target_fini(GridDBFdwModifyState * fmstate);
-static void griddb_modify_target_insert(GridDBFdwModifyState * fmstate,
-							TupleTableSlot *slot, TupleTableSlot *planSlot,
-							GridDBFdwFieldInfo * field_info);
-static void griddb_modify_target_sort(GridDBFdwModifyState * fmstate,
-						  GridDBFdwFieldInfo * field_info);
 static void griddb_judge_bulk_mode(GridDBFdwModifyState * fmstate, TupleTableSlot *planSlot);
-static void griddb_modify_targets_apply(GridDBFdwModifyState * fmstate, GridDBFdwFieldInfo * field_info);
-static void griddb_set_row_field(GSRow * row, Datum value, GSType gs_type, int pindex);
 static void griddb_bind_for_putrow(GridDBFdwModifyState * fmstate,
 					   TupleTableSlot *slot,
 					   GSRow * row, Relation rel,
@@ -1144,7 +1117,7 @@ create_foreign_modify(EState *estate,
 	if (operation == CMD_UPDATE || operation == CMD_DELETE)
 	{
 		griddb_find_junk_attno(fmstate, subplan->targetlist);
-		griddb_modify_target_init(fmstate);
+		griddb_modify_target_init(&fmstate->modified_rows, list_length(fmstate->target_attrs));
 		fmstate->smrelay = griddb_get_smrelay(rte->relid);
 	}
 	fmstate->operation = operation;
@@ -1268,7 +1241,7 @@ griddbExecForeignUpdate(EState *estate,
 		 * Memorize modified row information. They will be updated in
 		 * griddbEndForeignModify.
 		 */
-		griddb_modify_target_insert(fmstate, slot, planSlot, &smrelay->field_info);
+		griddb_modify_target_insert(&fmstate->modified_rows, slot, planSlot, fmstate->junk_att_no, fmstate->target_attrs, &smrelay->field_info);
 	}
 	else
 	{
@@ -1311,7 +1284,7 @@ griddbExecForeignDelete(EState *estate,
 		 * Memorize modified row information. They will be deleted in
 		 * griddbEndForeignModify.
 		 */
-		griddb_modify_target_insert(fmstate, slot, planSlot, &smrelay->field_info);
+		griddb_modify_target_insert(&fmstate->modified_rows, slot, planSlot, fmstate->junk_att_no, fmstate->target_attrs, &smrelay->field_info);
 	}
 	else
 	{
@@ -1343,9 +1316,12 @@ griddbEndForeignModify(EState *estate,
 
 	if (fmstate->operation == CMD_UPDATE || fmstate->operation == CMD_DELETE)
 	{
-		griddb_modify_target_sort(fmstate, &smrelay->field_info);
-		griddb_modify_targets_apply(fmstate, &smrelay->field_info);
-		griddb_modify_target_fini(fmstate);
+		TupleDesc	tupdesc = RelationGetDescr(fmstate->rel);
+		Oid			pgkeytype = TupleDescAttr(tupdesc, ROWKEY_ATTNO - 1)->atttypid;
+
+		griddb_modify_target_sort(&fmstate->modified_rows, &smrelay->field_info);
+		griddb_modify_targets_apply(&fmstate->modified_rows, fmstate->cont_name, fmstate->cont, fmstate->target_attrs, &smrelay->field_info, pgkeytype, fmstate->operation);
+		griddb_modify_target_fini(&fmstate->modified_rows);
 		griddb_close_smrelay(fmstate->rel->rd_id);
 		fmstate->smrelay = NULL;
 	}
@@ -2075,7 +2051,7 @@ griddb_convert_gs2pg_timestamp(GSTimestamp ts)
  * The 2nd argument is the output. The buffer must be allocated
  * outside of this function. It requires MAXDATELEN+1.
  */
-static void
+void
 griddb_convert_pg2gs_timestamp_string(Timestamp dt, char *buf)
 {
 	struct pg_tm tm;
@@ -2139,7 +2115,7 @@ griddb_get_datatype_for_convertion(Oid pg_type, regproc *typeinput,
 	ReleaseSysCache(hptuple);
 }
 
-static Datum
+Datum
 griddb_make_datum_from_row(GSRow * row, int32_t attid, GSType gs_type,
 						   Oid pg_type)
 {
@@ -2523,7 +2499,7 @@ griddb_execute_and_fetch(ForeignScanState *node)
  * griddb_update_rows_init
  *		Check whether data type of slot is as expected.
  */
-static void
+void
 griddb_check_slot_type(TupleTableSlot *slot, int attnum, GridDBFdwFieldInfo * field_info)
 {
 	GSType		gs_type;
@@ -2549,237 +2525,6 @@ griddb_find_junk_attno(GridDBFdwModifyState * fmstate, List *targetlist)
 	);
 
 	fmstate->junk_att_no = ExecFindJunkAttributeInTlist(targetlist, attName);
-}
-
-/*
- * griddb_update_rows_init
- *		Initialize area for storing information of modified rows.
- *		Size is INITIAL_TARGET_VALUE_ROWS rows.
- */
-static void
-griddb_modify_target_init(GridDBFdwModifyState * fmstate)
-{
-	int			i;
-	int			nField = list_length(fmstate->target_attrs) + 1;	/* +1 is key column. */
-
-	fmstate->target_values = (Datum **) palloc0(sizeof(Datum *) * INITIAL_TARGET_VALUE_ROWS);
-	for (i = 0; i < INITIAL_TARGET_VALUE_ROWS; i++)
-		fmstate->target_values[i] = (Datum *) palloc0(sizeof(Datum) * nField);
-
-	fmstate->num_target = 0;
-	fmstate->max_target = INITIAL_TARGET_VALUE_ROWS;
-}
-
-/*
- * griddb_modify_target_expand
- *		Expand the area for storing information of modified rows.
- *		Size is increased to double.
- */
-static void
-griddb_modify_target_expand(GridDBFdwModifyState * fmstate)
-{
-	int			i;
-	int			nField = list_length(fmstate->target_attrs) + 1;	/* +1 is key column. */
-
-	fmstate->target_values = (Datum **) repalloc(fmstate->target_values, sizeof(Datum *) * fmstate->max_target * 2);
-	for (i = fmstate->max_target; i < fmstate->max_target * 2; i++)
-		fmstate->target_values[i] = (Datum *) palloc0(sizeof(Datum) * nField);
-	fmstate->max_target *= 2;
-}
-
-/*
- * griddb_modify_target_fini
- *		Free memory of modified rows information.
- */
-static void
-griddb_modify_target_fini(GridDBFdwModifyState * fmstate)
-{
-	int			i;
-
-	for (i = 0; i < fmstate->max_target; i++)
-		pfree(fmstate->target_values[i]);
-	pfree(fmstate->target_values);
-	fmstate->target_values = NULL;
-}
-
-/*
- * griddb_modify_target_insert
- *		Store values of updated/deleted row information.
- *		Values are stored in an array.
- *		1st element is key column.
- */
-static void
-griddb_modify_target_insert(GridDBFdwModifyState * fmstate, TupleTableSlot *slot,
-							TupleTableSlot *planSlot, GridDBFdwFieldInfo * field_info)
-{
-	ListCell   *lc;
-	Datum	   *target_values;
-	int			pindex = 0;
-	Datum		value;
-	bool		isnull;
-	Form_pg_attribute attr;
-
-	/* Do nothing if there are free spaces. */
-	if (fmstate->num_target >= fmstate->max_target)
-		griddb_modify_target_expand(fmstate);
-
-	target_values = fmstate->target_values[fmstate->num_target];
-
-	/* Firstly, store a value of rowkey column which is the 1st column. */
-	value = ExecGetJunkAttribute(planSlot, fmstate->junk_att_no, &isnull);
-	Assert(isnull == false);
-	attr = TupleDescAttr(planSlot->tts_tupleDescriptor, fmstate->junk_att_no - 1);
-	target_values[pindex] = datumCopy(value, attr->attbyval, attr->attlen);
-	pindex++;
-
-	/* Store modified column values. */
-	foreach(lc, fmstate->target_attrs)
-	{
-		int			attnum = lfirst_int(lc);
-
-		if (attnum < 0)
-			continue;
-
-		griddb_check_slot_type(slot, attnum, field_info);
-
-		value = slot_getattr(slot, attnum, &isnull);
-		Assert(isnull == false);
-		attr = TupleDescAttr(slot->tts_tupleDescriptor, attnum - 1);
-		target_values[pindex] = datumCopy(value, attr->attbyval, attr->attlen);
-		pindex++;
-	}
-	fmstate->num_target++;
-}
-
-/* Comparison functions for pg_qsort. */
-static int
-griddb_compare_string(const void *a, const void *b)
-{
-	Datum	   *val1 = *(Datum **) a;
-	Datum	   *val2 = *(Datum **) b;
-	char	   *textVal1;
-	char	   *textVal2;
-	Oid			outputFunctionId;
-	bool		typeVarLength;
-
-	getTypeOutputInfo(TEXTOID, &outputFunctionId, &typeVarLength);
-	textVal1 = OidOutputFunctionCall(outputFunctionId, val1[0]);
-	textVal2 = OidOutputFunctionCall(outputFunctionId, val2[0]);
-
-	return strcmp((const char *) textVal1, (const char *) textVal2);
-}
-
-static int
-griddb_compare_integer(const void *a, const void *b)
-{
-	Datum	   *val1 = *(Datum **) a;
-	Datum	   *val2 = *(Datum **) b;
-	int32		intVal1 = DatumGetInt32(val1[0]);
-	int32		intVal2 = DatumGetInt32(val2[0]);
-
-	if (intVal1 == intVal2)
-	{
-		return 0;
-	}
-	else if (intVal1 > intVal2)
-	{
-		return 1;
-	}
-	else
-	{
-		return -1;
-	}
-}
-
-static int
-griddb_compare_long(const void *a, const void *b)
-{
-	Datum	   *val1 = *(Datum **) a;
-	Datum	   *val2 = *(Datum **) b;
-	int64		longVal1 = DatumGetInt64(val1[0]);
-	int64		longVal2 = DatumGetInt64(val2[0]);
-
-	if (longVal1 == longVal2)
-	{
-		return 0;
-	}
-	else if (longVal1 > longVal2)
-	{
-		return 1;
-	}
-	else
-	{
-		return -1;
-	}
-}
-
-static int
-griddb_compare_timestamp(const void *a, const void *b)
-{
-	Datum	   *val1 = *(Datum **) a;
-	Datum	   *val2 = *(Datum **) b;
-	Timestamp	timestamp1 = DatumGetTimestamp(val1[0]);
-	Timestamp	timestamp2 = DatumGetTimestamp(val2[0]);
-
-	if (timestamp1 == timestamp2)
-	{
-		return 0;
-	}
-	else if (timestamp1 > timestamp2)
-	{
-		return 1;
-	}
-	else
-	{
-		return -1;
-	}
-}
-
-/* Return comparator for gs_type */
-static int	(*
-			 griddb_get_comparator(GSType gs_type)) (const void *, const void *)
-{
-	switch (gs_type)
-	{
-		case GS_TYPE_STRING:
-			return griddb_compare_string;
-
-		case GS_TYPE_INTEGER:
-			return griddb_compare_integer;
-
-		case GS_TYPE_LONG:
-			return griddb_compare_long;
-
-		case GS_TYPE_TIMESTAMP:
-			return griddb_compare_timestamp;
-
-		default:
-
-			/*
-			 * Should not happen, we have already checked rowkey is assigned.
-			 * GridDB support rowkey for column of only GS_TYPE_STRING,
-			 * GS_TYPE_INTEGER, GS_TYPE_LONG and GS_TYPE_TIMESTAMP type.
-			 */
-			elog(ERROR, "Cannot compare rowkey type(GS) %d", gs_type);
-			return NULL;		/* keep compiler quiet */
-	}
-}
-
-/*
- * target_values are stored in 2 dimentional array.
- * 1st column is storing row key value.
- * This function sorts target_values about row key value by pg_qsort().
- * The comparator functions compare records which are rows in target_values about 1st element.
- *
- */
-static void
-griddb_modify_target_sort(GridDBFdwModifyState * fmstate, GridDBFdwFieldInfo * field_info)
-{
-	int			(*comparator) (const void *, const void *);
-	GSType		gs_type = field_info->column_types[ROWKEY_ATTNO - 1];
-
-	comparator = griddb_get_comparator(gs_type);
-	pg_qsort(fmstate->target_values, fmstate->num_target, sizeof(Datum *), comparator);
 }
 
 /*
@@ -2819,207 +2564,10 @@ griddb_judge_bulk_mode(GridDBFdwModifyState * fmstate, TupleTableSlot *planSlot)
 		fmstate->bulk_mode = true;
 }
 
-/* Create TQL for fetching UPDATE/DELETE targets. */
-static void
-griddb_modify_target_tql(GridDBFdwModifyState * fmstate, GridDBFdwFieldInfo * field_info, uint64_t iStart, uint64 iEnd, StringInfo buf)
-{
-	char	   *cont_name = (char *) fmstate->cont_name;
-	char	   *rowkey = (char *) field_info->column_names[ROWKEY_ATTNO - 1];
-	Datum	  **target_values = fmstate->target_values;
-	Oid			outputFunctionId;
-	bool		typeVarLength;
-	uint64_t	i;
-
-	Assert(iStart < iEnd);
-	Assert(iEnd <= fmstate->num_target);
-
-	/* Construct SELECT statement for fetching update targets. */
-	appendStringInfo(buf, "SELECT * FROM %s WHERE ", cont_name);
-
-	switch (field_info->column_types[ROWKEY_ATTNO - 1])
-	{
-		case GS_TYPE_INTEGER:
-			for (i = iStart; i < iEnd; i++)
-			{
-				Datum	   *values = target_values[i];
-				int			intVal = DatumGetInt32(values[ROWKEY_IDX]);
-
-				if (i != 0)
-					appendStringInfo(buf, " OR ");
-
-				appendStringInfo(buf, "%s = %d", rowkey, intVal);
-			}
-			break;
-
-		case GS_TYPE_LONG:
-			for (i = iStart; i < iEnd; i++)
-			{
-				Datum	   *values = target_values[i];
-				int64		longVal = DatumGetInt64(values[ROWKEY_IDX]);
-
-				if (i != 0)
-					appendStringInfo(buf, " OR ");
-
-				appendStringInfo(buf, "%s = %lld", rowkey, (long long int) longVal);
-			}
-			break;
-
-		case GS_TYPE_TIMESTAMP:
-			for (i = iStart; i < iEnd; i++)
-			{
-				Datum	   *values = target_values[i];
-				char		timestampVal[MAXDATELEN + 1] = {0};
-				Timestamp	timestamp = DatumGetTimestamp(values[ROWKEY_IDX]);
-
-				griddb_convert_pg2gs_timestamp_string(timestamp, timestampVal);
-
-				if (i != 0)
-					appendStringInfo(buf, " OR ");
-
-				appendStringInfo(buf, "%s = TIMESTAMP('%s')", rowkey, timestampVal);
-			}
-			break;
-
-		case GS_TYPE_STRING:
-			getTypeOutputInfo(TEXTOID, &outputFunctionId, &typeVarLength);
-			for (i = iStart; i < iEnd; i++)
-			{
-				Datum	   *values = target_values[i];
-				char	   *stringVal = OidOutputFunctionCall(outputFunctionId, values[ROWKEY_IDX]);
-
-				if (i != 0)
-					appendStringInfo(buf, " OR ");
-
-				appendStringInfo(buf, "%s = '%s'", rowkey, stringVal);
-			}
-			break;
-
-		default:
-			/* Should not happen. */
-			Assert(false);
-			break;				/* keep compiler quiet */
-	}
-
-	appendStringInfo(buf, " ORDER BY %s", rowkey);
-}
-
-/*
- * Operate UPDATE or DELETE to GridDB.
- * The record information is stored fmstate->target_values.
- * Firstly, fetch update/delete target rows from GridDB.
- * Then modify result set in case of UPDATE.
- * And update or delete the current row which cursor is pointing.
- */
-static void
-griddb_modify_targets_apply(GridDBFdwModifyState * fmstate, GridDBFdwFieldInfo * field_info)
-{
-	StringInfoData buf;
-	GSResult	ret;
-	uint64		iStart = 0;
-	GSRow	   *row;
-	TupleDesc	tupdesc = RelationGetDescr(fmstate->rel);
-	Oid			pgtype = TupleDescAttr(tupdesc, ROWKEY_ATTNO - 1)->atttypid;
-	int			(*comparator) (const void *, const void *) = griddb_get_comparator(field_info->column_types[ROWKEY_ATTNO - 1]);
-
-	if (fmstate->num_target == 0)
-		return;
-
-	initStringInfo(&buf);
-
-	ret = gsCreateRowByContainer(fmstate->cont, &row);
-	if (!GS_SUCCEEDED(ret))
-		griddb_REPORT_ERROR(ERROR, ret, fmstate->cont);
-
-	while (iStart < fmstate->num_target)
-	{
-		GSQuery    *query;
-		GSRowSet   *row_set;
-		uint64		i;
-		uint64_t	iEnd = Min(fmstate->num_target, iStart + BULK_ROWS_COUNT);
-
-		/* Create TQL */
-		resetStringInfo(&buf);
-		griddb_modify_target_tql(fmstate, field_info, iStart, iEnd, &buf);
-		elog(DEBUG1, "TQL for modification: %s", buf.data);
-
-		/* Execute TQL */
-		ret = gsQuery(fmstate->cont, buf.data, &query);
-		if (!GS_SUCCEEDED(ret))
-			griddb_REPORT_ERROR(ERROR, ret, fmstate->cont);
-
-		/* Fetch result set for modification */
-		ret = gsFetch(query, GS_TRUE, &row_set);
-		if (!GS_SUCCEEDED(ret))
-			griddb_REPORT_ERROR(ERROR, ret, query);
-
-		for (i = iStart; i < iEnd; i++)
-		{
-			Datum		rowkey;
-			Datum	   *rowValues[1];
-			Datum	   *targets = fmstate->target_values[i];
-
-			Assert(gsHasNextRow(row_set) == GS_TRUE);
-			ret = gsGetNextRow(row_set, row);
-			if (!GS_SUCCEEDED(ret))
-				griddb_REPORT_ERROR(ERROR, ret, row_set);
-
-			/* Check the cursor is pointing the target. */
-			rowkey = griddb_make_datum_from_row(row, ROWKEY_IDX,
-												field_info->column_types[ROWKEY_ATTNO - 1],
-												pgtype);
-			rowValues[0] = &rowkey;
-			if (comparator((const void *) &targets, (const void *) &rowValues))
-			{
-				Assert(false);
-				ereport(WARNING, (errmsg("Fetched rowkey is not same as expected")));
-				continue;
-			}
-
-			/* Do operation. */
-			if (fmstate->operation == CMD_UPDATE)
-			{
-				int			pindex = ROWKEY_IDX + 1;
-				ListCell   *lc;
-
-				foreach(lc, fmstate->target_attrs)
-				{
-					int			attnum = lfirst_int(lc);
-
-					if (attnum < 0)
-						continue;
-
-					griddb_set_row_field(row, targets[pindex], field_info->column_types[attnum - 1], attnum - 1);
-					pindex++;
-				}
-
-				/* Do UPDATE */
-				ret = gsUpdateCurrentRow(row_set, row);
-				if (!GS_SUCCEEDED(ret))
-					griddb_REPORT_ERROR(ERROR, ret, row_set);
-			}
-			else
-			{
-				/* Do DELETE */
-				ret = gsDeleteCurrentRow(row_set);
-				if (!GS_SUCCEEDED(ret))
-					griddb_REPORT_ERROR(ERROR, ret, row_set);
-			}
-		}
-
-		gsCloseRowSet(&row_set);
-		gsCloseQuery(&query);
-
-		/* For the next loop. */
-		iStart = iEnd;
-	}
-
-	gsCloseRow(&row);
-}
-
 /*
  * Call gsSetRowFieldByXXX(). Data is given by the argument as a Datum type.
  */
-static void
+void
 griddb_set_row_field(GSRow * row, Datum value, GSType gs_type, int pindex)
 {
 	GSResult	ret;

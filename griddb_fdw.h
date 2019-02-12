@@ -11,11 +11,15 @@
 #ifndef GRIDDB_FDW_H
 #define GRIDDB_FDW_H
 
+#include "postgres.h"
+
 #include "gridstore.h"
 
+#include "executor/tuptable.h"
 #include "foreign/foreign.h"
 #include "nodes/relation.h"
 #include "utils/relcache.h"
+#include "utils/timestamp.h"
 
 /* Default CPU cost to start up a foreign query. */
 #define DEFAULT_FDW_STARTUP_COST	100.0
@@ -131,7 +135,36 @@ typedef struct GriddbFdwRelationInfo
 	UserMapping *user;			/* only set in use_remote_estimate mode */
 }			GriddbFdwRelationInfo;
 
-/* option.c headers */
+/*
+ * When a schema information is acqured from GridDB, it is stored a
+ * temporary space in GridDB client library. So griddb_fdw copies it
+ * to griddb_fdw library.
+ */
+typedef struct GridDBFdwFieldInfo
+{
+	size_t		column_count;	/* column count */
+	GSChar	  **column_names;	/* column name */
+	GSType	   *column_types;	/* column type */
+}			GridDBFdwFieldInfo;
+
+/*
+ * Modified row information.
+ */
+typedef struct GridDBFdwModifiedRows
+{
+	Datum	  **target_values;	/* update or delete target row information */
+	int			field_num;		/* # of field */
+	uint64_t	num_target;		/* # of stored modified row */
+	uint64_t	max_target;		/* # of storable modified row */
+}			GridDBFdwModifiedRows;
+
+/* in griddb_fdw.c */
+extern void griddb_convert_pg2gs_timestamp_string(Timestamp dt, char *buf);
+extern void griddb_check_slot_type(TupleTableSlot *slot, int attnum, GridDBFdwFieldInfo * field_info);
+extern Datum griddb_make_datum_from_row(GSRow * row, int32_t attid, GSType gs_type, Oid pg_type);
+extern void griddb_set_row_field(GSRow * row, Datum value, GSType gs_type, int pindex);
+
+/* in option.c */
 extern bool griddb_is_valid_option(const char *option, Oid context);
 extern griddb_opt * griddb_get_options(Oid foreigntableid);
 
@@ -164,5 +197,22 @@ extern void griddb_deparse_select(StringInfo buf, PlannerInfo *root,
 					  List **params_list);
 extern void griddb_deparse_locking_clause(PlannerInfo *root, RelOptInfo *rel,
 							  int *for_update);
+
+/* in store.c */
+extern void griddb_modify_target_init(GridDBFdwModifiedRows * modified_rows, int attnum);
+extern void griddb_modify_target_expand(GridDBFdwModifiedRows * modified_rows);
+extern void griddb_modify_target_fini(GridDBFdwModifiedRows * modified_rows);
+extern void griddb_modify_target_insert(GridDBFdwModifiedRows * modified_rows,
+							TupleTableSlot *slot, TupleTableSlot *planSlot,
+							AttrNumber junk_att_no, List *target_attrs,
+							GridDBFdwFieldInfo * field_info);
+extern void griddb_modify_target_sort(GridDBFdwModifiedRows * modified_rows,
+						  GridDBFdwFieldInfo * field_info);
+extern void griddb_modify_targets_apply(GridDBFdwModifiedRows * modified_rows,
+							char *cont_name, GSContainer * cont, List *target_attrs,
+							GridDBFdwFieldInfo * field_info, Oid pgkeytype, CmdType operation);
+
+/* in compare.c */
+extern int	(*griddb_get_comparator(GSType gs_type)) (const void *, const void *);
 
 #endif							/* GRIDDB_FDW_H */
