@@ -1346,7 +1346,6 @@ griddbEndForeignModify(EState *estate,
 {
 	GridDBFdwModifyState *fmstate =
 	(GridDBFdwModifyState *) resultRelInfo->ri_FdwState;
-	GridDBFdwSMRelay *smrelay = fmstate->smrelay;
 
 	/* If fmstate is NULL, we are in EXPLAIN; nothing to do */
 	if (fmstate == NULL)
@@ -1354,6 +1353,7 @@ griddbEndForeignModify(EState *estate,
 
 	if (fmstate->operation == CMD_UPDATE || fmstate->operation == CMD_DELETE)
 	{
+		GridDBFdwSMRelay *smrelay = fmstate->smrelay;
 		TupleDesc	tupdesc = RelationGetDescr(fmstate->rel);
 		Oid			pgkeytype = TupleDescAttr(tupdesc, ROWKEY_ATTNO - 1)->atttypid;
 
