@@ -16,6 +16,7 @@
 #include "utils/datetime.h"
 #include "utils/datum.h"
 #include "utils/lsyscache.h"
+#include "utils/memutils.h"
 #include "utils/rel.h"
 #include "catalog/pg_type.h"
 
