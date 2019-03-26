@@ -76,6 +76,13 @@ The container must have rowkey on [GridDB][1] in order to execute update and del
 - WHERE clauses are pushdowned
 
 ## 4. Limitations
+#### Record is updated by INSERT command if a record with same rowkey as new record exists in GridDB.
+In this case, griddb_fdw raises the warning.
+```
+INSERT INTO ft1 VALUES(100, 'AAA');
+INSERT INTO ft1 VALUES(100, 'BBB'); -- Same as "UPDATE ft1 SET b = 'BBB' WHERE a = 100;"
+```
+
 #### Limitations related in rowkey-column attribute.
 GridDB can set a rowkey attribute to the 1st column.
 griddb_fdw uses it for identifying a record.
