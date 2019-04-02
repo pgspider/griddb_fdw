@@ -125,6 +125,10 @@ SELECT * FROM type_double_array;
 SELECT * FROM type_timestamp_array;
 -- SELECT * FROM type_geometry;
 
+-- test of inequality in where clause 
+SELECT * FROM type_string WHERE col2 < 'STRINGBA';
+SELECT * FROM type_string WHERE col2 >= 'STRINGAB';
+
 -- function test
 SELECT * FROM type_string WHERE char_length(col1) > 8;
 SELECT * FROM type_string WHERE concat(col1,col2) = 'stringabSTRINGAB';

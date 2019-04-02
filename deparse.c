@@ -902,6 +902,57 @@ is_builtin(Oid oid)
 	return (oid < FirstBootstrapObjectId);
 }
 
+static bool
+is_inequality(OpExpr *node)
+{
+	bool		res;
+	HeapTuple	tuple;
+	Form_pg_operator form;
+	char	   *cur_opname;
+
+	/* Retrieve information about the operator from system catalog. */
+	tuple = SearchSysCache1(OPEROID, ObjectIdGetDatum(node->opno));
+	if (!HeapTupleIsValid(tuple))
+		elog(ERROR, "cache lookup failed for operator %u", node->opno);
+
+	form = (Form_pg_operator) GETSTRUCT(tuple);
+	cur_opname = NameStr(form->oprname);
+	if (strcmp(cur_opname, "<") == 0 || strcmp(cur_opname, ">") == 0 ||
+		strcmp(cur_opname, "<=") == 0 || strcmp(cur_opname, ">=") == 0)
+		res = true;
+	else
+		res = false;
+
+	ReleaseSysCache(tuple);
+	return res;
+}
+
+/*
+ * Check if inequality is safe to execute remotely, and return true if so.
+ * GridDB does not support the inequality of GS_TYPE_STRING. The operation
+ * should not execute remotely.
+ */
+static bool
+foreign_inequality_walker(OpExpr *node)
+{
+	List	   *l = (List *) node->args;
+	ListCell   *lc;
+
+	if (!is_inequality(node))
+		return true;
+
+	/* Check data type of arguments. */
+	foreach(lc, l)
+	{
+		Oid			type = exprType((Node *) lfirst(lc));
+
+		if (type != INT2OID && type != INT4OID && type != INT8OID &&
+			type != FLOAT4OID && type != FLOAT8OID && type != TIMESTAMPOID)
+			return false;
+	}
+
+	return true;
+}
 
 /*
  * Check if expression is safe to execute remotely, and return true if so.
@@ -1074,6 +1125,10 @@ foreign_expr_walker(Node *node,
 					 /* OK, inputs are all noncollatable */ ;
 				else if (inner_cxt.state != FDW_COLLATE_SAFE ||
 						 oe->inputcollid != inner_cxt.collation)
+					return false;
+
+				/* Check inequality is safe to execute remotely. */
+				if (!foreign_inequality_walker(oe))
 					return false;
 
 				/* Result-collation handling is same as for functions */
