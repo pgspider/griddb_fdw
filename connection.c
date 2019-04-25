@@ -351,7 +351,8 @@ griddb_error_message(void *gsResource, StringInfoData *str)
 		gsFormatErrorMessage(gsResource, i, buf, msg_len);
 		appendStringInfo(str, "  %s\n", buf);
 	}
-	pfree(buf);
+	if (buf)
+		pfree(buf);
 }
 
 /*

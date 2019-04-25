@@ -236,6 +236,22 @@ SELECT * FROM type_timestamp_array;
 (1 row)
 
 -- SELECT * FROM type_geometry;
+-- test of inequality in where clause 
+SELECT * FROM type_string WHERE col2 < 'STRINGBA';
+   col1    |   col2    
+-----------+-----------
+ stringaaa | STRINGAAA
+ stringab  | STRINGAB
+(2 rows)
+
+SELECT * FROM type_string WHERE col2 >= 'STRINGAB';
+    col1    |    col2    
+------------+------------
+ stringbaaa | STRINGBAAA
+ stringab   | STRINGAB
+ stringba   | STRINGBA
+(3 rows)
+
 -- function test
 SELECT * FROM type_string WHERE char_length(col1) > 8;
     col1    |    col2    
