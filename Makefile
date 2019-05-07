@@ -6,20 +6,12 @@ PGFILEDESC = "griddb_fdw - foreign data wrapper for GridDB"
 
 GRIDDB_INCLUDE = griddb/client/c/include
 GRIDDB_LIBRARY = griddb/bin
-GRIDDB_INIT = griddb_init
-
-# Make for initializer
-all:
-	$(CC) make_check_initializer/griddb_init.c -o $(GRIDDB_INIT) -I$(GRIDDB_INCLUDE) -L$(GRIDDB_LIBRARY) -lgridstore
-	./$(GRIDDB_INIT) 239.0.0.1 31999 ktymCluster admin testadmin
 
 PG_CPPFLAGS = -I$(libpq_srcdir) -I$(GRIDDB_INCLUDE)
 SHLIB_LINK = $(libpq) -L$(GRIDDB_LIBRARY) -lgridstore
 
 EXTENSION = griddb_fdw
 DATA = griddb_fdw--1.0.sql
-
-EXTRA_CLEAN = ./$(GRIDDB_INIT)
 
 REGRESS = griddb_fdw griddb_fdw_data_type
 

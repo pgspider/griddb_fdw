@@ -18,11 +18,13 @@ fi
 rm -rf ${GS_HOME}/data/* ${GS_LOG}/*
 sleep 1
 echo "Starting GridDB server..."
+sed -i 's/\"clusterName\":.*/\"clusterName\":\"griddbfdwTestCluster\",/' ${GRIDDB_HOME}/conf/gs_cluster.json
 ${GRIDDB_HOME}/bin/gs_startnode -w -u admin/testadmin
-${GRIDDB_HOME}/bin/gs_joincluster -w -c ktymCluster -u admin/testadmin
+${GRIDDB_HOME}/bin/gs_joincluster -w -c griddbfdwTestCluster -u admin/testadmin
 
+make clean && make
 result="$?"
 if [[ "$result" -eq 0 ]]; then
-  #sed -i 's/REGRESS =.*/REGRESS = griddb_fdw_post/' Makefile
-  make clean && make && make check
+	./griddb_init host=239.0.0.1 port=31999 cluster=griddbfdwTestCluster user=admin passwd=testadmin
 fi
+
