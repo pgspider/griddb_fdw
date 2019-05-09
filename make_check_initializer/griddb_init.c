@@ -35,7 +35,6 @@ set_tableInfo(GSGridStore * store,
 	int			i;
 	va_list		valist;
 
-	/* const GSChar *rowkey; */
 	/* Set column info */
 	GSColumnInfo column_info = GS_COLUMN_INFO_INITIALIZER;
 	GSColumnInfo *column_info_list = calloc(column_count, sizeof(GSColumnInfo));
@@ -48,9 +47,6 @@ set_tableInfo(GSGridStore * store,
 	for (i = 0; i < column_count; i++)
 	{
 		column_info.name = va_arg(valist, GSChar *);
-		/* if (i == 0) { */
-		/* rowkey = column_info.name; */
-		/* } */
 		column_info.type = va_arg(valist, GSType);
 		column_info.options = va_arg(valist, GSTypeOption);
 		column_info_list[i] = column_info;
@@ -79,17 +75,8 @@ set_tableInfo(GSGridStore * store,
 		printf("Set autocommit for container %s failed\n", tbl_name);
 		return ret;
 	}
-	/* Set an index on the Row-key Column */
 
-	/*
-	 * ret = gsCreateIndex(tbl_info->container, rowkey,
-	 * GS_INDEX_FLAG_DEFAULT);
-	 */
-	/* if (!GS_SUCCEEDED(ret)) { */
-	/* printf("Set index for container %s failed\n", tbl_name); */
-	/* return ret; */
-	/* } */
-		return GS_RESULT_OK;
+	return GS_RESULT_OK;
 }
 
 /**
@@ -597,20 +584,6 @@ griddb_init(const char *addr,
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
 
-	/* For testing */
-
-	/*
-	 * table_info simple, extremely_skewed; set_tableInfo(store, "simple",
-	 * &simple, 2, "id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL, "t",
-	 * GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE); if (!GS_SUCCEEDED(ret))
-	 * return ret;
-	 *
-	 * set_tableInfo(store, "extremely_skewed", &extremely_skewed, 3, "idx",
-	 * GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL, "id", GS_TYPE_INTEGER,
-	 * GS_TYPE_OPTION_NOT_NULL, "t", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE);
-	 * if (!GS_SUCCEEDED(ret)) return ret;
-	 */
-
 EXIT:
 	/* Release the resource */
 	gsCloseGridStore(&store, GS_TRUE);
@@ -651,7 +624,6 @@ main(int argc, char *argv[])
 			}
 			else
 			{
-				/* printf("key=%s value=%s\n", key, value); */
 				if (strcmp(key, "host") == 0)
 				{
 					host = value;
