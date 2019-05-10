@@ -65,4 +65,4 @@ Initialize the containers for GridDB FDW test:<br />
 ```
 ./griddb_init host=239.0.0.1 port=31999 cluster=griddbfdwTestCluster user=admin passwd=testadmin
 ```
-It should be display message: "Initialize all containers sucessfully."
+It should display message: "Initialize all containers sucessfully."
