@@ -175,7 +175,7 @@ DECLARE
   cmd varchar;
 BEGIN
   FOR tbl_name IN SELECT foreign_table_name FROM information_schema._pg_foreign_tables LOOP
-    cmd := 'DROP FOREIGN TABLE ' || tbl_name;
+    cmd := 'DROP FOREIGN TABLE ' || quote_ident(tbl_name);
     EXECUTE cmd;
   END LOOP;
   RETURN;
