@@ -38,7 +38,7 @@ pipeline {
             steps {
                 sh '''
                     rm -rf postgresql || true
-                    tar -zxvf /home/jenkins/Postgres/postgresql_release.tar.gz > /dev/null
+                    tar -zxvf /home/jenkins/Postgres/postgresql.tar.gz > /dev/null
                 '''
                 dir("postgresql/contrib") {
                     sh 'rm -rf griddb_fdw || true'
@@ -60,7 +60,7 @@ pipeline {
                         sh '''
                             rm -rf make_check.out || true
                             export GRIDDB_HOME=/home/jenkins/GridDB/griddb_nosql-4.1.0/
-                            export LD_LIBRARY_PATH=LD_LIBRARY_PATH:$(pwd)/griddb/bin/
+                            export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$(pwd)/griddb/bin/
                             cd make_check_initializer
                             chmod +x ./*.sh || true
                             ./init.sh
