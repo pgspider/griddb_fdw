@@ -23,7 +23,7 @@ It creates `griddb_init` executable file.
 
 
 ## 2. Usage
-### 2.1. Run automatically using test.sh script
+### 2.1. Run automatically using init.sh script
 
 We have to specify the following environment variables:<br />
 GRIDDB_HOME : GridDB source directory, this source is already compiled<br />
@@ -33,7 +33,7 @@ export GRIDDB_HOME=${HOME}/src/griddb_nosql_4.0.0
 
 Run the script:<br />
 ```
-./test.sh
+./init.sh
 ```
 
 These informations are embedded in the script:<br />
