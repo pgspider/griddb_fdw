@@ -1064,14 +1064,10 @@ griddbPlanForeignModify(PlannerInfo *root,
 		elog(ERROR, "RETURNING is not supported by griddb_fdw");
 
 	/*
-	 * Only DO UPDATE is supported for ON CONFLICT.
+	 * ON CONFLICT is not supported.
 	 */
-	if (plan->onConflictAction == ONCONFLICT_NOTHING)
-		elog(ERROR, "unsupported ON CONFLICT specification: %d",
-			 (int) plan->onConflictAction);
-	else if (plan->onConflictAction != ONCONFLICT_NONE)
-		elog(ERROR, "unexpected ON CONFLICT specification: %d",
-			 (int) plan->onConflictAction);
+	if (plan->onConflictAction != ONCONFLICT_NONE)
+		elog(ERROR, "ON CONFLICT is not supported");
 
 	heap_close(rel, NoLock);
 

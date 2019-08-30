@@ -1,0 +1,206 @@
+--
+-- UPDATE syntax tests
+--
+CREATE EXTENSION griddb_fdw;
+CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS(host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster');
+CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS(username 'admin', password 'testadmin');
+CREATE FOREIGN TABLE update_test (
+    id  serial options (rowkey 'true'),
+    a   INT DEFAULT 10,
+    b   INT,
+    c   TEXT
+) SERVER griddb_svr;
+CREATE FOREIGN TABLE upsert_test (
+    a   INT OPTIONS (rowkey 'true'),
+    b   TEXT
+) SERVER griddb_svr;
+INSERT INTO update_test(a, b, c) VALUES (5, 10, 'foo');
+INSERT INTO update_test(b, a) VALUES (15, 10);
+SELECT * FROM update_test;
+ id | a  | b  |  c  
+----+----+----+-----
+  1 |  5 | 10 | foo
+  2 | 10 | 15 | 
+(2 rows)
+
+UPDATE update_test SET a = DEFAULT, b = DEFAULT;
+SELECT * FROM update_test;
+ id | a  | b |  c  
+----+----+---+-----
+  1 | 10 |   | foo
+  2 | 10 |   | 
+(2 rows)
+
+-- aliases for the UPDATE target table
+UPDATE update_test AS t SET b = 10 WHERE t.a = 10;
+SELECT * FROM update_test;
+ id | a  | b  |  c  
+----+----+----+-----
+  1 | 10 | 10 | foo
+  2 | 10 | 10 | 
+(2 rows)
+
+UPDATE update_test t SET b = t.b + 10 WHERE t.a = 10;
+SELECT * FROM update_test;
+ id | a  | b  |  c  
+----+----+----+-----
+  1 | 10 | 20 | foo
+  2 | 10 | 20 | 
+(2 rows)
+
+--
+-- Test VALUES in FROM
+--
+UPDATE update_test SET a=v.i FROM (VALUES(100, 20)) AS v(i, j)
+  WHERE update_test.b = v.j;
+SELECT * FROM update_test;
+ id |  a  | b  |  c  
+----+-----+----+-----
+  1 | 100 | 20 | foo
+  2 | 100 | 20 | 
+(2 rows)
+
+-- fail, wrong data type:
+UPDATE update_test SET a = v.* FROM (VALUES(100, 20)) AS v(i, j)
+  WHERE update_test.b = v.j;
+ERROR:  column "a" is of type integer but expression is of type record
+LINE 1: UPDATE update_test SET a = v.* FROM (VALUES(100, 20)) AS v(i...
+                                   ^
+HINT:  You will need to rewrite or cast the expression.
+--
+-- Test multiple-set-clause syntax
+--
+INSERT INTO update_test(a,b,c) SELECT a,b+1,c FROM update_test;
+SELECT * FROM update_test;
+ id |  a  | b  |  c  
+----+-----+----+-----
+  1 | 100 | 20 | foo
+  2 | 100 | 20 | 
+  3 | 100 | 21 | foo
+  4 | 100 | 21 | 
+(4 rows)
+
+UPDATE update_test SET (c,b,a) = ('bugle', b+11, DEFAULT) WHERE c = 'foo';
+SELECT * FROM update_test;
+ id |  a  | b  |   c   
+----+-----+----+-------
+  1 |  10 | 31 | bugle
+  2 | 100 | 20 | 
+  3 |  10 | 32 | bugle
+  4 | 100 | 21 | 
+(4 rows)
+
+UPDATE update_test SET (c,b) = ('car', a+b), a = a + 1 WHERE a = 10;
+SELECT * FROM update_test;
+ id |  a  | b  |  c  
+----+-----+----+-----
+  1 |  11 | 41 | car
+  2 | 100 | 20 | 
+  3 |  11 | 42 | car
+  4 | 100 | 21 | 
+(4 rows)
+
+-- fail, multi assignment to same column:
+UPDATE update_test SET (c,b) = ('car', a+b), b = a + 1 WHERE a = 10;
+ERROR:  multiple assignments to same column "b"
+-- uncorrelated sub-select:
+UPDATE update_test
+  SET (b,a) = (select a,b from update_test where b = 41 and c = 'car')
+  WHERE a = 100 AND b = 20;
+SELECT * FROM update_test;
+ id |  a  | b  |  c  
+----+-----+----+-----
+  1 |  11 | 41 | car
+  2 |  41 | 11 | 
+  3 |  11 | 42 | car
+  4 | 100 | 21 | 
+(4 rows)
+
+-- correlated sub-select:
+UPDATE update_test o
+  SET (b,a) = (select a+1,b from update_test i
+               where i.a=o.a and i.b=o.b and i.c is not distinct from o.c);
+SELECT * FROM update_test;
+ id | a  |  b  |  c  
+----+----+-----+-----
+  1 | 41 |  12 | car
+  2 | 11 |  42 | 
+  3 | 42 |  12 | car
+  4 | 21 | 101 | 
+(4 rows)
+
+-- fail, multiple rows supplied:
+UPDATE update_test SET (b,a) = (select a+1,b from update_test);
+ERROR:  more than one row returned by a subquery used as an expression
+-- set to null if no rows supplied:
+UPDATE update_test SET (b,a) = (select a+1,b from update_test where a = 1000)
+  WHERE a = 11;
+SELECT * FROM update_test;
+ id | a  |  b  |  c  
+----+----+-----+-----
+  1 | 41 |  12 | car
+  2 |    |     | 
+  3 | 42 |  12 | car
+  4 | 21 | 101 | 
+(4 rows)
+
+-- *-expansion should work in this context:
+UPDATE update_test SET (a,b) = ROW(v.*) FROM (VALUES(21, 100)) AS v(i, j)
+  WHERE update_test.a = v.i;
+-- you might expect this to work, but syntactically it's not a RowExpr:
+UPDATE update_test SET (a,b) = (v.*) FROM (VALUES(21, 101)) AS v(i, j)
+  WHERE update_test.a = v.i;
+ERROR:  source for a multiple-column UPDATE item must be a sub-SELECT or ROW() expression
+LINE 1: UPDATE update_test SET (a,b) = (v.*) FROM (VALUES(21, 101)) ...
+                                        ^
+-- if an alias for the target table is specified, don't allow references
+-- to the original table name
+UPDATE update_test AS t SET b = update_test.b + 10 WHERE t.a = 10;
+ERROR:  invalid reference to FROM-clause entry for table "update_test"
+LINE 1: UPDATE update_test AS t SET b = update_test.b + 10 WHERE t.a...
+                                        ^
+HINT:  Perhaps you meant to reference the table alias "t".
+-- Make sure that we can update to a TOASTed value.
+UPDATE update_test SET c = repeat('x', 10000) WHERE c = 'car';
+SELECT a, b, char_length(c) FROM update_test;
+ a  |  b  | char_length 
+----+-----+-------------
+ 41 |  12 |       10000
+    |     |            
+ 42 |  12 |       10000
+ 21 | 100 |            
+(4 rows)
+
+-- Test ON CONFLICT DO UPDATE
+INSERT INTO upsert_test VALUES(1, 'Boo');
+-- uncorrelated  sub-select:
+WITH aaa AS (SELECT 1 AS a, 'Foo' AS b) INSERT INTO upsert_test
+  VALUES (1, 'Bar') ON CONFLICT(a)
+  DO UPDATE SET (b, a) = (SELECT b, a FROM aaa) RETURNING *;
+ERROR:  there is no unique or exclusion constraint matching the ON CONFLICT specification
+-- correlated sub-select:
+INSERT INTO upsert_test VALUES (1, 'Baz') ON CONFLICT(a)
+  DO UPDATE SET (b, a) = (SELECT b || ', Correlated', a from upsert_test i WHERE i.a = upsert_test.a)
+  RETURNING *;
+ERROR:  there is no unique or exclusion constraint matching the ON CONFLICT specification
+-- correlated sub-select (EXCLUDED.* alias):
+INSERT INTO upsert_test VALUES (1, 'Bat') ON CONFLICT(a)
+  DO UPDATE SET (b, a) = (SELECT b || ', Excluded', a from upsert_test i WHERE i.a = excluded.a)
+  RETURNING *;
+ERROR:  there is no unique or exclusion constraint matching the ON CONFLICT specification
+DROP FOREIGN TABLE update_test;
+DROP FOREIGN TABLE upsert_test;
+--drop all foreign tables
+DO $d$
+declare
+  l_rec record;
+begin
+  for l_rec in (select foreign_table_schema, foreign_table_name 
+                from information_schema.foreign_tables) loop
+     execute format('drop foreign table %I.%I cascade;', l_rec.foreign_table_schema, l_rec.foreign_table_name);
+  end loop;
+end;
+$d$;
+DROP USER MAPPING FOR public SERVER griddb_svr;
+DROP SERVER griddb_svr;
+DROP EXTENSION griddb_fdw CASCADE;

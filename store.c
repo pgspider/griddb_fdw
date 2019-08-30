@@ -104,7 +104,7 @@ griddb_modify_target_init(GridDBFdwModifiedRows * modified_rows, int attnum)
 	int			i;
 	int			nField = attnum + 1;	/* +1 is key column. */
 
-	Assert(attnum > 0);
+	Assert(nField > 0);
 
 	modified_rows->target_values = (Datum **) palloc0(sizeof(Datum *) * INITIAL_TARGET_VALUE_ROWS);
 	for (i = 0; i < INITIAL_TARGET_VALUE_ROWS; i++)

@@ -1,5 +1,5 @@
 CREATE EXTENSION griddb_fdw;
-CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS(host '239.0.0.1', port '31999', clustername 'ktymCluster');
+CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS(host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster');
 CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS(username 'admin', password 'testadmin');
 
 IMPORT FOREIGN SCHEMA griddb_schema FROM SERVER griddb_svr INTO public;
@@ -346,7 +346,7 @@ DECLARE
   cmd varchar;
 BEGIN
   FOR tbl_name IN SELECT foreign_table_name FROM information_schema._pg_foreign_tables LOOP
-    cmd := 'DROP FOREIGN TABLE ' || tbl_name;
+    cmd := 'DROP FOREIGN TABLE ' || quote_ident(tbl_name);
     EXECUTE cmd;
   END LOOP;
   RETURN;
