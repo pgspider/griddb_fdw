@@ -995,7 +995,10 @@ griddbPlanForeignModify(PlannerInfo *root,
 	 * In an INSERT, we transmit all columns that are defined in the foreign
 	 * table.
 	 */
-	if (operation == CMD_INSERT)
+	if (operation == CMD_INSERT ||
+		(operation == CMD_UPDATE &&
+		 rel->trigdesc &&
+		 rel->trigdesc->trig_update_before_row))
 	{
 		TupleDesc	tupdesc = RelationGetDescr(rel);
 		int			attnum;
