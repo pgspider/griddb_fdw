@@ -1956,10 +1956,6 @@ griddb_pgtyp_from_gstyp(GSType gs_type, const char **pg_name)
 			break;
 
 		case GS_TYPE_BYTE:
-			pg_type = BPCHAROID;
-			name = "character(1)";
-			break;
-
 		case GS_TYPE_SHORT:
 			pg_type = INT2OID;
 			name = "smallint";
@@ -2011,10 +2007,6 @@ griddb_pgtyp_from_gstyp(GSType gs_type, const char **pg_name)
 			break;
 
 		case GS_TYPE_BYTE_ARRAY:
-			pg_type = GSFDW_BYTEARRAYOID;
-			name = "character(1)[]";
-			break;
-
 		case GS_TYPE_SHORT_ARRAY:
 			pg_type = INT2ARRAYOID;
 			name = "smallint[]";
@@ -2213,17 +2205,11 @@ griddb_make_datum_from_row(GSRow * row, int32_t attid, GSType gs_type,
 		case GS_TYPE_BYTE:
 			{
 				int8_t		byteVal;
-				char		strVal[2] = {0};
 
-				griddb_get_datatype_for_convertion(pg_type, &typeinput, &typemod);
 				ret = gsGetRowFieldAsByte(row, attid, &byteVal);
 				if (!GS_SUCCEEDED(ret))
 					griddb_REPORT_ERROR(ERROR, ret, row);
-				strVal[0] = byteVal;
-				value_datum = CStringGetDatum(strVal);
-				valueDatum = OidFunctionCall3(typeinput, value_datum,
-											  ObjectIdGetDatum(InvalidOid),
-											  Int32GetDatum(typemod));
+				valueDatum = Int16GetDatum((int16_t)byteVal);
 				break;
 			}
 
@@ -2360,9 +2346,9 @@ griddb_make_datum_from_row(GSRow * row, int32_t attid, GSType gs_type,
 
 				value_datums = (Datum *) palloc0(sizeof(Datum) * size);
 				for (i = 0; i < size; i++)
-					value_datums[i] = CharGetDatum(byteVal[i]);
-				arry = construct_array(value_datums, size, CHAROID,
-									   sizeof(int8_t), true, 'c');
+					value_datums[i] = Int16GetDatum((int16_t)byteVal[i]);
+				arry = construct_array(value_datums, size, INT2OID,
+									   sizeof(int16_t), true, 's');
 				valueDatum = PointerGetDatum(arry);
 				break;
 			}
@@ -2662,16 +2648,11 @@ griddb_set_row_field(GSRow * row, Datum value, GSType gs_type, int pindex)
 
 		case GS_TYPE_BYTE:
 			{
-				char	   *textVal;
-				int8_t		byteVal;
-				Oid			outputFunctionId;
-				bool		typeVarLength;
+				int16		byteVal = DatumGetInt16(value);
+				if (byteVal < INT8_MIN || byteVal > INT8_MAX)
+					elog(ERROR, "Integer %d is out of range of BYTE", byteVal);
 
-				getTypeOutputInfo(BPCHAROID, &outputFunctionId, &typeVarLength);
-				textVal = OidOutputFunctionCall(outputFunctionId, value);
-
-				byteVal = textVal[0];
-				ret = gsSetRowFieldByByte(row, pindex, byteVal);
+				ret = gsSetRowFieldByByte(row, pindex, (int8_t)byteVal);
 				if (!GS_SUCCEEDED(ret))
 					griddb_REPORT_ERROR(ERROR, ret, row);
 				break;
@@ -2830,9 +2811,12 @@ griddb_set_row_field(GSRow * row, Datum value, GSType gs_type, int pindex)
 				byteaData = (int8_t *) palloc0(sizeof(int8_t) * num_elems);
 				for (i = 0; i < num_elems; i++)
 				{
-					char	   *textVal = OidOutputFunctionCall(outputFunctionId, elem_values[i]);
+					int16		byteVal = DatumGetInt16(elem_values[i]);
 
-					byteaData[i] = textVal[0];
+					if (byteVal < INT8_MIN || byteVal > INT8_MAX)
+						elog(ERROR, "Integer %d is out of range of BYTE", byteVal);
+
+					byteaData[i] = (int8_t)byteVal;
 				}
 
 				ret = gsSetRowFieldByByteArray(row, pindex, byteaData, num_elems);
