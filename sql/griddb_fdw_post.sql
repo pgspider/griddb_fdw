@@ -1032,9 +1032,8 @@ INSERT INTO "S 1"."T1" (c1,c2,c3,c7) VALUES (1208, 818, 'fff', 'ft2');
 SELECT * FROM ft2 WHERE c1 = 1208;
 INSERT INTO "S 1"."T1" (c1,c2,c3,c6,c7) VALUES (1218, 818, 'ggg', '(--;', 'ft2');
 SELECT * FROM ft2 WHERE c1 = 1218;
--- TODO
--- UPDATE "S 1"."T1" SET c2 = c2 + 600 WHERE c1 % 10 = 8 AND c1 < 1200;             -- It should work
-UPDATE "S 1"."T1" SET c2 = c2 + 600, c3 = c3 WHERE c1 % 10 = 8 AND c1 < 1200;       -- Temporary add "c3 = c3" to sync the data
+
+UPDATE "S 1"."T1" SET c2 = c2 + 600 WHERE c1 % 10 = 8 AND c1 < 1200;
 SELECT * FROM "S 1"."T1" WHERE c1 % 10 = 8 AND c1 < 1200;
 
 -- Test insert with duplicate key
