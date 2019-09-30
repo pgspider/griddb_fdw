@@ -34,6 +34,7 @@
 #include "utils/builtins.h"
 #include "utils/datetime.h"
 #include "utils/datum.h"
+#include "utils/guc.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
 #include "utils/lsyscache.h"
@@ -115,6 +116,7 @@ typedef struct GridDBFdwSMRelay
 }			GridDBFdwSMRelay;
 
 static HTAB *griddb_sm_share = NULL;
+static bool griddb_enable_partial_execution = false;
 
 /*
  * Execution state of a foreign scan using griddb_fdw.
@@ -139,7 +141,6 @@ typedef struct GridDBFdwScanState
 	GSRow	   *row;			/* row for the update */
 
 	/* for storing result tuples */
-	int32_t		num_tuples;		/* # of tuples in array */
 	unsigned int cursor;		/* result set cursor pointing current index */
 
 	/* for sharing data with ForeignModify */
@@ -288,6 +289,17 @@ void
 _PG_init()
 {
 	on_proc_exit(&griddb_fdw_exit, PointerGetDatum(NULL));
+
+	DefineCustomBoolVariable("griddbfdw.enable_partial_execution",
+							 "enable partial execution",
+							 NULL,
+							 &griddb_enable_partial_execution,
+							 false,
+							 PGC_USERSET,
+							 0,
+							 NULL,
+							 NULL,
+							 NULL);
 }
 
 /*
@@ -777,7 +789,6 @@ griddbBeginForeignScan(ForeignScanState *node, int eflags)
 		fsstate->smrelay = griddb_get_smrelay(rte->relid);
 	fsstate->row_set = NULL;
 	fsstate->row = NULL;
-	fsstate->num_tuples = 0;
 	fsstate->cursor = 0;
 
 	/*
@@ -820,7 +831,7 @@ griddbIterateForeignScan(ForeignScanState *node)
 	/*
 	 * Return the next tuple.
 	 */
-	if (fsstate->cursor < fsstate->num_tuples)
+	if (gsHasNextRow(fsstate->row_set))
 	{
 		GSResult	ret = GS_RESULT_OK;
 		ListCell   *lc = NULL;
@@ -2485,18 +2496,23 @@ griddb_execute_and_fetch(ForeignScanState *node)
 	GSQuery    *query;
 	GSBool		exists;
 	GSContainerInfo cont_info = GS_CONTAINER_INFO_INITIALIZER;
+	GSBool		option = GS_TRUE;
 
 	/* Execute TQL */
 	ret = gsQuery(fsstate->cont, fsstate->query, &query);
 	if (!GS_SUCCEEDED(ret))
 		griddb_REPORT_ERROR(ERROR, ret, fsstate->cont);
 
+	if (griddb_enable_partial_execution) {
+		ret = gsSetFetchOption(query, GS_FETCH_PARTIAL_EXECUTION, &option, GS_TYPE_BOOL);
+		if (!GS_SUCCEEDED(ret))
+			griddb_REPORT_ERROR(ERROR, ret, fsstate->cont);
+	}
+
 	/* Fetch result set and schema information */
 	ret = gsFetch(query, fsstate->for_update, &fsstate->row_set);
 	if (!GS_SUCCEEDED(ret))
 		griddb_REPORT_ERROR(ERROR, ret, query);
-
-	fsstate->num_tuples = gsGetRowSetSize(fsstate->row_set);
 
 	ret = gsGetContainerInfo(fsstate->store, fsstate->cont_name, &cont_info, &exists);
 	if (!GS_SUCCEEDED(ret))
