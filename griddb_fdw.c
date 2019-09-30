@@ -283,6 +283,8 @@ static GSChar * *grifddb_name_list_dup(const GSChar * const *src,
 static void grifddb_name_list_free(GSChar * *p, size_t cont_size);
 static void griddb_execute_commands(List *cmd_list);
 
+static int set_transmission_modes();
+static void reset_transmission_modes(int nestlevel);
 
 void
 _PG_init()
@@ -594,6 +596,56 @@ griddbGetForeignPaths(PlannerInfo *root,
 }
 
 /*
+ * Force assorted GUC parameters to settings that ensure that we'll output
+ * data values in a form that is unambiguous to the remote server.
+ *
+ * This is rather expensive and annoying to do once per row, but there's
+ * little choice if we want to be sure values are transmitted accurately;
+ * we can't leave the settings in place between rows for fear of affecting
+ * user-visible computations.
+ *
+ * We use the equivalent of a function SET option to allow the settings to
+ * persist only until the caller calls reset_transmission_modes().  If an
+ * error is thrown in between, guc.c will take care of undoing the settings.
+ *
+ * The return value is the nestlevel that must be passed to
+ * reset_transmission_modes() to undo things.
+ */
+static int
+set_transmission_modes(void)
+{
+	int			nestlevel = NewGUCNestLevel();
+
+	/*
+	 * The values set here should match what pg_dump does.  See also
+	 * configure_remote_session in connection.c.
+	 */
+	if (DateStyle != USE_ISO_DATES)
+		(void) set_config_option("datestyle", "ISO",
+								 PGC_USERSET, PGC_S_SESSION,
+								 GUC_ACTION_SAVE, true, 0, false);
+	if (IntervalStyle != INTSTYLE_POSTGRES)
+		(void) set_config_option("intervalstyle", "postgres",
+								 PGC_USERSET, PGC_S_SESSION,
+								 GUC_ACTION_SAVE, true, 0, false);
+	if (extra_float_digits < 3)
+		(void) set_config_option("extra_float_digits", "3",
+								 PGC_USERSET, PGC_S_SESSION,
+								 GUC_ACTION_SAVE, true, 0, false);
+
+	return nestlevel;
+}
+
+/*
+ * Undo the effects of set_transmission_modes().
+ */
+static void
+reset_transmission_modes(int nestlevel)
+{
+	AtEOXact_GUC(true, nestlevel);
+}
+
+/*
  * GetForeignPlan
  *		Create ForeignScan plan node which implements selected best path
  */
@@ -618,7 +670,7 @@ griddbGetForeignPlan(PlannerInfo *root,
 	StringInfoData sql;
 	ListCell   *lc;
 	int			for_update = 0;
-
+	int guc_level = 0;
 	/*
 	 * Separate the scan_clauses into those that can be executed remotely and
 	 * those that can't.  baserestrictinfo clauses that were previously
@@ -669,10 +721,12 @@ griddbGetForeignPlan(PlannerInfo *root,
 	 * expressions to be sent as parameters.
 	 */
 	initStringInfo(&sql);
+	/* Deparse timestamp as ISO style */
+	guc_level = set_transmission_modes();
 	griddb_deparse_select(&sql, root, foreignrel, remote_conds,
 						  best_path->path.pathkeys,
 						  &retrieved_attrs, &params_list);
-
+	reset_transmission_modes(guc_level);
 	griddb_deparse_locking_clause(root, foreignrel, &for_update);
 
 	if (foreignrel->relid == root->parse->resultRelation &&
