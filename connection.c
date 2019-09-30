@@ -433,6 +433,9 @@ griddb_xact_callback(XactEvent event, void *arg)
 	if (!xact_got_connection)
 		return;
 
+	/* Avoid infinite error recursion */
+	if (in_error_recursion_trouble())
+		return;
 	/*
 	 * Scan all connection cache entries to find open remote transactions, and
 	 * close them.
