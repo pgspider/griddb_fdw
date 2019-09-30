@@ -5,9 +5,6 @@ CREATE EXTENSION griddb_fdw;
 CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS(host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster');
 CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS(username 'admin', password 'testadmin');
 CREATE FOREIGN TABLE inserttest01 (id serial, col1 int4, col2 int4 NOT NULL, col3 text default 'testing') SERVER griddb_svr;
-insert into inserttest01 (col1, col2, col3) values (DEFAULT, DEFAULT, DEFAULT);
-ERROR:  GridDB-API is failed by 140002 at griddb_fdw.c: 3005
-
 insert into inserttest01 (col2, col3) values (3, DEFAULT);
 insert into inserttest01 (col1, col2, col3) values (DEFAULT, 5, DEFAULT);
 insert into inserttest01 (col1, col2, col3) values (DEFAULT, 5, 'test');
@@ -15,10 +12,10 @@ insert into inserttest01 (col1, col2) values (DEFAULT, 7);
 select * from inserttest01;
  id | col1 | col2 |  col3   
 ----+------+------+---------
-  2 |      |    3 | testing
-  3 |      |    5 | testing
-  4 |      |    5 | test
-  5 |      |    7 | testing
+  1 |      |    3 | testing
+  2 |      |    5 | testing
+  3 |      |    5 | test
+  4 |      |    7 | testing
 (4 rows)
 
 --
@@ -43,10 +40,10 @@ LINE 1: insert into inserttest01 (col1) values (DEFAULT, DEFAULT);
 select * from inserttest01;
  id | col1 | col2 |  col3   
 ----+------+------+---------
-  2 |      |    3 | testing
-  3 |      |    5 | testing
-  4 |      |    5 | test
-  5 |      |    7 | testing
+  1 |      |    3 | testing
+  2 |      |    5 | testing
+  3 |      |    5 | test
+  4 |      |    7 | testing
 (4 rows)
 
 --
@@ -57,13 +54,13 @@ insert into inserttest01 (col1, col2, col3) values(10, 20, '40'), (-1, 2, DEFAUL
 select * from inserttest01;
  id | col1 | col2 |      col3       
 ----+------+------+-----------------
-  2 |      |    3 | testing
-  3 |      |    5 | testing
-  4 |      |    5 | test
-  5 |      |    7 | testing
-  6 |   10 |   20 | 40
-  7 |   -1 |    2 | testing
-  8 |    2 |    3 | values are fun!
+  1 |      |    3 | testing
+  2 |      |    5 | testing
+  3 |      |    5 | test
+  4 |      |    7 | testing
+  5 |   10 |   20 | 40
+  6 |   -1 |    2 | testing
+  7 |    2 |    3 | values are fun!
 (7 rows)
 
 --

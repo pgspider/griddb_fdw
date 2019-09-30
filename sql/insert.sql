@@ -5,7 +5,6 @@ CREATE EXTENSION griddb_fdw;
 CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS(host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster');
 CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS(username 'admin', password 'testadmin');
 CREATE FOREIGN TABLE inserttest01 (id serial, col1 int4, col2 int4 NOT NULL, col3 text default 'testing') SERVER griddb_svr;
-insert into inserttest01 (col1, col2, col3) values (DEFAULT, DEFAULT, DEFAULT);
 insert into inserttest01 (col2, col3) values (3, DEFAULT);
 insert into inserttest01 (col1, col2, col3) values (DEFAULT, 5, DEFAULT);
 insert into inserttest01 (col1, col2, col3) values (DEFAULT, 5, 'test');

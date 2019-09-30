@@ -4610,10 +4610,6 @@ FETCH c;
   3 |  3 | 00003 | Sun Jan 04 00:00:00 1970 | Sun Jan 04 00:00:00 1970 | 3  | 3  | foo
 (1 row)
 
-SELECT * FROM ft1 WHERE 1 / (c1 - 1) > 0;  -- ERROR
-ERROR:  GridDB-API is failed by 150016 at griddb_fdw.c: 2508
-  Divide by 0 detected.
-
 ROLLBACK;
 -- ===================================================================
 -- test handling of collations
