@@ -47,6 +47,12 @@ static GridDBFdwOption griddb_options[] =
 		OPTION_CLUSTER, ForeignServerRelationId
 	},
 	{
+		OPTION_DATABASE, ForeignServerRelationId
+	},
+	{
+		OPTION_MEMBER, ForeignServerRelationId
+	},
+	{
 		OPTION_USER, UserMappingRelationId
 	},
 	{
@@ -211,6 +217,12 @@ griddb_get_options(Oid foreignoid)
 
 		if (strcmp(def->defname, OPTION_CLUSTER) == 0)
 			opt->svr_clustername = defGetString(def);
+			
+		if (strcmp(def->defname, OPTION_DATABASE) == 0)
+			opt->svr_database = defGetString(def);
+
+		if (strcmp(def->defname, OPTION_MEMBER) == 0)
+			opt->svr_notification_member = defGetString(def);
 
 		if (strcmp(def->defname, OPTION_REMOTE_ESTIMATE) == 0)
 			opt->use_remote_estimate = defGetBoolean(def);
