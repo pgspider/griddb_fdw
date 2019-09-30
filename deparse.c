@@ -28,6 +28,7 @@
 #include "optimizer/prep.h"
 #include "parser/parsetree.h"
 #include "utils/builtins.h"
+#include "utils/datetime.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 #include "utils/relcache.h"
@@ -506,6 +507,14 @@ griddb_deparse_const(Const *node, deparse_expr_cxt *context)
 			elog(ERROR, "INTERVALOID is unsupported");
 			Assert(false);
 			break;
+		case TIMESTAMPOID: {
+			char timestamp[MAXDATELEN + 1];
+			griddb_convert_pg2gs_timestamp_string(node->constvalue, timestamp);
+			appendStringInfoString(buf, "TIMESTAMP(");
+			griddb_deparse_string_literal(buf, timestamp);
+			appendStringInfoString(buf, ")");
+			break;
+		}
 		default:
 			extval = OidOutputFunctionCall(typoutput, node->constvalue);
 			griddb_deparse_string_literal(buf, extval);
@@ -947,7 +956,8 @@ foreign_inequality_walker(OpExpr *node)
 		Oid			type = exprType((Node *) lfirst(lc));
 
 		if (type != INT2OID && type != INT4OID && type != INT8OID &&
-			type != FLOAT4OID && type != FLOAT8OID && type != TIMESTAMPOID)
+			type != FLOAT4OID && type != FLOAT8OID && type != TIMESTAMPOID &&
+			type != TIMESTAMPTZOID)
 			return false;
 	}
 
