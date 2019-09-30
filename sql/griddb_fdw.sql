@@ -94,6 +94,10 @@ ALTER FOREIGN TABLE numbers OPTIONS (table_name 'evennumbers');
 INSERT INTO numbers VALUES(10, 'Ten');
 SELECT * FROM numbers;
 
+SET griddbfdw.enable_partial_execution TO TRUE;
+SELECT * FROM numbers;
+SET griddbfdw.enable_partial_execution TO FALSE;
+
 DELETE FROM employee;
 DELETE FROM department;
 DELETE FROM empdata;
