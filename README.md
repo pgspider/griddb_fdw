@@ -72,6 +72,12 @@ The container must have rowkey on [GridDB][1] in order to execute update and del
 
 ## 3. Features
 - Supprt SELECT and INSERT
+
+For SELECT, you can enable partial execution mode as follows:
+```
+SET griddbfdw.enable_partial_execution TO TRUE;
+```
+
 - Supprt UPDATE and DELETE
 - WHERE clauses are pushdowned
 

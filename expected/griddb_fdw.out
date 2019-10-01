@@ -358,6 +358,18 @@ SELECT * FROM numbers;
  10 | Ten
 (5 rows)
 
+SET griddbfdw.enable_partial_execution TO TRUE;
+SELECT * FROM numbers;
+ a  |   b   
+----+-------
+  2 | Two
+  4 | Four
+  6 | Six
+  8 | Eight
+ 10 | Ten
+(5 rows)
+
+SET griddbfdw.enable_partial_execution TO FALSE;
 DELETE FROM employee;
 DELETE FROM department;
 DELETE FROM empdata;
