@@ -166,6 +166,9 @@ UPDATE type_long SET col2 = col1 + 111 WHERE col1 = 2147483651 OR col1 = 2147483
 SELECT * FROM type_long;
 UPDATE type_timestamp SET col2 = to_timestamp('2010.08.01 08:15:00.123', 'YYYY.MM.DD HH24:MI:SS.MS') WHERE col1 = to_timestamp('2010.07.01 08:15:00.123', 'YYYY.MM.DD HH24:MI:SS.MS');
 SELECT * FROM type_timestamp;
+SELECT * FROM type_timestamp WHERE col1 = timestamp '2010-07-01 08:15:00.123';
+-- Push donw timestamp as ISO format
+explain (verbose,costs off) SELECT * FROM type_timestamp WHERE col1 = timestamp '2010-07-01 08:15:00.123';
 UPDATE type_timestamp SET col2 = to_timestamp('2100.01.02 10:20:30.400', 'YYYY.MM.DD HH24:MI:SS.MS') WHERE col1 = to_timestamp('1999.12.31 23:59:59.999', 'YYYY.MM.DD HH24:MI:SS.MS') OR col1 = to_timestamp('2000.01.01 00:00:00.000', 'YYYY.MM.DD HH24:MI:SS.MS');
 SELECT * FROM type_timestamp;
 UPDATE type_timestamp SET col2 = (col1 + INTERVAL '1 DAY') WHERE col1 = to_timestamp('2010.07.02 00:01:23.456', 'YYYY.MM.DD HH24:MI:SS.MS') OR col1 = to_timestamp('2010.07.02 00:01:23.45', 'YYYY.MM.DD HH24:MI:SS.MS');

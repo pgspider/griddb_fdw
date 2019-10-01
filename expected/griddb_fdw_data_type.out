@@ -451,6 +451,21 @@ SELECT * FROM type_timestamp;
  Fri Dec 31 23:59:59.999 1999 | Tue Dec 31 23:59:59.999 2199
 (5 rows)
 
+SELECT * FROM type_timestamp WHERE col1 = timestamp '2010-07-01 08:15:00.123';
+             col1             |             col2             
+------------------------------+------------------------------
+ Thu Jul 01 08:15:00.123 2010 | Sun Aug 01 08:15:00.123 2010
+(1 row)
+
+-- Push donw timestamp as ISO format
+explain (verbose,costs off) SELECT * FROM type_timestamp WHERE col1 = timestamp '2010-07-01 08:15:00.123';
+                                             QUERY PLAN                                              
+-----------------------------------------------------------------------------------------------------
+ Foreign Scan on public.type_timestamp
+   Output: col1, col2
+   Remote SQL: SELECT  *  FROM type_timestamp WHERE ((col1 = TIMESTAMP('2010-07-01T08:15:00.123Z')))
+(3 rows)
+
 UPDATE type_timestamp SET col2 = to_timestamp('2100.01.02 10:20:30.400', 'YYYY.MM.DD HH24:MI:SS.MS') WHERE col1 = to_timestamp('1999.12.31 23:59:59.999', 'YYYY.MM.DD HH24:MI:SS.MS') OR col1 = to_timestamp('2000.01.01 00:00:00.000', 'YYYY.MM.DD HH24:MI:SS.MS');
 SELECT * FROM type_timestamp;
              col1             |             col2             
