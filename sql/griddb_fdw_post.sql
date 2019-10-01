@@ -920,7 +920,6 @@ FETCH c;
 FETCH c;
 SELECT * FROM ft1 ORDER BY c1 LIMIT 1;
 FETCH c;
-SELECT * FROM ft1 WHERE 1 / (c1 - 1) > 0;  -- ERROR
 ROLLBACK;
 
 -- ===================================================================
