@@ -63,6 +63,7 @@ static bool xact_got_connection = false;
 
 /* prototypes of private functions */
 static GSGridStore * griddb_connect_server(char *address, char *port,
+										   char *member, char *database,
 										   char *cluster, char *user,
 										   char *passwd);
 static void griddb_begin_xact(ConnCacheEntry *entry);
@@ -141,6 +142,8 @@ griddb_get_connection(UserMapping *user, bool will_prep_stmt, Oid foreigntableid
 		entry->store = griddb_connect_server(
 											 opt->svr_address,
 											 opt->svr_port,
+											 opt->svr_notification_member,
+											 opt->svr_database,
 											 opt->svr_clustername,
 											 opt->svr_username,
 											 opt->svr_password);
@@ -161,21 +164,43 @@ griddb_get_connection(UserMapping *user, bool will_prep_stmt, Oid foreigntableid
  * Connect to remote server using specified server and user mapping properties.
  */
 static GSGridStore *
-griddb_connect_server(char *address, char *port, char *cluster, char *user,
-					  char *passwd)
+griddb_connect_server(char *address, char *port, char *member, char *database, 
+					  char *cluster, char *user, char *passwd)
 {
 	GSGridStore *store = NULL;
-	const		GSPropertyEntry props[] = {
-		{"notificationAddress", address},
-		{"notificationPort", port},
-		{"clusterName", cluster},
-		{"user", user},
-		{"password", passwd},
-	};
-	const size_t propCount = sizeof(props) / sizeof(*props);
+	size_t propCount;
 	GSResult	ret;
 
-	ret = gsGetGridStore(gsGetDefaultFactory(), props, propCount, &store);
+	if (database == NULL)
+		database = "public";
+
+	if (member == NULL) {
+		/* multicast mode */
+		const GSPropertyEntry props[] = {
+			{"database", database},
+			{"clusterName", cluster},
+			{"user", user},
+			{"password", passwd},
+			/* multicast address */
+			{"notificationAddress", address},
+			{"notificationPort", port},
+		};
+		propCount = sizeof(props) / sizeof(*props);
+		ret = gsGetGridStore(gsGetDefaultFactory(), props, propCount, &store);
+	} else {
+		/* fixed list mode */
+		const GSPropertyEntry props[] = {
+			{"clusterName", cluster},
+			{"database", database},
+			{"user", user},
+			{"password", passwd},
+			/* list of address and port */
+			{"notificationMember", member},
+		};
+		propCount = sizeof(props) / sizeof(*props);	
+		ret = gsGetGridStore(gsGetDefaultFactory(), props, propCount, &store);
+	}
+
 	if (!GS_SUCCEEDED(ret))
 		ereport(ERROR,
 				(errcode(ERRCODE_SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION),

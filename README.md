@@ -36,7 +36,7 @@ CREATE EXTENSION griddb_fdw;
 ### create server object
 ```
 CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS(host '239.0.0.1',  
-port '31999', clustername 'ktymCluster');
+port '31999', clustername 'ktymCluster', database 'public');
 ```
 
 We have to specify the following parameters for a [GridDB][1] foreign server:
@@ -44,6 +44,13 @@ We have to specify the following parameters for a [GridDB][1] foreign server:
 host : GridDB notification addres.  
 port : GridDB notification port  
 clustername : GridDB cluster name  
+database : GridDB database name (can be skipped if you want to connect `public` database) 
+
+If you want to use fixed list mode instead of multicast mode, you have to specify `notification_member` instead of `host` and `port`:
+```
+CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS(notification_member '10.18.18.164:10001',
+clustername 'griddbfdwTestCluster');
+```
 
 ### create user mapping
 ```

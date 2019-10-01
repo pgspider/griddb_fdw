@@ -52,6 +52,9 @@
 #define OPTION_HOST		"host"
 #define OPTION_PORT		"port"
 #define OPTION_CLUSTER	"clustername"
+#define OPTION_DATABASE	"database"
+#define OPTION_MEMBER	"notification_member"
+
 /* Option name for CREATE USER MAPPING. */
 #define OPTION_USER		"username"
 #define OPTION_PWD		"password"
@@ -81,8 +84,10 @@ typedef struct griddb_opt
 	char	   *svr_port;		/* GridDB port number */
 	char	   *svr_username;	/* GridDB user name */
 	char	   *svr_password;	/* GridDB password */
-	char	   *svr_clustername;	/* GridDB database name */
-
+	char	   *svr_clustername;	/* GridDB cluster name */
+	char	   *svr_database;	/* GridDB database name */
+	char	   *svr_notification_member;	/* GridDB notification member for fixed list */
+	
 	bool		use_remote_estimate;	/* use remote estimate for rows */
 	Cost		fdw_startup_cost;
 	Cost		fdw_tuple_cost;
