@@ -17,7 +17,15 @@
 
 #include "executor/tuptable.h"
 #include "foreign/foreign.h"
+#if (PG_VERSION_NUM >= 120000)
+#include "nodes/pathnodes.h"
+#include "access/table.h"
+#include "utils/float.h"
+#include "optimizer/optimizer.h"
+#else
 #include "nodes/relation.h"
+#include "optimizer/var.h"
+#endif
 #include "utils/hsearch.h"
 #include "utils/relcache.h"
 #include "utils/timestamp.h"

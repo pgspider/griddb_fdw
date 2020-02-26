@@ -23,7 +23,6 @@
 #include "commands/defrem.h"
 #include "nodes/nodeFuncs.h"
 #include "nodes/plannodes.h"
-#include "nodes/relation.h"
 #include "optimizer/clauses.h"
 #include "optimizer/prep.h"
 #include "parser/parsetree.h"
@@ -375,7 +374,11 @@ deparseExpr(Expr *node, deparse_expr_cxt *context)
 			elog(ERROR, "Parameter is unsupported");
 			Assert(false);
 			break;
+#if PG_VERSION_NUM < 120000
 		case T_ArrayRef:
+#else
+		case T_SubscriptingRef:
+#endif
 			/* Does not reach here because foreign_expr_walker returns false. */
 			elog(ERROR, "Array is unsupported");
 			Assert(false);
@@ -1050,7 +1053,11 @@ foreign_expr_walker(Node *node,
 				return false;
 			}
 			break;
+#if PG_VERSION_NUM < 120000
 		case T_ArrayRef:
+#else
+		case T_SubscriptingRef:
+#endif
 			{
 				/* Array in condition is unsupported */
 				return false;

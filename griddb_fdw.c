@@ -28,7 +28,6 @@
 #include "optimizer/paths.h"
 #include "optimizer/pathnode.h"
 #include "optimizer/planmain.h"
-#include "optimizer/var.h"
 #include "parser/parsetree.h"
 #include "storage/ipc.h"
 #include "utils/builtins.h"
