@@ -289,6 +289,7 @@ griddb_init(const char *addr,
 
 	/* For float4 */
 	table_info	FLOAT4_TBL;
+	table_info	test_data;
 
 	/* For float8 */
 	table_info	FLOAT8_TBL;
@@ -882,6 +883,13 @@ griddb_init(const char *addr,
 						2,
 						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
 						"f1", GS_TYPE_FLOAT, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "test_data", &test_data,
+						2,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"bits", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE);
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
 
