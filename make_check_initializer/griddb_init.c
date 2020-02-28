@@ -901,8 +901,9 @@ griddb_init(const char *addr,
 		goto EXIT;
 
 	ret = set_tableInfo(store, "INT4_TBL", &INT4_TBL,
-						1,
-						"f1", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL);
+						2,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"f1", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE);
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
 
