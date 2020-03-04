@@ -38,8 +38,6 @@ CREATE FOREIGN TABLE tenk1 (
   string4   text
 ) SERVER griddb_svr;
 
-ALTER TABLE tenk1 SET WITH OIDS;
-
 CREATE FOREIGN TABLE tenk2 (
   unique1   int4,
   unique2   int4,
@@ -59,7 +57,7 @@ CREATE FOREIGN TABLE tenk2 (
   string4   text
 ) SERVER griddb_svr;
 
-CREATE FOREIGN TABLE INT4_TBL(f1 int4 OPTIONS (rowkey 'true')) SERVER griddb_svr;
+CREATE FOREIGN TABLE INT4_TBL(id int4 OPTIONS (rowkey 'true'), f1 int4) SERVER griddb_svr;
 CREATE FOREIGN TABLE FLOAT8_TBL(id int4 OPTIONS (rowkey 'true'), f1 float8) SERVER griddb_svr;
 CREATE FOREIGN TABLE INT8_TBL(id int4 OPTIONS (rowkey 'true'), q1 int8, q2 int8) SERVER griddb_svr;
 CREATE FOREIGN TABLE INT2_TBL(id int4 OPTIONS (rowkey 'true'), f1 int2) SERVER griddb_svr;
@@ -86,6 +84,9 @@ INSERT INTO J2_TBL(i, k) VALUES (0, NULL);
 INSERT INTO J2_TBL(i, k) VALUES (NULL, NULL);
 INSERT INTO J2_TBL(i, k) VALUES (NULL, 0);
 
+-- useful in some tests below
+create temp table onerow();
+insert into onerow default values;
 --
 -- CORRELATION NAMES
 -- Make sure that table/column aliases are supported
@@ -99,16 +100,16 @@ SELECT '' AS "xxx", *
   FROM J1_TBL tx;
 
 SELECT '' AS "xxx", *
-  FROM J1_TBL AS t1 (t1_id, a, b, c);
+  FROM J1_TBL AS t1 (id, a, b, c);
 
 SELECT '' AS "xxx", *
-  FROM J1_TBL t1 (t1_id, a, b, c);
+  FROM J1_TBL t1 (id, a, b, c);
 
-SELECT '' AS "xxx", *
-  FROM J1_TBL t1 (t1_id, a, b, c), J2_TBL t2 (t2_id, d, e);
+SELECT '' AS "xxx", a, b, c, d, e
+  FROM J1_TBL t1 (id, a, b, c), J2_TBL t2 (id, d, e);
 
 SELECT '' AS "xxx", t1.a, t2.e
-  FROM J1_TBL t1 (t1_id, a, b, c), J2_TBL t2 (t2_id, d, e)
+  FROM J1_TBL t1 (id, a, b, c), J2_TBL t2 (id, d, e)
   WHERE t1.a = t2.d;
 
 
@@ -118,12 +119,12 @@ SELECT '' AS "xxx", t1.a, t2.e
 -- which degenerate into a standard unqualified inner join.
 --
 
-SELECT '' AS "xxx", *
-  FROM J1_TBL CROSS JOIN J2_TBL;
+SELECT '' AS "xxx", i, j, t, i1, k
+  FROM J1_TBL t1 (id, i, j, t) CROSS JOIN J2_TBL t2 (id, i1, k);
 
 -- ambiguous column
 SELECT '' AS "xxx", i, k, t
-  FROM J1_TBL CROSS JOIN J2_TBL;
+  FROM J1_TBL t1 (id, i, j, t) CROSS JOIN J2_TBL t2 (id, i1, k);
 
 -- resolve previous ambiguity by specifying the table name
 SELECT '' AS "xxx", t1.i, k, t
@@ -131,13 +132,13 @@ SELECT '' AS "xxx", t1.i, k, t
 
 SELECT '' AS "xxx", ii, tt, kk
   FROM (J1_TBL CROSS JOIN J2_TBL)
-    AS tx (t1_id, ii, jj, tt, t2_id, ii2, kk);
+    AS tx (id1, ii, jj, tt, id2, ii2, kk);
 
 SELECT '' AS "xxx", tx.ii, tx.jj, tx.kk
-  FROM (J1_TBL t1 (a, b, c) CROSS JOIN J2_TBL t2 (d, e))
-    AS tx (t1_id, ii, jj, tt, t2_id, ii2, kk);
+  FROM (J1_TBL t1 (id, a, b, c) CROSS JOIN J2_TBL t2 (id, d, e))
+    AS tx (id1, ii, jj, tt, id2, ii2, kk);
 
-SELECT '' AS "xxx", *
+SELECT '' AS "xxx", a.i, a.j, a.t, b.i, b.k
   FROM J1_TBL CROSS JOIN J2_TBL a CROSS JOIN J2_TBL b;
 
 
@@ -162,11 +163,11 @@ SELECT '' AS "xxx", *
   FROM J1_TBL JOIN J2_TBL USING (i);
 
 SELECT '' AS "xxx", *
-  FROM J1_TBL t1 (t1_id, a, b, c) JOIN J2_TBL t2 (t2_id, a, d) USING (a)
+  FROM J1_TBL t1 (id, a, b, c) JOIN J2_TBL t2 (id, a, d) USING (a)
   ORDER BY a, d;
 
 SELECT '' AS "xxx", *
-  FROM J1_TBL t1 (t1_id, a, b, c) JOIN J2_TBL t2 (t2_id, a, b) USING (b)
+  FROM J1_TBL t1 (id, a, b, c) JOIN J2_TBL t2 (id, a, b) USING (b)
   ORDER BY b, t1.a;
 
 
@@ -175,19 +176,19 @@ SELECT '' AS "xxx", *
 -- Inner equi-join on all columns with the same name
 --
 
-SELECT '' AS "xxx", *
-  FROM J1_TBL t1(t1_id, i) NATURAL JOIN J2_TBL t2(t2_id, i);
+SELECT '' AS "xxx", i, j, t, k
+  FROM J1_TBL t1(id1, i, j, t) NATURAL JOIN J2_TBL t2(id2, i, k);
 
-SELECT '' AS "xxx", *
-  FROM J1_TBL t1 (t1_id, a, b, c) NATURAL JOIN J2_TBL t2 (t2_id, a, d);
+SELECT '' AS "xxx", a, b, c, d
+  FROM J1_TBL t1 (id1, a, b, c) NATURAL JOIN J2_TBL t2 (id2, a, d);
 
-SELECT '' AS "xxx", *
-  FROM J1_TBL t1 (t1_id, a, b, c) NATURAL JOIN J2_TBL t2 (t2_id, d, a);
+SELECT '' AS "xxx", a, b, c, d
+  FROM J1_TBL t1 (id1, a, b, c) NATURAL JOIN J2_TBL t2 (id2, d, a);
 
 -- mismatch number of columns
 -- currently, Postgres will fill in with underlying names
 SELECT '' AS "xxx", *
-  FROM J1_TBL t1 (t1_id, a, b) NATURAL JOIN J2_TBL t2 (t2_id, a);
+  FROM J1_TBL t1 (id1, a, b) NATURAL JOIN J2_TBL t2 (id2, a);
 
 
 --
@@ -346,6 +347,13 @@ NATURAL FULL JOIN
     (SELECT name, n as s3_n FROM t31) as s3
   ) ss2;
 
+-- Constants as join keys can also be problematic
+SELECT * FROM
+  (SELECT name, n as s1_n FROM t11) as s1
+FULL JOIN
+  (SELECT name, 2 as s2_n FROM t21) as s2
+ON (s1_n = s2_n);
+
 
 -- Test for propagation of nullability constraints into sub-joins
 
@@ -410,6 +418,18 @@ select count(*) from tenk1 x where
   x.unique1 = 0 and
   x.unique1 in (select aa.f1 from int4_tbl aa,float8_tbl bb where aa.f1=bb.f1);
 rollback;
+
+--
+-- regression test: be sure we cope with proven-dummy append rels
+--
+--explain (costs off)
+--select aa, bb, unique1, unique1
+--  from tenk1 right join b on aa = unique1
+--  where bb < bb and bb is null;
+
+--select aa, bb, unique1, unique1
+--  from tenk1 right join b on aa = unique1
+--  where bb < bb and bb is null;
 
 --
 -- regression test: check handling of empty-FROM subquery underneath outer join
@@ -707,6 +727,26 @@ select * from a1 left join b1 on i = x and i = y and x = i;
 
 rollback;
 
+-- skip this test, can not create type on GridDB
+-- test handling of merge clauses using record_ops
+--
+--begin;
+
+--create type mycomptype as (id int, v bigint);
+
+--create temp table tidv (idv mycomptype);
+--create index on tidv (idv);
+
+--explain (costs off)
+--select a.idv, b.idv from tidv a, tidv b where a.idv = b.idv;
+
+--set enable_mergejoin = 0;
+
+--explain (costs off)
+--select a.idv, b.idv from tidv a, tidv b where a.idv = b.idv;
+
+--rollback;
+
 --
 -- test NULL behavior of whole-row Vars, per bug #5025
 --
@@ -766,6 +806,50 @@ order by c2.name;
 
 rollback;
 
+--
+-- test incorrect handling of placeholders that only appear in targetlists,
+-- per bug #6154
+--
+begin;
+create foreign table a1 (i integer) server griddb_svr;
+create foreign table b1 (x integer, y integer) server griddb_svr;
+
+INSERT INTO a1 values (1);
+INSERT INTO b1 values (2, 42);
+
+SELECT * FROM
+( SELECT i as key1 FROM a1) sub1
+LEFT JOIN
+( SELECT sub3.key3, sub4.value2, COALESCE(sub4.value2, 66) as value3 FROM
+    ( SELECT i as key3 FROM a1) sub3
+    LEFT JOIN
+    ( SELECT sub5.key5, COALESCE(sub6.value1, 1) as value2 FROM
+        ( SELECT i as key5 FROM a1 ) sub5
+        LEFT JOIN
+        ( SELECT x as key6, y as value1 FROM b1 ) sub6
+        ON sub5.key5 = sub6.key6
+    ) sub4
+    ON sub4.key5 = sub3.key3
+) sub2
+ON sub1.key1 = sub2.key3;
+
+-- test the path using join aliases, too
+SELECT * FROM
+( SELECT i as key1 FROM a1 ) sub1
+LEFT JOIN
+( SELECT sub3.key3, value2, COALESCE(value2, 66) as value3 FROM
+    ( SELECT i as key3 FROM a1) sub3
+    LEFT JOIN
+    ( SELECT sub5.key5, COALESCE(sub6.value1, 1) as value2 FROM
+        ( SELECT i as key5 FROM a1 ) sub5
+        LEFT JOIN
+        ( SELECT x as key6, y as value1 FROM b1 ) sub6
+        ON sub5.key5 = sub6.key6
+    ) sub4
+    ON sub4.key5 = sub3.key3
+) sub2
+ON sub1.key1 = sub2.key3;
+rollback;
 --
 -- test case where a PlaceHolderVar is used as a nestloop parameter
 --
@@ -906,8 +990,8 @@ select t1.unique2, t1.stringu1, t2.unique1, t2.stringu2 from
   tenk1 t1
   inner join int4_tbl i1
     left join (select v1.x2, v2.y1, 11 AS d1
-               from (values(1,0)) v1(x1,x2)
-               left join (values(3,1)) v2(y1,y2)
+               from (select 1,0 from onerow) v1(x1,x2)
+               left join (select 3,1 from onerow) v2(y1,y2)
                on v1.x1 = v2.y2) subq1
     on (i1.f1 = subq1.x2)
   on (t1.unique2 = subq1.d1)
@@ -919,8 +1003,8 @@ select t1.unique2, t1.stringu1, t2.unique1, t2.stringu2 from
   tenk1 t1
   inner join int4_tbl i1
     left join (select v1.x2, v2.y1, 11 AS d1
-               from (values(1,0)) v1(x1,x2)
-               left join (values(3,1)) v2(y1,y2)
+               from (select 1,0 from onerow) v1(x1,x2)
+               left join (select 3,1 from onerow) v2(y1,y2)
                on v1.x1 = v2.y2) subq1
     on (i1.f1 = subq1.x2)
   on (t1.unique2 = subq1.d1)
@@ -945,6 +1029,35 @@ select ss1.d1 from
     on i8.q1 = i4.f1
   on t1.tenthous = ss1.d1
 where t1.unique1 < i4.f1;
+
+-- this variant is foldable by the remove-useless-RESULT-RTEs code
+
+explain (costs off)
+select t1.unique2, t1.stringu1, t2.unique1, t2.stringu2 from
+  tenk1 t1
+  inner join int4_tbl i1
+    left join (select v1.x2, v2.y1, 11 AS d1
+               from (values(1,0)) v1(x1,x2)
+               left join (values(3,1)) v2(y1,y2)
+               on v1.x1 = v2.y2) subq1
+    on (i1.f1 = subq1.x2)
+  on (t1.unique2 = subq1.d1)
+  left join tenk1 t2
+  on (subq1.y1 = t2.unique1)
+where t1.unique2 < 42 and t1.stringu1 > t2.stringu2;
+
+select t1.unique2, t1.stringu1, t2.unique1, t2.stringu2 from
+  tenk1 t1
+  inner join int4_tbl i1
+    left join (select v1.x2, v2.y1, 11 AS d1
+               from (values(1,0)) v1(x1,x2)
+               left join (values(3,1)) v2(y1,y2)
+               on v1.x1 = v2.y2) subq1
+    on (i1.f1 = subq1.x2)
+  on (t1.unique2 = subq1.d1)
+  left join tenk1 t2
+  on (subq1.y1 = t2.unique1)
+where t1.unique2 < 42 and t1.stringu1 > t2.stringu2;
 
 --
 -- test extraction of restriction OR clauses from join OR clause
@@ -1628,29 +1741,25 @@ select v.* from
   (int8_tbl x left join (select q1,(select coalesce(q2,0)) q2 from int8_tbl) y on x.q2 = y.q1)
   left join int4_tbl z on z.f1 = x.q2,
   lateral (select x.q1,y.q1 union all select x.q2,y.q2) v(vx,vy);
-create temp table dual();
-insert into dual default values;
-analyze dual;
 select v.* from
   (int8_tbl x left join (select q1,(select coalesce(q2,0)) q2 from int8_tbl) y on x.q2 = y.q1)
   left join int4_tbl z on z.f1 = x.q2,
-  lateral (select x.q1,y.q1 from dual union all select x.q2,y.q2 from dual) v(vx,vy);
+  lateral (select x.q1,y.q1 from onerow union all select x.q2,y.q2 from onerow) v(vx,vy);
 
--- Error when using sub-query with multi instances of table, this issue is fixed on PostgreSQL-12
--- explain (verbose, costs off)
--- select * from
---   int8_tbl a left join
---   lateral (select *, a.q2 as x from int8_tbl b) ss on a.q2 = ss.q1;
--- select * from
---   int8_tbl a left join
---   lateral (select *, a.q2 as x from int8_tbl b) ss on a.q2 = ss.q1;
--- explain (verbose, costs off)
--- select * from
---   int8_tbl a left join
---   lateral (select *, coalesce(a.q2, 42) as x from int8_tbl b) ss on a.q2 = ss.q1;
--- select * from
---   int8_tbl a left join
---   lateral (select *, coalesce(a.q2, 42) as x from int8_tbl b) ss on a.q2 = ss.q1;
+explain (verbose, costs off)
+select * from
+  int8_tbl a left join
+  lateral (select *, a.q2 as x from int8_tbl b) ss on a.q2 = ss.q1;
+select * from
+  int8_tbl a left join
+  lateral (select *, a.q2 as x from int8_tbl b) ss on a.q2 = ss.q1;
+explain (verbose, costs off)
+select * from
+  int8_tbl a left join
+  lateral (select *, coalesce(a.q2, 42) as x from int8_tbl b) ss on a.q2 = ss.q1;
+select * from
+  int8_tbl a left join
+  lateral (select *, coalesce(a.q2, 42) as x from int8_tbl b) ss on a.q2 = ss.q1;
 
 -- lateral can result in join conditions appearing below their
 -- real semantic level
@@ -1661,9 +1770,9 @@ select * from int4_tbl i left join
   lateral (select * from int2_tbl j where i.f1 = j.f1) k on true;
 explain (verbose, costs off)
 select * from int4_tbl i left join
-  lateral (select coalesce(j.f1) from int2_tbl j where i.f1 = j.f1) k on true;
+  lateral (select coalesce(i) from int2_tbl j where i.f1 = j.f1) k on true;
 select * from int4_tbl i left join
-  lateral (select coalesce(j.f1) from int2_tbl j where i.f1 = j.f1) k on true;
+  lateral (select coalesce(i) from int2_tbl j where i.f1 = j.f1) k on true;
 explain (verbose, costs off)
 select * from int4_tbl a,
   lateral (
@@ -1675,18 +1784,17 @@ select * from int4_tbl a,
   ) ss;
 
 -- lateral reference in a PlaceHolderVar evaluated at join level
--- Error when using sub-query with multi instances of table, this issue is fixed on PostgreSQL-12
--- explain (verbose, costs off)
--- select * from
---   int8_tbl a left join lateral
---   (select b.q1 as bq1, c.q1 as cq1, least(a.q1,b.q1,c.q1) from
---    int8_tbl b cross join int8_tbl c) ss
---   on a.q2 = ss.bq1;
--- select * from
---   int8_tbl a left join lateral
---   (select b.q1 as bq1, c.q1 as cq1, least(a.q1,b.q1,c.q1) from
---    int8_tbl b cross join int8_tbl c) ss
---   on a.q2 = ss.bq1;
+explain (verbose, costs off)
+select * from
+  int8_tbl a left join lateral
+  (select b.q1 as bq1, c.q1 as cq1, least(a.q1,b.q1,c.q1) from
+   int8_tbl b cross join int8_tbl c) ss
+  on a.q2 = ss.bq1;
+select * from
+  int8_tbl a left join lateral
+  (select b.q1 as bq1, c.q1 as cq1, least(a.q1,b.q1,c.q1) from
+   int8_tbl b cross join int8_tbl c) ss
+  on a.q2 = ss.bq1;
 
 -- case requiring nested PlaceHolderVars
 explain (verbose, costs off)
@@ -1711,6 +1819,32 @@ select c.*,a.*,ss1.q1,ss2.q1,ss3.* from
     lateral (select q1, coalesce(ss1.x,q2) as y from int8_tbl d) ss2
   ) on c.q2 = ss2.q1,
   lateral (select * from int4_tbl i where ss2.y > f1) ss3;
+
+-- check processing of postponed quals (bug #9041)
+explain (verbose, costs off)
+select * from
+  (select 1 as x offset 0) x cross join (select 2 as y offset 0) y
+  left join lateral (
+    select * from (select 3 as z offset 0) z where z.z = x.x
+  ) zz on zz.z = y.y;
+
+-- check dummy rels with lateral references (bug #15694)
+explain (verbose, costs off)
+select * from int8_tbl i8 left join lateral
+  (select *, i8.q2 from int4_tbl where false) ss on true;
+explain (verbose, costs off)
+select * from int8_tbl i8 left join lateral
+  (select *, i8.q2 from int4_tbl i1, int4_tbl i2 where false) ss on true;
+
+-- check handling of nested appendrels inside LATERAL
+select * from
+  ((select 2 as v) union all (select 3 as v)) as q1
+  cross join lateral
+  ((select * from
+      ((select 4 as v) union all (select 5 as v)) as q3)
+   union all
+   (select q1.v)
+  ) as q2;
 
 -- check we don't try to do a unique-ified semijoin with LATERAL
 explain (verbose, costs off)
@@ -1947,6 +2081,7 @@ CREATE FOREIGN TABLE onek (
   string4   name
 ) SERVER griddb_svr;
 
+-- check that semijoin inner is not seen as unique for a portion of the outerrel
 explain (verbose, costs off)
 select t1.unique1, t2.hundred
 from onek t1, tenk1 t2
