@@ -878,11 +878,18 @@ SELECT '' AS "xxx", *
 -- Inner equi-join on all columns with the same name
 --
 SELECT '' AS "xxx", i, j, t, k
-  FROM J1_TBL t1(id1, i, j, t) NATURAL JOIN J2_TBL(id2, i, k);
-ERROR:  column "id2" does not exist
-LINE 2: ... FROM J1_TBL t1(id1, i, j, t) NATURAL JOIN J2_TBL(id2, i, k)...
-                                                             ^
-HINT:  Perhaps you meant to reference the column "t1.id1".
+  FROM J1_TBL t1(id1, i, j, t) NATURAL JOIN J2_TBL t2(id2, i, k);
+ xxx | i | j |   t   | k  
+-----+---+---+-------+----
+     | 0 |   | zero  |   
+     | 1 | 4 | one   | -1
+     | 2 | 3 | two   |  2
+     | 2 | 3 | two   |  4
+     | 3 | 2 | three | -3
+     | 5 | 0 | five  | -5
+     | 5 | 0 | five  | -5
+(7 rows)
+
 SELECT '' AS "xxx", a, b, c, d
   FROM J1_TBL t1 (id1, a, b, c) NATURAL JOIN J2_TBL t2 (id2, a, d);
  xxx | a | b |   c   | d  
