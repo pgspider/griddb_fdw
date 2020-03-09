@@ -369,7 +369,8 @@ griddb_init(const char *addr,
 	/* For select */
 	table_info	onek2,
 				person,
-				foo;
+				foo,
+				bar;
 
 	/* For aggregates */
 	table_info	aggtest,
@@ -1446,6 +1447,15 @@ griddb_init(const char *addr,
 						2,
 						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
 						"f1", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "bar", &bar,
+						4,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"a", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE,
+						"b", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
+						"c", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE);
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
 
