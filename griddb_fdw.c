@@ -590,7 +590,11 @@ griddbGetForeignPaths(PlannerInfo *root,
 								   fpinfo->startup_cost,
 								   fpinfo->total_cost,
 								   NIL, /* no pathkeys */
+#if (PG_VERSION_NUM >= 120000)
+								   baserel->lateral_relids,
+#else
 								   NULL,	/* no outer rel either */
+#endif
 								   NULL,	/* no extra plan */
 								   NIL);	/* no fdw_private list */
 	add_path(baserel, (Path *) path);
@@ -873,6 +877,8 @@ griddbBeginForeignScan(ForeignScanState *node, int eflags)
 static TupleTableSlot *
 griddbIterateForeignScan(ForeignScanState *node)
 {
+	elog(DEBUG1, "%s", __func__);
+
 	GridDBFdwScanState *fsstate = (GridDBFdwScanState *) node->fdw_state;
 	TupleTableSlot *tupleSlot = node->ss.ss_ScanTupleSlot;
 	TupleDesc	tupleDescriptor = tupleSlot->tts_tupleDescriptor;
@@ -949,6 +955,8 @@ griddbIterateForeignScan(ForeignScanState *node)
 static void
 griddbReScanForeignScan(ForeignScanState *node)
 {
+	elog(DEBUG1, "%s", __func__);
+
 	GridDBFdwScanState *fsstate = (GridDBFdwScanState *) node->fdw_state;
 
 	/* If we haven't fetched the result set yet, nothing to do. */
@@ -1004,6 +1012,8 @@ griddbAddForeignUpdateTargets(Query *parsetree,
 							  RangeTblEntry *target_rte,
 							  Relation target_relation)
 {
+	elog(DEBUG1, "%s", __func__);
+
 	Var		   *var = NULL;
 	const char *attrname = NULL;
 	TargetEntry *tle = NULL;
@@ -1044,6 +1054,8 @@ griddbPlanForeignModify(PlannerInfo *root,
 						Index resultRelation,
 						int subplan_index)
 {
+	elog(DEBUG1, "%s", __func__);
+
 	CmdType		operation = plan->operation;
 	RangeTblEntry *rte = planner_rt_fetch(resultRelation, root);
 	Relation	rel;
@@ -1201,6 +1213,8 @@ griddbBeginForeignModify(ModifyTableState *mtstate,
 						 int subplan_index,
 						 int eflags)
 {
+	elog(DEBUG1, "%s", __func__);
+
 	GridDBFdwModifyState *fmstate;
 	EState	   *estate = mtstate->ps.state;
 	List	   *target_attrs;
@@ -1243,6 +1257,8 @@ griddbExecForeignInsert(EState *estate,
 						TupleTableSlot *slot,
 						TupleTableSlot *planSlot)
 {
+	elog(DEBUG1, "%s", __func__);
+
 	GridDBFdwModifyState *fmstate =
 	(GridDBFdwModifyState *) resultRelInfo->ri_FdwState;
 	GSResult	ret;
@@ -1292,6 +1308,8 @@ griddbExecForeignUpdate(EState *estate,
 						TupleTableSlot *slot,
 						TupleTableSlot *planSlot)
 {
+	elog(DEBUG1, "%s", __func__);
+
 	GridDBFdwModifyState *fmstate =
 	(GridDBFdwModifyState *) resultRelInfo->ri_FdwState;
 	GSResult	ret;
@@ -1353,6 +1371,8 @@ griddbExecForeignDelete(EState *estate,
 						TupleTableSlot *slot,
 						TupleTableSlot *planSlot)
 {
+	elog(DEBUG1, "%s", __func__);
+
 	GridDBFdwModifyState *fmstate =
 	(GridDBFdwModifyState *) resultRelInfo->ri_FdwState;
 	GSResult	ret;
