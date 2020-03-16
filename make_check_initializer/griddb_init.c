@@ -270,13 +270,21 @@ griddb_init(const char *addr,
 				ft4,
 				ft5,
 				base_tbl,
+				child_tbl,
 				loc1,
+				loct13,
+				gloc1,
 				loc2,
+				loc3,
 				loct,
 				loct1,
 				loct2,
 				loct3,
 				loct4,
+				loct11,
+				loct22,
+				loct12,
+				loct21,
 				locp1,
 				locp2,
 				fprt1_p1,
@@ -285,7 +293,8 @@ griddb_init(const char *addr,
 				fprt2_p2,
 				pagg_tab_p1,
 				pagg_tab_p2,
-				pagg_tab_p3;
+				pagg_tab_p3,
+				local_tbl;
 
 	/* For float4 */
 	table_info	FLOAT4_TBL;
@@ -765,10 +774,33 @@ griddb_init(const char *addr,
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
 
+	ret = set_tableInfo(store, "child_tbl", &child_tbl,
+						2,
+						"a", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"b", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
 	ret = set_tableInfo(store, "loc1", &loc1,
 						2,
 						"f1", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
 						"f2", GS_TYPE_STRING, GS_TYPE_OPTION_NOT_NULL);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+	
+	ret = set_tableInfo(store, "loct13", &loct13,
+						3,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"f1", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"f2", GS_TYPE_STRING, GS_TYPE_OPTION_NOT_NULL);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "gloc1", &gloc1,
+						3,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"a", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
+						"b", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE);
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
 
@@ -779,9 +811,17 @@ griddb_init(const char *addr,
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
 
-	ret = set_tableInfo(store, "loct", &loct,
+	ret = set_tableInfo(store, "loc3", &loc3,
 						2,
-						"aa", GS_TYPE_STRING, GS_TYPE_OPTION_NOT_NULL,
+						"f1", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"f2", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "loct", &loct,
+						3,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"aa", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE,
 						"bb", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE);
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
@@ -803,15 +843,46 @@ griddb_init(const char *addr,
 		goto EXIT;
 
 	ret = set_tableInfo(store, "loct3", &loct3,
-						2,
-						"a", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
-						"b", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE);
+						3,
+						"f1", GS_TYPE_STRING, GS_TYPE_OPTION_NOT_NULL,
+						"f2", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE,
+						"f3", GS_TYPE_STRING, GS_TYPE_OPTION_NOT_NULL);
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
 
 	ret = set_tableInfo(store, "loct4", &loct4,
 						2,
 						"a", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"b", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "loct11", &loct11,
+						2,
+						"a", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"b", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "loct22", &loct22,
+						2,
+						"a", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"b", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "loct12", &loct12,
+						3,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"a", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
+						"b", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+	
+	ret = set_tableInfo(store, "loct21", &loct21,
+						3,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"a", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
 						"b", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE);
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
@@ -2053,6 +2124,14 @@ griddb_init(const char *addr,
 						2,
 						"a", GS_TYPE_STRING, GS_TYPE_OPTION_NOT_NULL,
 						"b", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "local_tbl", &local_tbl,
+						3,
+						"c1", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"c2", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"c3", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE);
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
 
