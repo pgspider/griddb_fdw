@@ -312,6 +312,7 @@ griddb_init(const char *addr,
 	/* For join */
 	table_info	J1_TBL,
 				J2_TBL,
+				b0,
 				tenk1,
 				tenk2,
 				INT2_TBL,
@@ -1012,6 +1013,13 @@ griddb_init(const char *addr,
 						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
 						"i", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
 						"k", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "b0", &b0,
+						2,
+						"aa", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"bb", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE);
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
 

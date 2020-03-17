@@ -422,14 +422,15 @@ rollback;
 --
 -- regression test: be sure we cope with proven-dummy append rels
 --
---explain (costs off)
---select aa, bb, unique1, unique1
---  from tenk1 right join b on aa = unique1
---  where bb < bb and bb is null;
+create foreign table b0 (aa int, bb int) server griddb_svr;
+explain (costs off)
+select aa, bb, unique1, unique1
+  from tenk1 right join b0 on aa = unique1
+  where bb < bb and bb is null;
 
---select aa, bb, unique1, unique1
---  from tenk1 right join b on aa = unique1
---  where bb < bb and bb is null;
+select aa, bb, unique1, unique1
+  from tenk1 right join b0 on aa = unique1
+  where bb < bb and bb is null;
 
 --
 -- regression test: check handling of empty-FROM subquery underneath outer join
