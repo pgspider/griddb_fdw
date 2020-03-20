@@ -4840,7 +4840,7 @@ SAVEPOINT s;
 WARNING:  Subtransaction is not supported. So griddb_fdw do nothing.
 SELECT * FROM ft1 WHERE 1 / (c1 - 1) > 0;  -- ERROR
 WARNING:  Subtransaction is not supported. So griddb_fdw do nothing.
-ERROR:  GridDB-API is failed by 150016 at griddb_fdw.c: 2588
+ERROR:  GridDB-API is failed by 150016 at griddb_fdw.c: 2589
   Divide by 0 detected.
 
 ROLLBACK TO s;
@@ -7185,10 +7185,10 @@ insert into grem1 (a) values (1), (2);
 update grem1 set a = 22 where a = 2;
 --select * from gloc1;
 select * from grem1;
- id | a  | b 
-----+----+---
-  1 |  1 | 2
-  2 | 22 | 4
+ id | a  | b  
+----+----+----
+  1 |  1 |  2
+  2 | 22 | 44
 (2 rows)
 
 -- ===================================================================
@@ -9101,6 +9101,7 @@ FROM SERVER griddb_svr INTO import_grid4;
  import_grid4 | agg_t5                    | griddb_svr |             | 
  import_grid4 | agg_t6                    | griddb_svr |             | 
  import_grid4 | aggtest                   | griddb_svr |             | 
+ import_grid4 | b0                        | griddb_svr |             | 
  import_grid4 | b1                        | griddb_svr |             | 
  import_grid4 | b2                        | griddb_svr |             | 
  import_grid4 | b3                        | griddb_svr |             | 
@@ -9281,7 +9282,7 @@ FROM SERVER griddb_svr INTO import_grid4;
  import_grid4 | zt1                       | griddb_svr |             | 
  import_grid4 | zt2                       | griddb_svr |             | 
  import_grid4 | zt3                       | griddb_svr |             | 
-(204 rows)
+(205 rows)
 
 -- Assorted error cases
 IMPORT FOREIGN SCHEMA griddb_schema FROM SERVER griddb_svr INTO import_grid4;
@@ -9474,6 +9475,7 @@ NOTICE:  relation "ft2" already exists, skipping
 NOTICE:  relation "mcrparted3" already exists, skipping
 NOTICE:  relation "child_tbl" already exists, skipping
 NOTICE:  relation "tt6" already exists, skipping
+NOTICE:  relation "b0" already exists, skipping
 NOTICE:  relation "person" already exists, skipping
 NOTICE:  relation "bool_test_a" already exists, skipping
 NOTICE:  relation "loct11" already exists, skipping
@@ -9680,6 +9682,7 @@ NOTICE:  relation "ft2" already exists, skipping
 NOTICE:  relation "mcrparted3" already exists, skipping
 NOTICE:  relation "child_tbl" already exists, skipping
 NOTICE:  relation "tt6" already exists, skipping
+NOTICE:  relation "b0" already exists, skipping
 NOTICE:  relation "person" already exists, skipping
 NOTICE:  relation "bool_test_a" already exists, skipping
 NOTICE:  relation "loct11" already exists, skipping
