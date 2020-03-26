@@ -4840,7 +4840,7 @@ SAVEPOINT s;
 WARNING:  Subtransaction is not supported. So griddb_fdw do nothing.
 SELECT * FROM ft1 WHERE 1 / (c1 - 1) > 0;  -- ERROR
 WARNING:  Subtransaction is not supported. So griddb_fdw do nothing.
-ERROR:  GridDB-API is failed by 150016 at griddb_fdw.c: 2589
+ERROR:  GridDB-API is failed by 150016 at griddb_fdw.c: 2606
   Divide by 0 detected.
 
 ROLLBACK TO s;
@@ -8724,8 +8724,8 @@ update utrtest set a = 3;
          Remote SQL: SELECT  *  FROM loct21
 (8 rows)
 
--- crash 469
---update utrtest set a = 3; -- ERROR
+update utrtest set a = 3; -- ERROR
+ERROR:  cannot route tuples into foreign table to be updated "remp"
 -- with a non-direct modification plan
 explain (verbose, costs off)
 update utrtest set a = 3 from (values (2), (3)) s(x) where a = s.x;

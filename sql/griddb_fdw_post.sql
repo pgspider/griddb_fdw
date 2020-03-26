@@ -2036,8 +2036,7 @@ insert into utrtest(a, b) values (3, 'xyzzy');
 -- with a direct modification plan
 explain (verbose, costs off)
 update utrtest set a = 3;
--- crash 469
---update utrtest set a = 3; -- ERROR
+update utrtest set a = 3; -- ERROR
 
 -- with a non-direct modification plan
 explain (verbose, costs off)
