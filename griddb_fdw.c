@@ -1097,8 +1097,11 @@ griddbPlanForeignModify(PlannerInfo *root,
 	else if (operation == CMD_UPDATE)
 	{
 		int			col;
-		Bitmapset  *allUpdatedCols = bms_union(rte->updatedCols, rte->extraUpdatedCols);
-
+		Bitmapset  *allUpdatedCols;
+		allUpdatedCols = rte->updatedCols;
+#if (PG_VERSION_NUM >= 120000)
+		allUpdatedCols = bms_union(rte->updatedCols, rte->extraUpdatedCols);
+#endif
 		col = -1;
 		while ((col = bms_next_member(allUpdatedCols, col)) >= 0)
 		{
@@ -1476,6 +1479,7 @@ griddbBeginForeignInsert(ModifyTableState *mtstate,
 	StringInfoData sql;
 	List	   *targetAttrs = NIL;
 
+#if (PG_VERSION_NUM >= 110007)
 	/*
 	 * If the foreign table we are about to insert routed rows into is also an
 	 * UPDATE subplan result rel that will be updated later, proceeding with
@@ -1492,6 +1496,7 @@ griddbBeginForeignInsert(ModifyTableState *mtstate,
 				 errmsg("cannot route tuples into foreign table to be updated \"%s\"",
 						RelationGetRelationName(rel))));
 	}
+#endif
 
 	initStringInfo(&sql);
 
