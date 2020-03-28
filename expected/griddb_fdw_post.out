@@ -4837,7 +4837,7 @@ SAVEPOINT s;
 WARNING:  Subtransaction is not supported. So griddb_fdw do nothing.
 SELECT * FROM ft1 WHERE 1 / (c1 - 1) > 0;  -- ERROR
 WARNING:  Subtransaction is not supported. So griddb_fdw do nothing.
-ERROR:  GridDB-API is failed by 150016 at griddb_fdw.c: 2606
+ERROR:  GridDB-API is failed by 150016 at griddb_fdw.c: 2611
   Divide by 0 detected.
 
 ROLLBACK TO s;
