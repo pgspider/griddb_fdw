@@ -1238,7 +1238,7 @@ SELECT * FROM ft1 ORDER BY c6 ASC NULLS FIRST, c1 OFFSET 15 LIMIT 10;
 -- ===================================================================
 -- test check constraints
 -- ===================================================================
-
+/*
 -- Consistent check constraints provide consistent results
 ALTER FOREIGN TABLE ft1 ADD CONSTRAINT ft1_c2positive CHECK (c2 >= 0);
 EXPLAIN (VERBOSE, COSTS OFF) SELECT count(*) FROM ft1 WHERE c2 < 0;
@@ -1264,7 +1264,7 @@ RESET constraint_exclusion;
 INSERT INTO ft1(c1, c2) VALUES(1111, 2);
 UPDATE ft1 SET c2 = c2 + 1 WHERE c1 = 1;
 ALTER FOREIGN TABLE ft1 DROP CONSTRAINT ft1_c2negative;
-
+*/
 -- ===================================================================
 -- test WITH CHECK OPTION constraints
 -- ===================================================================
