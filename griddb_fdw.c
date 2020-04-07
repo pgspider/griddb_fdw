@@ -877,11 +877,11 @@ griddbBeginForeignScan(ForeignScanState *node, int eflags)
 static TupleTableSlot *
 griddbIterateForeignScan(ForeignScanState *node)
 {
-	elog(DEBUG1, "%s", __func__);
-
 	GridDBFdwScanState *fsstate = (GridDBFdwScanState *) node->fdw_state;
 	TupleTableSlot *tupleSlot = node->ss.ss_ScanTupleSlot;
 	TupleDesc	tupleDescriptor = tupleSlot->tts_tupleDescriptor;
+
+	elog(DEBUG1, "griddb_fdw: %s for %s", __func__, fsstate->cont_name);
 
 	memset(tupleSlot->tts_values, 0, sizeof(Datum) * tupleDescriptor->natts);
 	memset(tupleSlot->tts_isnull, true, sizeof(bool) * tupleDescriptor->natts);
@@ -955,9 +955,9 @@ griddbIterateForeignScan(ForeignScanState *node)
 static void
 griddbReScanForeignScan(ForeignScanState *node)
 {
-	elog(DEBUG1, "%s", __func__);
-
 	GridDBFdwScanState *fsstate = (GridDBFdwScanState *) node->fdw_state;
+
+	elog(DEBUG1, "griddb_fdw: %s for %s", __func__, fsstate->cont_name);
 
 	/* If we haven't fetched the result set yet, nothing to do. */
 	if (fsstate->row_set == NULL)
@@ -1012,11 +1012,11 @@ griddbAddForeignUpdateTargets(Query *parsetree,
 							  RangeTblEntry *target_rte,
 							  Relation target_relation)
 {
-	elog(DEBUG1, "%s", __func__);
-
 	Var		   *var = NULL;
 	const char *attrname = NULL;
 	TargetEntry *tle = NULL;
+
+	elog(DEBUG1, "griddb_fdw: %s", __func__);
 
 	/*
 	 * What we need is the rowkey which is the first column
@@ -1054,12 +1054,12 @@ griddbPlanForeignModify(PlannerInfo *root,
 						Index resultRelation,
 						int subplan_index)
 {
-	elog(DEBUG1, "%s", __func__);
-
 	CmdType		operation = plan->operation;
 	RangeTblEntry *rte = planner_rt_fetch(resultRelation, root);
 	Relation	rel;
 	List	   *targetAttrs = NIL;
+
+	elog(DEBUG1, "griddb_fdw: %s", __func__);
 
 	/*
 	 * Core code already has some lock on each rel being planned, so we can
@@ -1217,12 +1217,12 @@ griddbBeginForeignModify(ModifyTableState *mtstate,
 						 int subplan_index,
 						 int eflags)
 {
-	elog(DEBUG1, "%s", __func__);
-
 	GridDBFdwModifyState *fmstate;
 	EState	   *estate = mtstate->ps.state;
 	List	   *target_attrs;
 	RangeTblEntry *rte;
+
+	elog(DEBUG1, "griddb_fdw: %s", __func__);
 
 	/*
 	 * Do nothing in EXPLAIN (no ANALYZE) case.  resultRelInfo->ri_FdwState
@@ -1261,8 +1261,6 @@ griddbExecForeignInsert(EState *estate,
 						TupleTableSlot *slot,
 						TupleTableSlot *planSlot)
 {
-	elog(DEBUG1, "%s", __func__);
-
 	GridDBFdwModifyState *fmstate =
 	(GridDBFdwModifyState *) resultRelInfo->ri_FdwState;
 	GSResult	ret;
@@ -1270,6 +1268,8 @@ griddbExecForeignInsert(EState *estate,
 	GSContainerInfo cont_info = GS_CONTAINER_INFO_INITIALIZER;
 	GSRow	   *row;
 	GridDBFdwFieldInfo field_info = {0};
+
+	elog(DEBUG1, "griddb_fdw: %s for %s", __func__, fmstate->cont_name);
 
 	ret = gsCreateRowByContainer(fmstate->cont, &row);
 	if (!GS_SUCCEEDED(ret))
@@ -1312,8 +1312,6 @@ griddbExecForeignUpdate(EState *estate,
 						TupleTableSlot *slot,
 						TupleTableSlot *planSlot)
 {
-	elog(DEBUG1, "%s", __func__);
-
 	GridDBFdwModifyState *fmstate =
 	(GridDBFdwModifyState *) resultRelInfo->ri_FdwState;
 	GSResult	ret;
@@ -1322,6 +1320,8 @@ griddbExecForeignUpdate(EState *estate,
 	bool		isnull;
 	bool		found;
 	GridDBFdwRowKeyHashEntry *rowket_hash_entry;
+
+	elog(DEBUG1, "griddb_fdw: %s for %s", __func__, fmstate->cont_name);
 
 	/* Check if it is already modified or not. */
 	rowkey = ExecGetJunkAttribute(planSlot, fmstate->junk_att_no, &isnull);
@@ -1375,8 +1375,6 @@ griddbExecForeignDelete(EState *estate,
 						TupleTableSlot *slot,
 						TupleTableSlot *planSlot)
 {
-	elog(DEBUG1, "%s", __func__);
-
 	GridDBFdwModifyState *fmstate =
 	(GridDBFdwModifyState *) resultRelInfo->ri_FdwState;
 	GSResult	ret;
@@ -1385,6 +1383,8 @@ griddbExecForeignDelete(EState *estate,
 	bool		isnull;
 	bool		found;
 	GridDBFdwRowKeyHashEntry *rowket_hash_entry;
+
+	elog(DEBUG1, "griddb_fdw: %s for %s", __func__, fmstate->cont_name);
 
 	/* Check if it is already modified or not. */
 	rowkey = ExecGetJunkAttribute(planSlot, fmstate->junk_att_no, &isnull);
