@@ -449,6 +449,13 @@ griddb_init(const char *addr,
 				hpart12,
 				hpart13,
 				part_default,
+				lparted_nonullpart_a,
+				mlparted12,
+				mlparted3,
+				mlparted_def1,
+				mlparted_def2,
+				mlparted_defd,
+				mlparted5_a,
 				mcrparted0,
 				mcrparted1,
 				mcrparted2,
@@ -464,7 +471,11 @@ griddb_init(const char *addr,
 				mcrparted5_common_0_to_10,
 				mcrparted6_common_ge_10,
 				mcrparted7_gt_common_lt_d,
-				mcrparted8_ge_d;
+				mcrparted8_ge_d,
+				inserttest3,
+				brtrigpartcon1,
+				returningwrtest1,
+				returningwrtest2;
 
 	const		GSPropertyEntry props[] = {
 		{"notificationAddress", addr},
@@ -1960,6 +1971,63 @@ griddb_init(const char *addr,
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
 
+	ret = set_tableInfo(store, "lparted_nonullpart_a", &lparted_nonullpart_a,
+						2,
+						"a", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"b", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "mlparted12", &mlparted12,
+						2,
+						"a", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"b", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "mlparted3", &mlparted3,
+						2,
+						"a", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"b", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "mlparted_def1", &mlparted_def1,
+						4,
+						"a", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"b", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
+						"c", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE,
+						"d", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "mlparted_def2", &mlparted_def2,
+						4,
+						"a", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"b", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
+						"c", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE,
+						"d", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "mlparted_defd", &mlparted_defd,
+						4,
+						"a", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"b", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
+						"c", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE,
+						"d", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "mlparted5_a", &mlparted5_a,
+						4,
+						"a", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"b", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
+						"c", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE,
+						"d", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
 	ret = set_tableInfo(store, "part_default_p2", &part_default_p2,
 						3,
 						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
@@ -2132,6 +2200,34 @@ griddb_init(const char *addr,
 						2,
 						"a", GS_TYPE_STRING, GS_TYPE_OPTION_NOT_NULL,
 						"b", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "inserttest3", &inserttest3,
+						3,
+						"f1", GS_TYPE_STRING, GS_TYPE_OPTION_NOT_NULL,
+						"f2", GS_TYPE_STRING, GS_TYPE_OPTION_NOT_NULL,
+						"f3", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "brtrigpartcon1", &brtrigpartcon1,
+						2,
+						"a", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"b", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "returningwrtest1", &returningwrtest1,
+						1,
+						"a", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "returningwrtest2", &returningwrtest2,
+						2,
+						"a", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"b", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE);
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
 
