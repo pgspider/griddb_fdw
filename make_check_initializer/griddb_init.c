@@ -425,7 +425,19 @@ griddb_init(const char *addr,
 
 	/* For update */
 	table_info	update_test,
-				upsert_test;
+				upsert_test,
+				part_b_1_b_10,
+				part_a_10_a_20,
+				part_a_1_a_10,
+				part_d_1_15,
+				part_d_15_20,
+				list_part1,
+				list_default,
+				hpart1,
+				hpart2,
+				hpart3,
+				hpart4,
+				part_def1;
 
 	/* For insert */
 	table_info	inserttest01,
@@ -1854,6 +1866,120 @@ griddb_init(const char *addr,
 						2,
 						"a", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
 						"b", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "part_b_1_b_10", &part_b_1_b_10,
+						6,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"a", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE,
+						"b", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
+						"c", GS_TYPE_DOUBLE, GS_TYPE_OPTION_NULLABLE,
+						"d", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
+						"e", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "part_a_10_a_20", &part_a_10_a_20,
+						6,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"a", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE,
+						"b", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
+						"c", GS_TYPE_DOUBLE, GS_TYPE_OPTION_NULLABLE,
+						"d", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
+						"e", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "part_a_1_a_10", &part_a_1_a_10,
+						6,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"a", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE,
+						"b", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
+						"c", GS_TYPE_DOUBLE, GS_TYPE_OPTION_NULLABLE,
+						"d", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
+						"e", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "part_d_1_15", &part_d_1_15,
+						6,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"a", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE,
+						"b", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
+						"c", GS_TYPE_DOUBLE, GS_TYPE_OPTION_NULLABLE,
+						"d", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
+						"e", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "part_d_15_20", &part_d_15_20,
+						6,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"a", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE,
+						"b", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
+						"c", GS_TYPE_DOUBLE, GS_TYPE_OPTION_NULLABLE,
+						"d", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
+						"e", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "list_part1", &list_part1,
+						3,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"a", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE,
+						"b", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "list_default", &list_default,
+						3,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"a", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE,
+						"b", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "hpart1", &hpart1,
+						3,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"a", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
+						"b", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "hpart2", &hpart2,
+						3,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"a", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
+						"b", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "hpart3", &hpart3,
+						3,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"a", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
+						"b", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "hpart4", &hpart4,
+						3,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"a", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
+						"b", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "part_def1", &part_def1,
+						6,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"a", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE,
+						"b", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
+						"c", GS_TYPE_DOUBLE, GS_TYPE_OPTION_NULLABLE,
+						"d", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
+						"e", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE);
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
 
