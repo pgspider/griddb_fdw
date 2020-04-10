@@ -1,7 +1,7 @@
 # GridDB Foreign Data Wrapper for PostgreSQL
 
 This PostgreSQL extension is a Foreign Data Wrapper (FDW) for [GridDB][1].  
-This version of griddb_fdw can work for PostgreSQL 9.6, 10 and 11.  
+This version of griddb_fdw can work for PostgreSQL 9.6, 10 and 11, 12.  
 
 
 ## 1. Installation
@@ -81,16 +81,18 @@ The container must have rowkey on [GridDB][1] in order to execute update and del
 - Supprt SELECT and INSERT
 
 For SELECT, you can enable partial execution mode as follows:
+
 ```
 SET griddbfdw.enable_partial_execution TO TRUE;
 ```
 
 - Supprt UPDATE and DELETE
-- WHERE clauses are pushdowned
+- WHERE clauses are push downed
 
 ## 4. Limitations
 #### Record is updated by INSERT command if a record with same rowkey as new record exists in GridDB.
 In this case, griddb_fdw raises the warning.
+
 ```
 INSERT INTO ft1 VALUES(100, 'AAA');
 INSERT INTO ft1 VALUES(100, 'BBB'); -- Same as "UPDATE ft1 SET b = 'BBB' WHERE a = 100;"
@@ -99,7 +101,7 @@ INSERT INTO ft1 VALUES(100, 'BBB'); -- Same as "UPDATE ft1 SET b = 'BBB' WHERE a
 #### Limitations related in rowkey-column attribute.
 GridDB can set a rowkey attribute to the 1st column.
 griddb_fdw uses it for identifying a record.
-- It is required that a container have the rowley attribute for executing UPDATE or DELETE.
+- It is required that a container have the rowkey attribute for executing UPDATE or DELETE.
 - It is not supported to update a rowkey-column.
 
 #### Don't support SAVEPOINT.
@@ -113,12 +115,14 @@ If such query is executed, it is no response.
 
 Example1:  
 Foreign table ft1 and ft2 are linked to same container in GridDB.
+
 ```
 BEGIN;
 SELECT * FROM ft1 FOR UPDATE;
 SELECT * FROM ft2 FOR UPDATE; -- No response
 ```
 Example2:
+
 ```
 BEGIN;
 SELECT * FROM ft1, ft2 WHERE ft1.a = ft2.a FOR UPDATE; -- No response
@@ -132,6 +136,7 @@ griddb_fdw might return an error when DML is executed.
 
 For example, container on GridDB has 3 columns. The 1st column is "c1" as integer, the 2nd is "c2" as float, and the 3rd is "c3" as text.  
 Schema must be created as
+
 ```
 CREATE FOREIGN TABLE ft1 (c1 integer, c2 float, c3 text) SERVER griddb_svr;
 ```
@@ -139,19 +144,34 @@ CREATE FOREIGN TABLE ft1 (c1 integer, c2 float, c3 text) SERVER griddb_svr;
 You should not execute following queries.  
 
 Types are not match.
+
 ```
 CREATE FOREIGN TABLE ft1 (c1 text, c2 float, c3 integer) SERVER griddb_svr;
 ```
 There is unknown column.
 Even if unknown column is dropped, griddb cannot access ft1 correctly.
+
 ```
 CREATE FOREIGN TABLE ft1 (c0 integer, c1 integer, c2 float, c3 text) SERVER griddb_svr;
 ALTER FOREIGN TABLE ft1 DROP COLUMN c0;
 ```
+#### Don't support ON CONFLICT.
+PostgreSQL introduces upsert (update or insert) feature. When inserting a new row into the table, PostgreSQL will update the row if it already exists, otherwise, PostgreSQL inserts the new row.
+However, griddb_fdw does not support the upsert feature now. For example, it shows error message if user execute the following query.
 
+```
+INSERT INTO ft1(c1, c2) VALUES(11, 12) ON CONFLICT DO NOTHING;
+```
+
+#### Don't support RETURNING.
+Returning is way to obtain data if rows are modified by INSERT, UPDATE, and DELETE commands. griddb_fdw does not support this feature.
+
+```
+INSERT INTO ft1 (c0, c1) VALUES (1, 2) RETURNING c0, c1;
+```
 
 ## 5. License
-Copyright (c) 2017-2019, TOSHIBA Corporation  
+Copyright (c) 2017-2020, TOSHIBA Corporation  
 Copyright (c) 2011-2016, EnterpriseDB Corporation
 
 Permission to use, copy, modify, and distribute this software and its
