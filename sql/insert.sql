@@ -4,7 +4,8 @@
 CREATE EXTENSION griddb_fdw;
 CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS(host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster');
 CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS(username 'admin', password 'testadmin');
-CREATE FOREIGN TABLE inserttest01 (id serial, col1 int4, col2 int4 NOT NULL, col3 text default 'testing') SERVER griddb_svr;
+CREATE FOREIGN TABLE inserttest01 (id serial OPTIONS (rowkey 'true'), col1 int4, col2 int4 NOT NULL, col3 text default 'testing') SERVER griddb_svr;
+insert into inserttest01 (col1, col2, col3) values (DEFAULT, DEFAULT, DEFAULT);
 insert into inserttest01 (col2, col3) values (3, DEFAULT);
 insert into inserttest01 (col1, col2, col3) values (DEFAULT, 5, DEFAULT);
 insert into inserttest01 (col1, col2, col3) values (DEFAULT, 5, 'test');
@@ -36,6 +37,8 @@ select * from inserttest01;
 insert into inserttest01 (col1, col2, col3) values(30, 50, repeat('x', 10000));
 
 select col1, col2, char_length(col3) from inserttest01;
+
+drop foreign table inserttest01;
 
 --
 -- check indirection (field/array assignment), cf bug #14265
@@ -74,6 +77,10 @@ create rule irule3 as on insert to inserttest2 do also
   select new.f1, new.f2;
 \d+ inserttest2
 
+drop table inserttest2;
+drop foreign table inserttest;
+
+-- direct partition inserts should check partition bound constraint
 create table range_parted (
   id serial,
   a text,
@@ -92,12 +99,24 @@ alter foreign table part3 alter column id options (rowkey 'true');
 create foreign table part4 partition of range_parted for values from ('b', 10) to ('b', 20) server griddb_svr;
 alter foreign table part4 alter column id options (rowkey 'true');
 
+-- fail, skip because partition bound constraint does not work on GridDB FDW 
+--insert into part1(a, b) values ('a', 11);
+--insert into part1(a, b) values ('b', 1);
 -- ok
-insert into range_parted(a,b) values ('a', 1);
-insert into range_parted(a,b) values ('b', 10);
+insert into part1(a, b) values ('a', 1);
+--insert into range_parted(a,b) values ('a', 1);
+-- fail, skip because partition bound constraint does not work on GridDB FDW  
+--insert into part4(a, b) values ('b', 21);
+--insert into part4(a, b) values ('a', 10);
+-- ok
+insert into part4(a,b) values ('b', 10);
 
--- fail (no partition found)
-insert into range_parted(a,b) values ('c', 10);
+-- fail (partition key a has a NOT NULL constraint)
+--insert into part1 values (null);
+insert into range_parted values (null);
+-- fail (expression key (b+0) cannot be null either)
+-- skip because partition bound constraint does not work on GridDB FDW  
+--insert into part1 values (1);
 
 create table list_parted (
  id serial,
@@ -112,10 +131,13 @@ create foreign table part_null partition of list_parted FOR VALUES IN (null) ser
 alter foreign table part_null alter column id options (rowkey 'true');
 
 -- fail
-insert into list_parted(a,b) values ('AAa', 1);
+-- skip because partition bound constraint does not work on GridDB FDW  
+--insert into part_aa_bb(a,b) values ('cc', 1);
+--insert into part_aa_bb(a,b) values ('AAa', 1);
+--insert into part_aa_bb(a,b) values (null);
 -- ok
-insert into list_parted(a,b) values ('cC', 1);
-insert into list_parted(a,b) values (null, 0);
+insert into part_cc_dd(a,b) values ('cC', 1);
+insert into part_null(a,b) values (null, 0);
 
 -- check in case of multi-level partitioned table
 create table part_ee_ff partition of list_parted for values in ('ee', 'ff') partition by range (b);
@@ -146,13 +168,19 @@ alter foreign table part_default_p1 alter column id options (rowkey 'true');
 create foreign table part_default_p2 partition of part_default for values from (30) to (40) server griddb_svr;
 alter foreign table part_default_p2 alter column id options (rowkey 'true');
 
+-- fail
+-- skip because partition bound constraint does not work on GridDB FDW  
+--insert into part_ee_ff1(a,b) values ('EE', 11);
+--insert into part_default_p2(a,b) values ('gg', 43);
 -- fail (even the parent's, ie, part_ee_ff's partition constraint applies)
-insert into part_default(a,b) values ('gg', 43);
+-- skip because partition bound constraint does not work on GridDB FDW  
+--insert into part_ee_ff1(a,b)  values ('cc', 1);
+--insert into part_default(a,b) values ('gg', 43);
 -- ok
-insert into list_parted(a,b) values ('ff', 1);
-insert into list_parted(a,b) values ('ff', 11);
-insert into list_parted(a,b) values ('cd', 25);
-insert into list_parted(a,b) values ('de', 35);
+insert into part_ee_ff1(a,b)  values ('ff', 1);
+insert into part_ee_ff2(a,b)  values ('ff', 11);
+insert into part_default_p1(a,b)  values ('cd', 25);
+insert into part_default_p2(a,b)  values ('de', 35);
 insert into list_parted(a,b) values ('ab', 21);
 insert into list_parted(a,b) values ('xx', 1);
 insert into list_parted(a,b) values ('yy', 2);
@@ -176,8 +204,11 @@ insert into range_parted(a) values ('a');
 -- Check default partition
 create foreign table part_def partition of range_parted default server griddb_svr;
 alter foreign table part_def alter column id options (rowkey 'true');
+-- fail
+-- skip because partition bound constraint does not work on GridDB FDW  
+-- insert into part_def(a,b) values ('b', 10);
 -- ok
-insert into range_parted(a,b) values ('c', 10);
+insert into part_def(a,b) values ('c', 10);
 insert into range_parted(a,b) values (null, null);
 insert into range_parted(a,b) values ('a', null);
 insert into range_parted(a,b) values (null, 19);
@@ -188,8 +219,9 @@ select tableoid::regclass, * from range_parted;
 insert into list_parted(a,b) values (null, 1);
 insert into list_parted (a) values ('aA');
 -- fail (partition of part_ee_ff not found in both cases)
+-- skip because partition bound constraint does not work on GridDB FDW  
 insert into list_parted(a,b) values ('EE', 0);
-insert into part_ee_ff(a,b) values ('EE', 0);
+--insert into part_ee_ff(a,b) values ('EE', 0);
 -- ok
 insert into list_parted(a,b) values ('EE', 1);
 insert into part_ee_ff(a,b) values ('EE', 10);
@@ -257,10 +289,13 @@ alter foreign table hpart13 alter column id options (rowkey 'true');
 
 insert into hash_parted(a) values(generate_series(1,10));
 
--- ok;
-insert into hash_parted(a) values(12),(16);
--- 11 % 4 -> 3 remainder i.e. valid data for hpart3 partition
-insert into hash_parted(a) values(11);
+-- direct insert of values divisible by 4 - ok;
+insert into hpart10(a) values(12),(16);
+-- fail;
+--insert into hpart10 values(11);
+-- 11 % 4 -> 3 remainder i.e. valid data for hpart13 partition
+--insert into hash_parted(a) values(11);
+insert into hpart13(a) values(11);
 
 -- view data
 select tableoid::regclass as part, a, a%4 as "remainder = a % 4"
@@ -278,6 +313,7 @@ drop table hash_parted;
 -- including null
 create table list_parted (id serial, a int) partition by list (a);
 create foreign table part_default partition of list_parted default server griddb_svr;
+alter foreign table part_default alter column id options (rowkey 'true');
 \d+ part_default
 insert into part_default(a) values (null);
 insert into part_default(a) values (1);
@@ -307,7 +343,7 @@ alter table mlparted1 attach partition mlparted11 for values from (2) to (5);
 alter table mlparted attach partition mlparted1 for values from (1, 2) to (1, 10);
 
 -- check that "(1, 2)" is correctly routed to mlparted11.
-insert into mlparted values (1, 2);
+insert into mlparted(a, b) values (1, 2);
 select tableoid::regclass, * from mlparted;
 
 -- check that proper message is shown after failure to route through mlparted1
@@ -332,7 +368,7 @@ create trigger mlparted11_trig before insert ON mlparted11
 -- check that the correct row is shown when constraint check_b fails after
 -- "(1, 2)" is routed to mlparted11 (actually "(1, 4)" would be shown due
 -- to the BR trigger mlparted11_trig_fn)
-insert into mlparted values (1, 2);
+insert into mlparted (a, b) values (1, 2);
 drop trigger mlparted11_trig on mlparted11;
 drop function mlparted11_trig_fn();
 
@@ -362,12 +398,12 @@ with ins (a, b, c) as
   select a, b, min(c), max(c) from ins group by a, b order by 1;
 
 alter table mlparted add c text;
-create table mlparted5 (c text, a int not null, b int not null) partition by list (c);
+create table mlparted5 (a int not null, b int not null, c text) partition by list (c);
 create table mlparted5a (a int not null, c text, b int not null);
 alter table mlparted5 attach partition mlparted5a for values in ('a');
 alter table mlparted attach partition mlparted5 for values from (1, 40) to (1, 50);
 alter table mlparted add constraint check_b check (a = 1 and b < 45);
-insert into mlparted values (1, 45, 'a');
+insert into mlparted(a, b, c) values (1, 45, 'a');
 create function mlparted5abrtrig_func() returns trigger as $$ begin new.c = 'b'; return new; end; $$ language plpgsql;
 create trigger mlparted5abrtrig before insert on mlparted5a for each row execute procedure mlparted5abrtrig_func();
 insert into mlparted5 (a, b, c) values (1, 40, 'a');
@@ -378,17 +414,17 @@ alter table mlparted drop constraint check_b;
 create table mlparted_def partition of mlparted default partition by range(a);
 create foreign table mlparted_def1 partition of mlparted_def for values from (40) to (50) server griddb_svr;
 create foreign table mlparted_def2 partition of mlparted_def for values from (50) to (60) server griddb_svr;
-insert into mlparted values (40, 100);
-insert into mlparted_def1 values (42, 100);
-insert into mlparted_def2 values (54, 50);
+insert into mlparted(a, b) values (40, 100);
+insert into mlparted_def1(a, b) values (42, 100);
+insert into mlparted_def2(a, b) values (54, 50);
 -- fail
-insert into mlparted values (70, 100);
---skip because does not support bound check
+insert into mlparted(a,b) values (70, 100);
+--skip because does not support partition bound constraint
 --insert into mlparted_def1 values (52, 50);
 --insert into mlparted_def2 values (34, 50);
 -- ok
 create foreign table mlparted_defd partition of mlparted_def default server griddb_svr;
-insert into mlparted values (70, 100);
+insert into mlparted(a, b) values (70, 100);
 
 select tableoid::regclass, * from mlparted_def;
 
@@ -415,11 +451,11 @@ drop foreign table mlparted_def2;
 drop foreign table mlparted5_a;
 truncate mlparted;
 create foreign table mlparted5_a partition of mlparted5_ab for values in ('a') server griddb_svr;
-insert into mlparted values (1, 2, 'a', 1);
-insert into mlparted values (1, 40, 'a', 1);  -- goes to mlparted5_a
-insert into mlparted values (1, 45, 'b', 1);  -- goes to mlparted5_b
-insert into mlparted values (1, 45, 'c', 1);  -- goes to mlparted5_cd, fails
-insert into mlparted values (1, 45, 'f', 1);  -- goes to mlparted5, fails
+insert into mlparted(a, b, c, d) values (1, 2, 'a', 1);
+insert into mlparted(a, b, c, d) values (1, 40, 'a', 1);  -- goes to mlparted5_a
+insert into mlparted(a, b, c, d) values (1, 45, 'b', 1);  -- goes to mlparted5_b
+insert into mlparted(a, b, c, d) values (1, 45, 'c', 1);  -- goes to mlparted5_cd, fails
+insert into mlparted(a, b, c, d) values (1, 45, 'f', 1);  -- goes to mlparted5, fails
 select tableoid::regclass, * from mlparted order by a, b, c, d;
 alter table mlparted drop d;
 drop foreign table mlparted5_a;
@@ -428,11 +464,11 @@ truncate mlparted;
 alter table mlparted add e int, add d int;
 alter table mlparted drop e;
 create foreign table mlparted5_a partition of mlparted5_ab for values in ('a') server griddb_svr;
-insert into mlparted values (1, 2, 'a', 1);
-insert into mlparted values (1, 40, 'a', 1);  -- goes to mlparted5_a
-insert into mlparted values (1, 45, 'b', 1);  -- goes to mlparted5_b
-insert into mlparted values (1, 45, 'c', 1);  -- goes to mlparted5_cd, fails
-insert into mlparted values (1, 45, 'f', 1);  -- goes to mlparted5, fails
+insert into mlparted(a, b, c, d) values (1, 2, 'a', 1);
+insert into mlparted(a, b, c, d) values (1, 40, 'a', 1);  -- goes to mlparted5_a
+insert into mlparted(a, b, c, d) values (1, 45, 'b', 1);  -- goes to mlparted5_b
+insert into mlparted(a, b, c, d) values (1, 45, 'c', 1);  -- goes to mlparted5_cd, fails
+insert into mlparted(a, b, c, d) values (1, 45, 'f', 1);  -- goes to mlparted5, fails
 select tableoid::regclass, * from mlparted order by a, b, c, d;
 alter table mlparted drop d;
 drop table mlparted5;
@@ -448,16 +484,16 @@ grant insert on key_desc to regress_insert_other_user;
 
 set role regress_insert_other_user;
 -- no key description is shown
-insert into key_desc values (1, 1);
+insert into key_desc(a, b) values (1, 1);
 
 reset role;
 grant select (b) on key_desc_1 to regress_insert_other_user;
 set role regress_insert_other_user;
 -- key description (b)=(1) is now shown
-insert into key_desc values (1, 1);
+insert into key_desc(a, b) values (1, 1);
 
 -- key description is not shown if key contains expression
-insert into key_desc values (2, 1);
+insert into key_desc(a, b) values (2, 1);
 reset role;
 revoke all on key_desc from regress_insert_other_user;
 revoke all on key_desc_1 from regress_insert_other_user;
@@ -490,21 +526,32 @@ insert into mcrparted (a,b,c) values (null, null, null);
 
 -- routed to mcrparted0
 insert into mcrparted (a,b,c) values (0, 1, 1);
+insert into mcrparted0 values (0, 1, 1);
 
 -- routed to mcparted1
 insert into mcrparted (a,b,c) values (9, 1000, 1);
+insert into mcrparted1(a,b,c) values (9, 1000, 1);
 insert into mcrparted (a,b,c) values (10, 5, -1);
+insert into mcrparted1(a,b,c) values (10, 5, -1);
 insert into mcrparted (a,b,c) values (2, 1, 0);
+insert into mcrparted1(a,b,c) values (2, 1, 0);
 
 -- routed to mcparted2
 insert into mcrparted (a,b,c) values (10, 6, 1000);
+insert into mcrparted2(a,b,c) values (10, 6, 1000);
 insert into mcrparted (a,b,c) values (10, 1000, 1000);
+insert into mcrparted2(a,b,c) values (10, 1000, 1000);
 
 -- no partition exists, nor does mcrparted3 accept it
 insert into mcrparted (a,b,c) values (11, 1, -1);
+-- skip
+--insert into mcrparted3(a,b,c) values (11, 1, -1);
 
 -- routed to mcrparted5
 insert into mcrparted (a,b,c) values (30, 21, 20);
+insert into mcrparted5(a,b,c) values(30, 21, 20);
+-- skip
+--insert into mcrparted4(a,b,c) values (30, 21, 20);	-- error
 
 -- check rows
 select tableoid::regclass::text, * from mcrparted order by 1;
@@ -517,6 +564,7 @@ create table brtrigpartcon (a int, b text) partition by list (a);
 create foreign table brtrigpartcon1 partition of brtrigpartcon for values in (1) server griddb_svr;
 create or replace function brtrigpartcon1trigf() returns trigger as $$begin new.a := 2; return new; end$$ language plpgsql;
 create trigger brtrigpartcon1trig before insert on brtrigpartcon1 for each row execute procedure brtrigpartcon1trigf();
+-- ignore, no partition bound constraint check
 insert into brtrigpartcon values (1, 'hi there');
 insert into brtrigpartcon1 values (1, 'hi there');
 
@@ -528,6 +576,7 @@ grant insert on inserttest3 to regress_coldesc_role;
 grant insert on brtrigpartcon to regress_coldesc_role;
 revoke select on brtrigpartcon from regress_coldesc_role;
 set role regress_coldesc_role;
+--ignore, no partition bound constraint check
 with result as (insert into brtrigpartcon values (1, 'hi there') returning 1)
   insert into inserttest3 (f3) select * from result;
 reset role;

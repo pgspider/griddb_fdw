@@ -900,12 +900,12 @@ CREATE OPERATOR === (
 -- built-in operators and functions can be shipped for remote execution
 EXPLAIN (VERBOSE, COSTS OFF)
   SELECT count(c3) FROM ft1 t1 WHERE t1.c1 = abs(t1.c2);
-                   QUERY PLAN                   
-------------------------------------------------
+                QUERY PLAN                
+------------------------------------------
  Aggregate
    Output: count(c3)
    ->  Foreign Scan on public.ft1 t1
-         Output: c1, c2, c3, c4, c5, c6, c7, c8
+         Output: c3
          Filter: (t1.c1 = abs(t1.c2))
          Remote SQL: SELECT  *  FROM "T1"
 (6 rows)
@@ -923,7 +923,7 @@ EXPLAIN (VERBOSE, COSTS OFF)
  Aggregate
    Output: count(c3)
    ->  Foreign Scan on public.ft1 t1
-         Output: c1, c2, c3, c4, c5, c6, c7, c8
+         Output: c3
          Remote SQL: SELECT  *  FROM "T1" WHERE ((c1 = c2))
 (5 rows)
 
@@ -941,7 +941,7 @@ EXPLAIN (VERBOSE, COSTS OFF)
  Aggregate
    Output: count(c3)
    ->  Foreign Scan on public.ft1 t1
-         Output: c1, c2, c3, c4, c5, c6, c7, c8
+         Output: c3
          Filter: (t1.c1 = griddb_fdw_abs(t1.c2))
          Remote SQL: SELECT  *  FROM "T1"
 (6 rows)
@@ -954,12 +954,12 @@ SELECT count(c3) FROM ft1 t1 WHERE t1.c1 = griddb_fdw_abs(t1.c2);
 
 EXPLAIN (VERBOSE, COSTS OFF)
   SELECT count(c3) FROM ft1 t1 WHERE t1.c1 === t1.c2;
-                   QUERY PLAN                   
-------------------------------------------------
+                QUERY PLAN                
+------------------------------------------
  Aggregate
    Output: count(c3)
    ->  Foreign Scan on public.ft1 t1
-         Output: c1, c2, c3, c4, c5, c6, c7, c8
+         Output: c3
          Filter: (t1.c1 === t1.c2)
          Remote SQL: SELECT  *  FROM "T1"
 (6 rows)
@@ -1003,7 +1003,7 @@ EXPLAIN (VERBOSE, COSTS OFF)
  Aggregate
    Output: count(c3)
    ->  Foreign Scan on public.ft1 t1
-         Output: c1, c2, c3, c4, c5, c6, c7, c8
+         Output: c3
          Filter: (t1.c1 = griddb_fdw_abs(t1.c2))
          Remote SQL: SELECT  *  FROM "T1"
 (6 rows)
@@ -1016,12 +1016,12 @@ SELECT count(c3) FROM ft1 t1 WHERE t1.c1 = griddb_fdw_abs(t1.c2);
 
 EXPLAIN (VERBOSE, COSTS OFF)
   SELECT count(c3) FROM ft1 t1 WHERE t1.c1 === t1.c2;
-                   QUERY PLAN                   
-------------------------------------------------
+                QUERY PLAN                
+------------------------------------------
  Aggregate
    Output: count(c3)
    ->  Foreign Scan on public.ft1 t1
-         Output: c1, c2, c3, c4, c5, c6, c7, c8
+         Output: c3
          Filter: (t1.c1 === t1.c2)
          Remote SQL: SELECT  *  FROM "T1"
 (6 rows)
@@ -1201,8 +1201,8 @@ SELECT t1.c1, t2.c1 FROM ft4 t1 LEFT JOIN ft5 t2 ON (t1.c1 = t2.c1) ORDER BY t1.
 -- left outer join three tables
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT t1.c1, t2.c2, t3.c3 FROM ft2 t1 LEFT JOIN ft2 t2 ON (t1.c1 = t2.c1) LEFT JOIN ft4 t3 ON (t2.c1 = t3.c1) OFFSET 10 LIMIT 10;
-                                     QUERY PLAN                                     
-------------------------------------------------------------------------------------
+                         QUERY PLAN                         
+------------------------------------------------------------
  Limit
    Output: t1.c1, t2.c2, t3.c3
    ->  Nested Loop Left Join
@@ -1212,7 +1212,7 @@ SELECT t1.c1, t2.c2, t3.c3 FROM ft2 t1 LEFT JOIN ft2 t2 ON (t1.c1 = t2.c1) LEFT 
                Output: t1.c1, t2.c2, t2.c1
                Join Filter: (t1.c1 = t2.c1)
                ->  Foreign Scan on public.ft2 t1
-                     Output: t1.c1, t1.c2, t1.c3, t1.c4, t1.c5, t1.c6, t1.c7, t1.c8
+                     Output: t1.c1
                      Remote SQL: SELECT  *  FROM "T1"
                ->  Materialize
                      Output: t2.c2, t2.c1
@@ -1252,7 +1252,7 @@ SELECT t1.c1, t1.c2, t2.c1, t2.c2 FROM ft4 t1 LEFT JOIN (SELECT * FROM ft5 WHERE
    Output: t1.c1, t1.c2, ft5.c1, ft5.c2
    Hash Cond: (t1.c1 = ft5.c1)
    ->  Foreign Scan on public.ft4 t1
-         Output: t1.c1, t1.c2, t1.c3
+         Output: t1.c1, t1.c2
          Remote SQL: SELECT  *  FROM "T3" WHERE ((c1 < 10))
    ->  Hash
          Output: ft5.c1, ft5.c2
@@ -1282,7 +1282,7 @@ SELECT t1.c1, t1.c2, t2.c1, t2.c2 FROM ft4 t1 LEFT JOIN (SELECT * FROM ft5 WHERE
    Hash Cond: (t1.c1 = ft5.c1)
    Filter: ((ft5.c1 < 10) OR (ft5.c1 IS NULL))
    ->  Foreign Scan on public.ft4 t1
-         Output: t1.c1, t1.c2, t1.c3
+         Output: t1.c1, t1.c2
          Remote SQL: SELECT  *  FROM "T3" WHERE ((c1 < 10))
    ->  Hash
          Output: ft5.c1, ft5.c2
@@ -1357,7 +1357,7 @@ SELECT t1.c1, t2.c2, t3.c3 FROM ft2 t1 RIGHT JOIN ft2 t2 ON (t1.c1 = t2.c1) RIGH
                Output: t3.c3, t2.c2, t2.c1
                Join Filter: (t2.c1 = t3.c1)
                ->  Foreign Scan on public.ft4 t3
-                     Output: t3.c1, t3.c2, t3.c3
+                     Output: t3.c3, t3.c1
                      Remote SQL: SELECT  *  FROM "T3"
                ->  Materialize
                      Output: t2.c2, t2.c1
@@ -1441,7 +1441,7 @@ SELECT t1.c1, t2.c1 FROM (SELECT c1 FROM ft4 WHERE c1 between 50 and 60) t1 FULL
          Output: ft4.c1, ft5.c1
          Hash Cond: (ft4.c1 = ft5.c1)
          ->  Foreign Scan on public.ft4
-               Output: ft4.c1, ft4.c2, ft4.c3
+               Output: ft4.c1
                Remote SQL: SELECT  *  FROM "T3" WHERE ((c1 >= 50)) AND ((c1 <= 60))
          ->  Hash
                Output: ft5.c1
@@ -1472,14 +1472,11 @@ SELECT 1 FROM (SELECT c1 FROM ft4 WHERE c1 between 50 and 60) t1 FULL JOIN (SELE
    ->  Merge Full Join
          Output: 1
          ->  Foreign Scan on public.ft4
-               Output: ft4.c1, ft4.c2, ft4.c3
                Remote SQL: SELECT  *  FROM "T3" WHERE ((c1 >= 50)) AND ((c1 <= 60))
          ->  Materialize
-               Output: ft5.c1, ft5.c2, ft5.c3
                ->  Foreign Scan on public.ft5
-                     Output: ft5.c1, ft5.c2, ft5.c3
                      Remote SQL: SELECT  *  FROM "T4" WHERE ((c1 >= 50)) AND ((c1 <= 60))
-(12 rows)
+(9 rows)
 
 SELECT 1 FROM (SELECT c1 FROM ft4 WHERE c1 between 50 and 60) t1 FULL JOIN (SELECT c1 FROM ft5 WHERE c1 between 50 and 60) t2 ON (TRUE) OFFSET 10 LIMIT 10;
  ?column? 
@@ -1512,7 +1509,7 @@ SELECT t1.c1, ss.a, ss.b FROM (SELECT c1 FROM ft4 WHERE c1 between 50 and 60) t1
                Output: t2.c1, t3.c1
                Hash Cond: (t3.c1 = t2.c1)
                ->  Foreign Scan on public.ft5 t3
-                     Output: t3.c1, t3.c2, t3.c3
+                     Output: t3.c1
                      Remote SQL: SELECT  *  FROM "T4"
                ->  Hash
                      Output: t2.c1
@@ -1553,7 +1550,7 @@ SELECT t1.c1, ss.a, ss.b FROM (SELECT c1 FROM ft4 WHERE c1 between 50 and 60) t1
                Hash Cond: (ft4_1.c1 = ft5.c1)
                Filter: ((ft4_1.c1 IS NULL) OR (ft4_1.c1 IS NOT NULL))
                ->  Foreign Scan on public.ft4 ft4_1
-                     Output: ft4_1.c1, ft4_1.c2, ft4_1.c3
+                     Output: ft4_1.c1
                      Remote SQL: SELECT  *  FROM "T3" WHERE ((c1 >= 50)) AND ((c1 <= 60))
                ->  Hash
                      Output: ft5.c1
@@ -1638,7 +1635,7 @@ SELECT t1.c1, t2.c1, t3.c1 FROM ft4 t1 INNER JOIN ft5 t2 ON (t1.c1 = t2.c1 + 1 a
                Output: t1.c1, t2.c1, t3.c1
                Hash Cond: (t3.c1 = t2.c1)
                ->  Foreign Scan on public.ft4 t3
-                     Output: t3.c1, t3.c2, t3.c3
+                     Output: t3.c1
                      Remote SQL: SELECT  *  FROM "T3"
                ->  Hash
                      Output: t1.c1, t2.c1
@@ -1646,7 +1643,7 @@ SELECT t1.c1, t2.c1, t3.c1 FROM ft4 t1 INNER JOIN ft5 t2 ON (t1.c1 = t2.c1 + 1 a
                            Output: t1.c1, t2.c1
                            Hash Cond: ((t2.c1 + 1) = t1.c1)
                            ->  Foreign Scan on public.ft5 t2
-                                 Output: t2.c1, t2.c2, t2.c3
+                                 Output: t2.c1
                                  Remote SQL: SELECT  *  FROM "T4"
                            ->  Hash
                                  Output: t1.c1
@@ -1673,8 +1670,8 @@ SELECT t1.c1, t2.c1, t3.c1 FROM ft4 t1 INNER JOIN ft5 t2 ON (t1.c1 = t2.c1 + 1 a
 -- full outer join three tables
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT t1.c1, t2.c2, t3.c3 FROM ft2 t1 FULL JOIN ft2 t2 ON (t1.c1 = t2.c1) FULL JOIN ft4 t3 ON (t2.c1 = t3.c1) OFFSET 10 LIMIT 10;
-                                     QUERY PLAN                                     
-------------------------------------------------------------------------------------
+                         QUERY PLAN                         
+------------------------------------------------------------
  Limit
    Output: t1.c1, t2.c2, t3.c3
    ->  Hash Full Join
@@ -1684,7 +1681,7 @@ SELECT t1.c1, t2.c2, t3.c3 FROM ft2 t1 FULL JOIN ft2 t2 ON (t1.c1 = t2.c1) FULL 
                Output: t1.c1, t2.c2, t2.c1
                Hash Cond: (t1.c1 = t2.c1)
                ->  Foreign Scan on public.ft2 t1
-                     Output: t1.c1, t1.c2, t1.c3, t1.c4, t1.c5, t1.c6, t1.c7, t1.c8
+                     Output: t1.c1
                      Remote SQL: SELECT  *  FROM "T1"
                ->  Hash
                      Output: t2.c2, t2.c1
@@ -1727,7 +1724,7 @@ SELECT t1.c1, t2.c2, t3.c3 FROM ft2 t1 FULL JOIN ft2 t2 ON (t1.c1 = t2.c1) RIGHT
                Output: t3.c3, t2.c2, t2.c1
                Join Filter: (t2.c1 = t3.c1)
                ->  Foreign Scan on public.ft4 t3
-                     Output: t3.c1, t3.c2, t3.c3
+                     Output: t3.c3, t3.c1
                      Remote SQL: SELECT  *  FROM "T3"
                ->  Materialize
                      Output: t2.c2, t2.c1
@@ -1759,8 +1756,8 @@ SELECT t1.c1, t2.c2, t3.c3 FROM ft2 t1 FULL JOIN ft2 t2 ON (t1.c1 = t2.c1) RIGHT
 -- right outer join + full outer join
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT t1.c1, t2.c2, t3.c3 FROM ft2 t1 RIGHT JOIN ft2 t2 ON (t1.c1 = t2.c1) FULL JOIN ft4 t3 ON (t2.c1 = t3.c1) OFFSET 10 LIMIT 10;
-                                     QUERY PLAN                                     
-------------------------------------------------------------------------------------
+                         QUERY PLAN                         
+------------------------------------------------------------
  Limit
    Output: t1.c1, t2.c2, t3.c3
    ->  Hash Full Join
@@ -1770,7 +1767,7 @@ SELECT t1.c1, t2.c2, t3.c3 FROM ft2 t1 RIGHT JOIN ft2 t2 ON (t1.c1 = t2.c1) FULL
                Output: t2.c2, t2.c1, t1.c1
                Join Filter: (t1.c1 = t2.c1)
                ->  Foreign Scan on public.ft2 t2
-                     Output: t2.c1, t2.c2, t2.c3, t2.c4, t2.c5, t2.c6, t2.c7, t2.c8
+                     Output: t2.c2, t2.c1
                      Remote SQL: SELECT  *  FROM "T1"
                ->  Materialize
                      Output: t1.c1
@@ -1802,8 +1799,8 @@ SELECT t1.c1, t2.c2, t3.c3 FROM ft2 t1 RIGHT JOIN ft2 t2 ON (t1.c1 = t2.c1) FULL
 -- full outer join + left outer join
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT t1.c1, t2.c2, t3.c3 FROM ft2 t1 FULL JOIN ft2 t2 ON (t1.c1 = t2.c1) LEFT JOIN ft4 t3 ON (t2.c1 = t3.c1) OFFSET 10 LIMIT 10;
-                                     QUERY PLAN                                     
-------------------------------------------------------------------------------------
+                         QUERY PLAN                         
+------------------------------------------------------------
  Limit
    Output: t1.c1, t2.c2, t3.c3
    ->  Nested Loop Left Join
@@ -1813,7 +1810,7 @@ SELECT t1.c1, t2.c2, t3.c3 FROM ft2 t1 FULL JOIN ft2 t2 ON (t1.c1 = t2.c1) LEFT 
                Output: t1.c1, t2.c2, t2.c1
                Hash Cond: (t1.c1 = t2.c1)
                ->  Foreign Scan on public.ft2 t1
-                     Output: t1.c1, t1.c2, t1.c3, t1.c4, t1.c5, t1.c6, t1.c7, t1.c8
+                     Output: t1.c1
                      Remote SQL: SELECT  *  FROM "T1"
                ->  Hash
                      Output: t2.c2, t2.c1
@@ -1845,8 +1842,8 @@ SELECT t1.c1, t2.c2, t3.c3 FROM ft2 t1 FULL JOIN ft2 t2 ON (t1.c1 = t2.c1) LEFT 
 -- left outer join + full outer join
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT t1.c1, t2.c2, t3.c3 FROM ft2 t1 LEFT JOIN ft2 t2 ON (t1.c1 = t2.c1) FULL JOIN ft4 t3 ON (t2.c1 = t3.c1) OFFSET 10 LIMIT 10;
-                                     QUERY PLAN                                     
-------------------------------------------------------------------------------------
+                         QUERY PLAN                         
+------------------------------------------------------------
  Limit
    Output: t1.c1, t2.c2, t3.c3
    ->  Hash Full Join
@@ -1856,7 +1853,7 @@ SELECT t1.c1, t2.c2, t3.c3 FROM ft2 t1 LEFT JOIN ft2 t2 ON (t1.c1 = t2.c1) FULL 
                Output: t1.c1, t2.c2, t2.c1
                Join Filter: (t1.c1 = t2.c1)
                ->  Foreign Scan on public.ft2 t1
-                     Output: t1.c1, t1.c2, t1.c3, t1.c4, t1.c5, t1.c6, t1.c7, t1.c8
+                     Output: t1.c1
                      Remote SQL: SELECT  *  FROM "T1"
                ->  Materialize
                      Output: t2.c2, t2.c1
@@ -1888,8 +1885,8 @@ SELECT t1.c1, t2.c2, t3.c3 FROM ft2 t1 LEFT JOIN ft2 t2 ON (t1.c1 = t2.c1) FULL 
 -- right outer join + left outer join
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT t1.c1, t2.c2, t3.c3 FROM ft2 t1 RIGHT JOIN ft2 t2 ON (t1.c1 = t2.c1) LEFT JOIN ft4 t3 ON (t2.c1 = t3.c1) OFFSET 10 LIMIT 10;
-                                     QUERY PLAN                                     
-------------------------------------------------------------------------------------
+                         QUERY PLAN                         
+------------------------------------------------------------
  Limit
    Output: t1.c1, t2.c2, t3.c3
    ->  Nested Loop Left Join
@@ -1899,7 +1896,7 @@ SELECT t1.c1, t2.c2, t3.c3 FROM ft2 t1 RIGHT JOIN ft2 t2 ON (t1.c1 = t2.c1) LEFT
                Output: t2.c2, t2.c1, t3.c3
                Join Filter: (t2.c1 = t3.c1)
                ->  Foreign Scan on public.ft2 t2
-                     Output: t2.c1, t2.c2, t2.c3, t2.c4, t2.c5, t2.c6, t2.c7, t2.c8
+                     Output: t2.c2, t2.c1
                      Remote SQL: SELECT  *  FROM "T1"
                ->  Materialize
                      Output: t3.c3, t3.c1
@@ -1931,8 +1928,8 @@ SELECT t1.c1, t2.c2, t3.c3 FROM ft2 t1 RIGHT JOIN ft2 t2 ON (t1.c1 = t2.c1) LEFT
 -- left outer join + right outer join
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT t1.c1, t2.c2, t3.c3 FROM ft2 t1 LEFT JOIN ft2 t2 ON (t1.c1 = t2.c1) RIGHT JOIN ft4 t3 ON (t2.c1 = t3.c1) OFFSET 10 LIMIT 10;
-                                     QUERY PLAN                                     
-------------------------------------------------------------------------------------
+                         QUERY PLAN                         
+------------------------------------------------------------
  Limit
    Output: t1.c1, t2.c2, t3.c3
    ->  Hash Right Join
@@ -1942,7 +1939,7 @@ SELECT t1.c1, t2.c2, t3.c3 FROM ft2 t1 LEFT JOIN ft2 t2 ON (t1.c1 = t2.c1) RIGHT
                Output: t1.c1, t2.c2, t2.c1
                Join Filter: (t1.c1 = t2.c1)
                ->  Foreign Scan on public.ft2 t1
-                     Output: t1.c1, t1.c2, t1.c3, t1.c4, t1.c5, t1.c6, t1.c7, t1.c8
+                     Output: t1.c1
                      Remote SQL: SELECT  *  FROM "T1"
                ->  Materialize
                      Output: t2.c2, t2.c1
@@ -2017,8 +2014,8 @@ SELECT t1.c1, t2.c1 FROM ft4 t1 FULL JOIN ft5 t2 ON (t1.c1 = t2.c1) WHERE (t1.c1
 -- full outer join + WHERE clause with shippable extensions set
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT t1.c1, t2.c2, t1.c3 FROM ft1 t1 FULL JOIN ft2 t2 ON (t1.c1 = t2.c1) WHERE griddb_fdw_abs(t1.c1) > 0 OFFSET 10 LIMIT 10;
-                                  QUERY PLAN                                  
-------------------------------------------------------------------------------
+                      QUERY PLAN                      
+------------------------------------------------------
  Limit
    Output: t1.c1, t2.c2, t1.c3
    ->  Hash Full Join
@@ -2026,7 +2023,7 @@ SELECT t1.c1, t2.c2, t1.c3 FROM ft1 t1 FULL JOIN ft2 t2 ON (t1.c1 = t2.c1) WHERE
          Hash Cond: (t2.c1 = t1.c1)
          Filter: (griddb_fdw_abs(t1.c1) > 0)
          ->  Foreign Scan on public.ft2 t2
-               Output: t2.c1, t2.c2, t2.c3, t2.c4, t2.c5, t2.c6, t2.c7, t2.c8
+               Output: t2.c2, t2.c1
                Remote SQL: SELECT  *  FROM "T1"
          ->  Hash
                Output: t1.c1, t1.c3
@@ -2244,8 +2241,8 @@ SELECT t1.ctid, t1, t2, t1.c1 FROM ft1 t1 JOIN ft2 t2 ON (t1.c1 = t2.c1) ORDER B
 -- SEMI JOIN, not pushed down
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT t1.c1 FROM ft1 t1 WHERE EXISTS (SELECT 1 FROM ft2 t2 WHERE t1.c1 = t2.c1) ORDER BY t1.c1 OFFSET 100 LIMIT 10;
-                                     QUERY PLAN                                     
-------------------------------------------------------------------------------------
+                            QUERY PLAN                            
+------------------------------------------------------------------
  Limit
    Output: t1.c1
    ->  Sort
@@ -2256,7 +2253,7 @@ SELECT t1.c1 FROM ft1 t1 WHERE EXISTS (SELECT 1 FROM ft2 t2 WHERE t1.c1 = t2.c1)
                Inner Unique: true
                Hash Cond: (t1.c1 = t2.c1)
                ->  Foreign Scan on public.ft1 t1
-                     Output: t1.c1, t1.c2, t1.c3, t1.c4, t1.c5, t1.c6, t1.c7, t1.c8
+                     Output: t1.c1
                      Remote SQL: SELECT  *  FROM "T1"
                ->  Hash
                      Output: t2.c1
@@ -2286,8 +2283,8 @@ SELECT t1.c1 FROM ft1 t1 WHERE EXISTS (SELECT 1 FROM ft2 t2 WHERE t1.c1 = t2.c1)
 -- ANTI JOIN, not pushed down
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT t1.c1 FROM ft1 t1 WHERE NOT EXISTS (SELECT 1 FROM ft2 t2 WHERE t1.c1 = t2.c2) ORDER BY t1.c1 OFFSET 100 LIMIT 10;
-                                     QUERY PLAN                                     
-------------------------------------------------------------------------------------
+                         QUERY PLAN                         
+------------------------------------------------------------
  Limit
    Output: t1.c1
    ->  Sort
@@ -2297,7 +2294,7 @@ SELECT t1.c1 FROM ft1 t1 WHERE NOT EXISTS (SELECT 1 FROM ft2 t2 WHERE t1.c1 = t2
                Output: t1.c1
                Hash Cond: (t1.c1 = t2.c2)
                ->  Foreign Scan on public.ft1 t1
-                     Output: t1.c1, t1.c2, t1.c3, t1.c4, t1.c5, t1.c6, t1.c7, t1.c8
+                     Output: t1.c1
                      Remote SQL: SELECT  *  FROM "T1"
                ->  Hash
                      Output: t2.c2
@@ -2324,8 +2321,8 @@ SELECT t1.c1 FROM ft1 t1 WHERE NOT EXISTS (SELECT 1 FROM ft2 t2 WHERE t1.c1 = t2
 -- CROSS JOIN, not pushed down
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT t1.c1, t2.c1 FROM ft1 t1 CROSS JOIN ft2 t2 ORDER BY t1.c1, t2.c1 OFFSET 100 LIMIT 10;
-                                     QUERY PLAN                                     
-------------------------------------------------------------------------------------
+                         QUERY PLAN                         
+------------------------------------------------------------
  Limit
    Output: t1.c1, t2.c1
    ->  Sort
@@ -2334,7 +2331,7 @@ SELECT t1.c1, t2.c1 FROM ft1 t1 CROSS JOIN ft2 t2 ORDER BY t1.c1, t2.c1 OFFSET 1
          ->  Nested Loop
                Output: t1.c1, t2.c1
                ->  Foreign Scan on public.ft1 t1
-                     Output: t1.c1, t1.c2, t1.c3, t1.c4, t1.c5, t1.c6, t1.c7, t1.c8
+                     Output: t1.c1
                      Remote SQL: SELECT  *  FROM "T1"
                ->  Materialize
                      Output: t2.c1
@@ -2433,8 +2430,8 @@ SELECT t1.c1, t2.c1 FROM ft1 t1 LEFT JOIN ft2 t2 ON (t1.c8 = t2.c8) ORDER BY t1.
 -- unsafe conditions on one side (c8 has a UDT), not pushed down.
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT t1.c1, t2.c1 FROM ft1 t1 LEFT JOIN ft2 t2 ON (t1.c1 = t2.c1) WHERE t1.c8 = 'foo' ORDER BY t1.c3, t1.c1 OFFSET 100 LIMIT 10;
-                                     QUERY PLAN                                     
-------------------------------------------------------------------------------------
+                                   QUERY PLAN                                    
+---------------------------------------------------------------------------------
  Limit
    Output: t1.c1, t2.c1, t1.c3
    ->  Sort
@@ -2444,7 +2441,7 @@ SELECT t1.c1, t2.c1 FROM ft1 t1 LEFT JOIN ft2 t2 ON (t1.c1 = t2.c1) WHERE t1.c8 
                Output: t1.c1, t2.c1, t1.c3
                Hash Cond: (t2.c1 = t1.c1)
                ->  Foreign Scan on public.ft2 t2
-                     Output: t2.c1, t2.c2, t2.c3, t2.c4, t2.c5, t2.c6, t2.c7, t2.c8
+                     Output: t2.c1
                      Remote SQL: SELECT  *  FROM "T1"
                ->  Hash
                      Output: t1.c1, t1.c3
@@ -2580,8 +2577,8 @@ SELECT t1c1, avg(t1c1 + t2c1) FROM (SELECT t1.c1, t2.c1 FROM ft1 t1 JOIN ft2 t2 
 -- join with lateral reference
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT t1."c1" FROM "S 1"."T1" t1, LATERAL (SELECT DISTINCT t2.c1, t3.c1 FROM ft1 t2, ft2 t3 WHERE t2.c1 = t3.c1 AND t2.c2 = t1.c2) q ORDER BY t1."c1" OFFSET 10 LIMIT 10;
-                                           QUERY PLAN                                           
-------------------------------------------------------------------------------------------------
+                               QUERY PLAN                               
+------------------------------------------------------------------------
  Limit
    Output: t1.c1
    ->  Sort
@@ -2590,7 +2587,7 @@ SELECT t1."c1" FROM "S 1"."T1" t1, LATERAL (SELECT DISTINCT t2.c1, t3.c1 FROM ft
          ->  Nested Loop
                Output: t1.c1
                ->  Foreign Scan on "S 1"."T1" t1
-                     Output: t1.c1, t1.c2, t1.c3, t1.c4, t1.c5, t1.c6, t1.c7, t1.c8
+                     Output: t1.c1, t1.c2
                      Remote SQL: SELECT  *  FROM "T1"
                ->  HashAggregate
                      Output: t2.c1, t3.c1
@@ -2599,7 +2596,7 @@ SELECT t1."c1" FROM "S 1"."T1" t1, LATERAL (SELECT DISTINCT t2.c1, t3.c1 FROM ft
                            Output: t2.c1, t3.c1
                            Hash Cond: (t3.c1 = t2.c1)
                            ->  Foreign Scan on public.ft2 t3
-                                 Output: t3.c1, t3.c2, t3.c3, t3.c4, t3.c5, t3.c6, t3.c7, t3.c8
+                                 Output: t3.c1
                                  Remote SQL: SELECT  *  FROM "T1"
                            ->  Hash
                                  Output: t2.c1
@@ -2629,13 +2626,13 @@ SELECT t1."c1" FROM "S 1"."T1" t1, LATERAL (SELECT DISTINCT t2.c1, t3.c1 FROM ft
 -- unable to push {ft1, ft2}
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT q.a, ft2.c1 FROM (SELECT 13 FROM ft1 WHERE c1 = 13) q(a) RIGHT JOIN ft2 ON (q.a = ft2.c1) WHERE ft2.c1 BETWEEN 10 AND 15;
-                                   QUERY PLAN                                   
---------------------------------------------------------------------------------
+                                  QUERY PLAN                                  
+------------------------------------------------------------------------------
  Nested Loop Left Join
    Output: (13), ft2.c1
    Join Filter: (13 = ft2.c1)
    ->  Foreign Scan on public.ft2
-         Output: ft2.c1, ft2.c2, ft2.c3, ft2.c4, ft2.c5, ft2.c6, ft2.c7, ft2.c8
+         Output: ft2.c1
          Remote SQL: SELECT  *  FROM "T1" WHERE ((c1 >= 10)) AND ((c1 <= 15))
    ->  Materialize
          Output: (13)
@@ -2658,15 +2655,15 @@ SELECT q.a, ft2.c1 FROM (SELECT 13 FROM ft1 WHERE c1 = 13) q(a) RIGHT JOIN ft2 O
 -- ok to push {ft1, ft2} but not {ft1, ft2, ft4}
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT ft4.c1, q.* FROM ft4 LEFT JOIN (SELECT 13, ft1.c1, ft2.c1 FROM ft1 RIGHT JOIN ft2 ON (ft1.c1 = ft2.c1) WHERE ft1.c1 = 12) q(a, b, c) ON (ft4.c1 = q.b) WHERE ft4.c1 BETWEEN 10 AND 15;
-                                      QUERY PLAN                                      
---------------------------------------------------------------------------------------
+                                     QUERY PLAN                                     
+------------------------------------------------------------------------------------
  Hash Right Join
    Output: ft4.c1, (13), ft1.c1, ft2.c1
    Hash Cond: (ft1.c1 = ft4.c1)
    ->  Nested Loop
          Output: ft1.c1, ft2.c1, 13
          ->  Foreign Scan on public.ft1
-               Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8
+               Output: ft1.c1
                Remote SQL: SELECT  *  FROM "T1" WHERE ((c1 = 12))
          ->  Materialize
                Output: ft2.c1
@@ -2980,7 +2977,7 @@ select count(c6), sum(c1), avg(c1), min(c2), max(c1), stddev(c2), sum(c1) * (ran
                Output: count(c6), sum(c1), avg(c1), min(c2), max(c1), stddev(c2), c2
                Group Key: ft1.c2
                ->  Foreign Scan on public.ft1
-                     Output: c1, c2, c3, c4, c5, c6, c7, c8
+                     Output: c2, c6, c1
                      Remote SQL: SELECT  *  FROM "T1" WHERE ((c2 < 5))
 (11 rows)
 
@@ -3009,7 +3006,7 @@ select count(c6), sum(c1), avg(c1), min(c2), max(c1), stddev(c2), sum(c1) * (ran
                      Output: count(c6), sum(c1), avg(c1), min(c2), max(c1), stddev(c2), c2
                      Group Key: ft1.c2
                      ->  Foreign Scan on public.ft1
-                           Output: c1, c2, c3, c4, c5, c6, c7, c8
+                           Output: c2, c6, c1
                            Remote SQL: SELECT  *  FROM "T1" WHERE ((c2 < 5))
 (13 rows)
 
@@ -3027,21 +3024,21 @@ select sum(c1 * (random() <= 1)::int) as sum, avg(c1) from ft1;
  Aggregate
    Output: sum((c1 * ((random() <= '1'::double precision))::integer)), avg(c1)
    ->  Foreign Scan on public.ft1
-         Output: c1, c2, c3, c4, c5, c6, c7, c8
+         Output: c1
          Remote SQL: SELECT  *  FROM "T1"
 (5 rows)
 
 -- Aggregate over join query
 explain (verbose, costs off)
 select count(*), sum(t1.c1), avg(t2.c1) from ft1 t1 inner join ft1 t2 on (t1.c2 = t2.c2) where t1.c2 = 6;
-                                  QUERY PLAN                                  
-------------------------------------------------------------------------------
+                              QUERY PLAN                               
+-----------------------------------------------------------------------
  Aggregate
    Output: count(*), sum(t1.c1), avg(t2.c1)
    ->  Nested Loop
          Output: t1.c1, t2.c1
          ->  Foreign Scan on public.ft1 t1
-               Output: t1.c1, t1.c2, t1.c3, t1.c4, t1.c5, t1.c6, t1.c7, t1.c8
+               Output: t1.c1, t1.c2
                Remote SQL: SELECT  *  FROM "T1" WHERE ((c2 = 6))
          ->  Materialize
                Output: t2.c1, t2.c2
@@ -3143,7 +3140,7 @@ select c2 * (random() <= 1)::int as sum1, sum(c1) * c2 as sum2 from ft1 group by
          Output: (c2 * ((random() <= '1'::double precision))::integer), (sum(c1) * c2), c2
          Group Key: ft1.c2
          ->  Foreign Scan on public.ft1
-               Output: c1, c2, c3, c4, c5, c6, c7, c8
+               Output: c2, c1
                Remote SQL: SELECT  *  FROM "T1"
 (9 rows)
 
@@ -3247,7 +3244,7 @@ select c2, sum(c1) from ft2 group by c2 having avg(c1) < 500 and sum(c1) < 49800
          Group Key: ft2.c2
          Filter: ((avg(ft2.c1) < '500'::numeric) AND (sum(ft2.c1) < 49800))
          ->  Foreign Scan on public.ft2
-               Output: c1, c2, c3, c4, c5, c6, c7, c8
+               Output: c2, c1
                Remote SQL: SELECT  *  FROM "T1"
 (10 rows)
 
@@ -3293,7 +3290,7 @@ select sum(c1) from ft1 group by c2 having avg(c1 * (random() <= 1)::int) > 100 
          Group Key: ft1.c2
          Filter: (avg((ft1.c1 * ((random() <= '1'::double precision))::integer)) > '100'::numeric)
          ->  Foreign Scan on public.ft1
-               Output: c1, c2, c3, c4, c5, c6, c7, c8
+               Output: c2, c1
                Remote SQL: SELECT  *  FROM "T1"
 (10 rows)
 
@@ -3301,14 +3298,14 @@ select sum(c1) from ft1 group by c2 having avg(c1 * (random() <= 1)::int) > 100 
 -- of an initplan) can be trouble, per bug #15781
 explain (verbose, costs off)
 select exists(select 1 from pg_enum), sum(c1) from ft1;
-                                   QUERY PLAN                                   
---------------------------------------------------------------------------------
+                QUERY PLAN                
+------------------------------------------
  Aggregate
    Output: $0, sum(ft1.c1)
    InitPlan 1 (returns $0)
      ->  Seq Scan on pg_catalog.pg_enum
    ->  Foreign Scan on public.ft1
-         Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8
+         Output: ft1.c1
          Remote SQL: SELECT  *  FROM "T1"
 (7 rows)
 
@@ -3381,7 +3378,7 @@ select array_agg(c5 order by c1 desc) from ft2 where c2 = 6 and c1 < 50;
  Aggregate
    Output: array_agg(c5 ORDER BY c1 DESC)
    ->  Foreign Scan on public.ft2
-         Output: c1, c2, c3, c4, c5, c6, c7, c8
+         Output: c5, c1
          Remote SQL: SELECT  *  FROM "T1" WHERE ((c1 < 50)) AND ((c2 = 6))
 (5 rows)
 
@@ -3519,7 +3516,7 @@ select sum(c1) filter (where c1 < 100 and c2 > 5) from ft1 group by c2 order by 
          Output: sum(c1) FILTER (WHERE ((c1 < 100) AND (c2 > 5))), c2
          Group Key: ft1.c2
          ->  Foreign Scan on public.ft1
-               Output: c1, c2, c3, c4, c5, c6, c7, c8
+               Output: c2, c1
                Remote SQL: SELECT  *  FROM "T1"
 (9 rows)
 
@@ -3547,7 +3544,7 @@ select sum(c1%3), sum(distinct c1%3 order by c1%3) filter (where c1%3 < 2), c2 f
    Output: sum((c1 % 3)), sum(DISTINCT (c1 % 3) ORDER BY (c1 % 3)) FILTER (WHERE ((c1 % 3) < 2)), c2
    Group Key: ft1.c2
    ->  Foreign Scan on public.ft1
-         Output: c1, c2, c3, c4, c5, c6, c7, c8
+         Output: c2, c1
          Remote SQL: SELECT  *  FROM "T1" WHERE ((c2 = 6))
 (6 rows)
 
@@ -3570,7 +3567,7 @@ select distinct (select count(*) filter (where t2.c2 = 6 and t2.c1 < 10) from ft
          ->  Aggregate
                Output: (SubPlan 1)
                ->  Foreign Scan on public.ft2 t2
-                     Output: t2.c1, t2.c2, t2.c3, t2.c4, t2.c5, t2.c6, t2.c7, t2.c8
+                     Output: t2.c2, t2.c1
                      Remote SQL: SELECT  *  FROM "T1" WHERE (((c2 % 6) = 0))
                SubPlan 1
                  ->  Foreign Scan on public.ft1 t1
@@ -3587,8 +3584,8 @@ select distinct (select count(*) filter (where t2.c2 = 6 and t2.c1 < 10) from ft
 -- Inner query is aggregation query
 explain (verbose, costs off)
 select distinct (select count(t1.c1) filter (where t2.c2 = 6 and t2.c1 < 10) from ft1 t1 where t1.c1 = 6) from ft2 t2 where t2.c2 % 6 = 0 order by 1;
-                                         QUERY PLAN                                         
---------------------------------------------------------------------------------------------
+                                        QUERY PLAN                                        
+------------------------------------------------------------------------------------------
  Unique
    Output: ((SubPlan 1))
    ->  Sort
@@ -3601,7 +3598,7 @@ select distinct (select count(t1.c1) filter (where t2.c2 = 6 and t2.c1 < 10) fro
                  ->  Aggregate
                        Output: count(t1.c1) FILTER (WHERE ((t2.c2 = 6) AND (t2.c1 < 10)))
                        ->  Foreign Scan on public.ft1 t1
-                             Output: t1.c1, t1.c2, t1.c3, t1.c4, t1.c5, t1.c6, t1.c7, t1.c8
+                             Output: t1.c1
                              Remote SQL: SELECT  *  FROM "T1" WHERE ((c1 = 6))
 (14 rows)
 
@@ -3624,18 +3621,18 @@ select sum(c1) filter (where (c1 / c1) * random() <= 1) from ft1 group by c2 ord
          Output: sum(c1) FILTER (WHERE ((((c1 / c1))::double precision * random()) <= '1'::double precision)), c2
          Group Key: ft1.c2
          ->  Foreign Scan on public.ft1
-               Output: c1, c2, c3, c4, c5, c6, c7, c8
+               Output: c2, c1
                Remote SQL: SELECT  *  FROM "T1"
 (9 rows)
 
 explain (verbose, costs off)
 select sum(c2) filter (where c2 in (select c2 from ft1 where c2 < 5)) from ft1;
-                                   QUERY PLAN                                   
---------------------------------------------------------------------------------
+                         QUERY PLAN                          
+-------------------------------------------------------------
  Aggregate
    Output: sum(ft1.c2) FILTER (WHERE (hashed SubPlan 1))
    ->  Foreign Scan on public.ft1
-         Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8
+         Output: ft1.c2
          Remote SQL: SELECT  *  FROM "T1"
    SubPlan 1
      ->  Foreign Scan on public.ft1 ft1_1
@@ -3814,7 +3811,7 @@ select array_agg(c1 order by c1 using operator(public.<^)) from ft2 where c2 = 6
    Output: array_agg(c1 ORDER BY c1 USING <^ NULLS LAST), c2
    Group Key: ft2.c2
    ->  Foreign Scan on public.ft2
-         Output: c1, c2, c3, c4, c5, c6, c7, c8
+         Output: c2, c1
          Remote SQL: SELECT  *  FROM "T1" WHERE ((c1 < 100)) AND ((c2 = 6))
 (6 rows)
 
@@ -3837,7 +3834,7 @@ select array_agg(c1 order by c1 using operator(public.<^)) from ft2 where c2 = 6
    Output: array_agg(c1 ORDER BY c1 USING <^ NULLS LAST), c2
    Group Key: ft2.c2
    ->  Foreign Scan on public.ft2
-         Output: c1, c2, c3, c4, c5, c6, c7, c8
+         Output: c2, c1
          Remote SQL: SELECT  *  FROM "T1" WHERE ((c1 < 100)) AND ((c2 = 6))
 (6 rows)
 
@@ -3863,7 +3860,7 @@ select array_agg(c1 order by c1 using operator(public.<^)) from ft2 where c2 = 6
    Output: array_agg(c1 ORDER BY c1 USING <^ NULLS LAST), c2
    Group Key: ft2.c2
    ->  Foreign Scan on public.ft2
-         Output: c1, c2, c3, c4, c5, c6, c7, c8
+         Output: c2, c1
          Remote SQL: SELECT  *  FROM "T1" WHERE ((c1 < 100)) AND ((c2 = 6))
 (6 rows)
 
@@ -3886,7 +3883,7 @@ select count(t1.c3) from ft2 t1 left join ft2 t2 on (t1.c1 = random() * t2.c2);
          Output: t1.c3
          Join Filter: ((t1.c1)::double precision = (random() * (t2.c2)::double precision))
          ->  Foreign Scan on public.ft2 t1
-               Output: t1.c1, t1.c2, t1.c3, t1.c4, t1.c5, t1.c6, t1.c7, t1.c8
+               Output: t1.c3, t1.c1
                Remote SQL: SELECT  *  FROM "T1"
          ->  Materialize
                Output: t2.c2
@@ -3898,8 +3895,8 @@ select count(t1.c3) from ft2 t1 left join ft2 t2 on (t1.c1 = random() * t2.c2);
 -- Subquery in FROM clause having aggregate
 explain (verbose, costs off)
 select count(*), x.b from ft1, (select c2 a, sum(c1) b from ft1 group by c2) x where ft1.c2 = x.a group by x.b order by 1, 2;
-                                                          QUERY PLAN                                                          
-------------------------------------------------------------------------------------------------------------------------------
+                               QUERY PLAN                               
+------------------------------------------------------------------------
  Sort
    Output: (count(*)), x.b
    Sort Key: (count(*)), x.b
@@ -3911,7 +3908,7 @@ select count(*), x.b from ft1, (select c2 a, sum(c1) b from ft1 group by c2) x w
                Inner Unique: true
                Hash Cond: (ft1.c2 = x.a)
                ->  Foreign Scan on public.ft1
-                     Output: ft1.c1, ft1.c2, ft1.c3, ft1.c4, ft1.c5, ft1.c6, ft1.c7, ft1.c8
+                     Output: ft1.c2
                      Remote SQL: SELECT  *  FROM "T1"
                ->  Hash
                      Output: x.b, x.a
@@ -3921,7 +3918,7 @@ select count(*), x.b from ft1, (select c2 a, sum(c1) b from ft1 group by c2) x w
                                  Output: ft1_1.c2, sum(ft1_1.c1)
                                  Group Key: ft1_1.c2
                                  ->  Foreign Scan on public.ft1 ft1_1
-                                       Output: ft1_1.c1, ft1_1.c2, ft1_1.c3, ft1_1.c4, ft1_1.c5, ft1_1.c6, ft1_1.c7, ft1_1.c8
+                                       Output: ft1_1.c2, ft1_1.c1
                                        Remote SQL: SELECT  *  FROM "T1"
 (23 rows)
 
@@ -3989,7 +3986,7 @@ select count(*), sum(t1.c1), avg(t2.c1) from (select c1 from ft4 where c1 betwee
          Output: ft4.c1, ft5.c1
          Hash Cond: (ft4.c1 = ft5.c1)
          ->  Foreign Scan on public.ft4
-               Output: ft4.c1, ft4.c2, ft4.c3
+               Output: ft4.c1
                Remote SQL: SELECT  *  FROM "T3" WHERE ((c1 >= 50)) AND ((c1 <= 60))
          ->  Hash
                Output: ft5.c1
@@ -4016,7 +4013,7 @@ select sum(c2) * (random() <= 1)::int as sum from ft1 order by 1;
    ->  Aggregate
          Output: (sum(c2) * ((random() <= '1'::double precision))::integer)
          ->  Foreign Scan on public.ft1
-               Output: c1, c2, c3, c4, c5, c6, c7, c8
+               Output: c2
                Remote SQL: SELECT  *  FROM "T1"
 (8 rows)
 
@@ -4038,7 +4035,7 @@ select c2, sum from "S 1"."T1" t1, lateral (select sum(t2.c1 + t1."c1") sum from
    ->  Nested Loop
          Output: t1.c2, qry.sum
          ->  Foreign Scan on "S 1"."T1" t1
-               Output: t1.c1, t1.c2, t1.c3, t1.c4, t1.c5, t1.c6, t1.c7, t1.c8
+               Output: t1.c2, t1.c1
                Remote SQL: SELECT  *  FROM "T1" WHERE ((c2 < 3)) AND ((c1 < 100))
          ->  Subquery Scan on qry
                Output: qry.sum, t2.c1
@@ -4075,8 +4072,8 @@ FROM
     ) AS subq_1
 WHERE ref_0."c1" < 10 AND subq_1.c3 = '00001'
 ORDER BY ref_0."c1";
-                                                 QUERY PLAN                                                 
-------------------------------------------------------------------------------------------------------------
+                                 QUERY PLAN                                  
+-----------------------------------------------------------------------------
  Sort
    Output: ref_0.c2, ref_0.c1, (ref_0.c2), ref_1.c3, ref_0.c1
    Sort Key: ref_0.c1
@@ -4085,7 +4082,7 @@ ORDER BY ref_0."c1";
          ->  Nested Loop
                Output: ref_0.c2, ref_0.c1, ref_1.c3, (ref_0.c2)
                ->  Foreign Scan on "S 1"."T1" ref_0
-                     Output: ref_0.c1, ref_0.c2, ref_0.c3, ref_0.c4, ref_0.c5, ref_0.c6, ref_0.c7, ref_0.c8
+                     Output: ref_0.c2, ref_0.c1
                      Remote SQL: SELECT  *  FROM "T1" WHERE ((c1 < 10))
                ->  Foreign Scan on public.ft1 ref_1
                      Output: ref_1.c3, ref_0.c2
@@ -4133,7 +4130,7 @@ select sum(q.a), count(q.b) from ft4 left join (select 13, avg(ft1.c1), sum(ft2.
          Inner Unique: true
          Join Filter: ((ft4.c1)::numeric <= q.b)
          ->  Foreign Scan on public.ft4
-               Output: ft4.c1, ft4.c2, ft4.c3
+               Output: ft4.c1
                Remote SQL: SELECT  *  FROM "T3"
          ->  Materialize
                Output: q.a, q.b
@@ -4178,7 +4175,7 @@ select c2, sum(c1) from ft1 where c2 < 3 group by rollup(c2) order by 1 nulls la
          Hash Key: ft1.c2
          Group Key: ()
          ->  Foreign Scan on public.ft1
-               Output: c1, c2, c3, c4, c5, c6, c7, c8
+               Output: c2, c1
                Remote SQL: SELECT  *  FROM "T1" WHERE ((c2 < 3))
 (10 rows)
 
@@ -4203,7 +4200,7 @@ select c2, sum(c1) from ft1 where c2 < 3 group by cube(c2) order by 1 nulls last
          Hash Key: ft1.c2
          Group Key: ()
          ->  Foreign Scan on public.ft1
-               Output: c1, c2, c3, c4, c5, c6, c7, c8
+               Output: c2, c1
                Remote SQL: SELECT  *  FROM "T1" WHERE ((c2 < 3))
 (10 rows)
 
@@ -4228,7 +4225,7 @@ select c2, c6, sum(c1) from ft1 where c2 < 3 group by grouping sets(c2, c6) orde
          Hash Key: ft1.c2
          Hash Key: ft1.c6
          ->  Foreign Scan on public.ft1
-               Output: c1, c2, c3, c4, c5, c6, c7, c8
+               Output: c2, c6, c1
                Remote SQL: SELECT  *  FROM "T1" WHERE ((c2 < 3))
 (10 rows)
 
@@ -4254,7 +4251,7 @@ select c2, sum(c1), grouping(c2) from ft1 where c2 < 3 group by c2 order by 1 nu
          Output: c2, sum(c1), GROUPING(c2)
          Group Key: ft1.c2
          ->  Foreign Scan on public.ft1
-               Output: c1, c2, c3, c4, c5, c6, c7, c8
+               Output: c2, c1
                Remote SQL: SELECT  *  FROM "T1" WHERE ((c2 < 3))
 (9 rows)
 
@@ -4280,7 +4277,7 @@ select distinct sum(c1)/1000 s from ft2 where c2 < 6 group by c2 order by 1;
                Output: (sum(c1) / 1000), c2
                Group Key: ft2.c2
                ->  Foreign Scan on public.ft2
-                     Output: c1, c2, c3, c4, c5, c6, c7, c8
+                     Output: c2, c1
                      Remote SQL: SELECT  *  FROM "T1" WHERE ((c2 < 6))
 (11 rows)
 
@@ -4308,7 +4305,7 @@ select c2, sum(c2), count(c2) over (partition by c2%2) from ft2 where c2 < 10 gr
                      Output: c2, (c2 % 2), sum(c2)
                      Group Key: ft2.c2
                      ->  Foreign Scan on public.ft2
-                           Output: c1, c2, c3, c4, c5, c6, c7, c8
+                           Output: c2
                            Remote SQL: SELECT  *  FROM "T1" WHERE ((c2 < 10))
 (14 rows)
 
@@ -4343,7 +4340,7 @@ select c2, array_agg(c2) over (partition by c2%2 order by c2 desc) from ft1 wher
                      Output: c2, (c2 % 2)
                      Group Key: ft1.c2
                      ->  Foreign Scan on public.ft1
-                           Output: c1, c2, c3, c4, c5, c6, c7, c8
+                           Output: c2
                            Remote SQL: SELECT  *  FROM "T1" WHERE ((c2 < 10))
 (14 rows)
 
@@ -4378,7 +4375,7 @@ select c2, array_agg(c2) over (partition by c2%2 order by c2 range between curre
                      Output: c2, (c2 % 2)
                      Group Key: ft1.c2
                      ->  Foreign Scan on public.ft1
-                           Output: c1, c2, c3, c4, c5, c6, c7, c8
+                           Output: c2
                            Remote SQL: SELECT  *  FROM "T1" WHERE ((c2 < 10))
 (14 rows)
 
@@ -4403,12 +4400,12 @@ select c2, array_agg(c2) over (partition by c2%2 order by c2 range between curre
 -- simple join
 PREPARE st1(int, int) AS SELECT t1.c3, t2.c3 FROM ft1 t1, ft2 t2 WHERE t1.c1 = $1 AND t2.c1 = $2;
 EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st1(1, 2);
-                               QUERY PLAN                               
-------------------------------------------------------------------------
+                           QUERY PLAN                            
+-----------------------------------------------------------------
  Nested Loop
    Output: t1.c3, t2.c3
    ->  Foreign Scan on public.ft1 t1
-         Output: t1.c1, t1.c2, t1.c3, t1.c4, t1.c5, t1.c6, t1.c7, t1.c8
+         Output: t1.c3
          Remote SQL: SELECT  *  FROM "T1" WHERE ((c1 = 1))
    ->  Materialize
          Output: t2.c3
@@ -4679,12 +4676,12 @@ EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st7;
 PREPARE st8 AS SELECT count(c3) FROM ft1 t1 WHERE t1.c1 === t1.c2;
 --ALTER SERVER loopback OPTIONS (DROP extensions);
 EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st8;
-                   QUERY PLAN                   
-------------------------------------------------
+                QUERY PLAN                
+------------------------------------------
  Aggregate
    Output: count(c3)
    ->  Foreign Scan on public.ft1 t1
-         Output: c1, c2, c3, c4, c5, c6, c7, c8
+         Output: c3
          Filter: (t1.c1 === t1.c2)
          Remote SQL: SELECT  *  FROM "T1"
 (6 rows)
@@ -5111,7 +5108,7 @@ UPDATE ft2 SET c2 = ft2.c2 + 500, c3 = ft2.c3 || '_update9', c7 = DEFAULT
          Output: ft2.c1, (ft2.c2 + 500), (ft2.c3 || '_update9'::text), ft2.c4, ft2.c5, ft2.c6, 'ft2'::text, ft2.c8, ft2.c1, ft1.*
          Hash Cond: (ft2.c2 = ft1.c1)
          ->  Foreign Scan on public.ft2
-               Output: ft2.c1, ft2.c2, ft2.c3, ft2.c4, ft2.c5, ft2.c6, ft2.c7, ft2.c8
+               Output: ft2.c1, ft2.c2, ft2.c3, ft2.c4, ft2.c5, ft2.c6, ft2.c8
                Remote SQL: SELECT  *  FROM "T1"
          ->  Hash
                Output: ft1.*, ft1.c1
@@ -5245,14 +5242,14 @@ SELECT c1,c4 FROM ft2 WHERE c1 % 10 = 5;
 DELETE FROM ft2 WHERE c1 % 10 = 5;
 EXPLAIN (verbose, costs off)
 DELETE FROM ft2 USING ft1 WHERE ft1.c1 = ft2.c2 AND ft1.c1 % 10 = 2;                -- can be pushed down
-                                      QUERY PLAN                                      
---------------------------------------------------------------------------------------
+                                  QUERY PLAN                                  
+------------------------------------------------------------------------------
  Delete on public.ft2
    ->  Hash Join
          Output: ft2.c1, ft1.*
          Hash Cond: (ft2.c2 = ft1.c1)
          ->  Foreign Scan on public.ft2
-               Output: ft2.c1, ft2.c2, ft2.c3, ft2.c4, ft2.c5, ft2.c6, ft2.c7, ft2.c8
+               Output: ft2.c1, ft2.c2
                Remote SQL: SELECT  *  FROM "T1"
          ->  Hash
                Output: ft1.*, ft1.c1
@@ -6317,8 +6314,8 @@ EXPLAIN (verbose, costs off)
 DELETE FROM ft2
   USING ft4 INNER JOIN ft5 ON (ft4.c1 === ft5.c1)
   WHERE ft2.c1 > 2000 AND ft2.c2 = ft4.c1;                                          -- can't be pushed down
-                                         QUERY PLAN                                         
---------------------------------------------------------------------------------------------
+                                QUERY PLAN                                
+--------------------------------------------------------------------------
  Delete on public.ft2
    ->  Nested Loop
          Output: ft2.c1, ft4.*, ft5.*
@@ -6327,7 +6324,7 @@ DELETE FROM ft2
                Output: ft2.c1, ft4.*, ft4.c1
                Hash Cond: (ft2.c2 = ft4.c1)
                ->  Foreign Scan on public.ft2
-                     Output: ft2.c1, ft2.c2, ft2.c3, ft2.c4, ft2.c5, ft2.c6, ft2.c7, ft2.c8
+                     Output: ft2.c1, ft2.c2
                      Remote SQL: SELECT  *  FROM "T1" WHERE ((c1 > 2000))
                ->  Hash
                      Output: ft4.*, ft4.c1
@@ -8615,7 +8612,7 @@ update utrtest set a = 1 from (values (1), (2)) s(x) where a = s.x;
          Output: remp.id, 1, remp.b, remp.id, "*VALUES*".*
          Hash Cond: (remp.a = "*VALUES*".column1)
          ->  Foreign Scan on public.remp
-               Output: remp.id, remp.a, remp.b
+               Output: remp.id, remp.b, remp.a
                Remote SQL: SELECT  *  FROM loct12
          ->  Hash
                Output: "*VALUES*".*, "*VALUES*".column1
@@ -8691,7 +8688,7 @@ update utrtest set a = 3 from (values (2), (3)) s(x) where a = s.x;
          Output: remp.id, 3, remp.b, remp.id, "*VALUES*".*
          Hash Cond: (remp.a = "*VALUES*".column1)
          ->  Foreign Scan on public.remp
-               Output: remp.id, remp.a, remp.b
+               Output: remp.id, remp.b, remp.a
                Remote SQL: SELECT  *  FROM loct21
          ->  Hash
                Output: "*VALUES*".*, "*VALUES*".column1
@@ -9057,6 +9054,7 @@ FROM SERVER griddb_svr INTO import_grid4;
  import_grid4 | bool_test                 | griddb_svr |             | 
  import_grid4 | bool_test_a               | griddb_svr |             | 
  import_grid4 | bool_test_b               | griddb_svr |             | 
+ import_grid4 | brtrigpartcon1            | griddb_svr |             | 
  import_grid4 | bytea_test_table          | griddb_svr |             | 
  import_grid4 | c2                        | griddb_svr |             | 
  import_grid4 | c3                        | griddb_svr |             | 
@@ -9084,13 +9082,18 @@ FROM SERVER griddb_svr INTO import_grid4;
  import_grid4 | ft4                       | griddb_svr |             | 
  import_grid4 | ft5                       | griddb_svr |             | 
  import_grid4 | gloc1                     | griddb_svr |             | 
+ import_grid4 | hpart1                    | griddb_svr |             | 
  import_grid4 | hpart10                   | griddb_svr |             | 
  import_grid4 | hpart11                   | griddb_svr |             | 
  import_grid4 | hpart12                   | griddb_svr |             | 
  import_grid4 | hpart13                   | griddb_svr |             | 
+ import_grid4 | hpart2                    | griddb_svr |             | 
+ import_grid4 | hpart3                    | griddb_svr |             | 
+ import_grid4 | hpart4                    | griddb_svr |             | 
  import_grid4 | innertab                  | griddb_svr |             | 
  import_grid4 | inserttest                | griddb_svr |             | 
  import_grid4 | inserttest01              | griddb_svr |             | 
+ import_grid4 | inserttest3               | griddb_svr |             | 
  import_grid4 | j11                       | griddb_svr |             | 
  import_grid4 | j12                       | griddb_svr |             | 
  import_grid4 | j21                       | griddb_svr |             | 
@@ -9101,6 +9104,8 @@ FROM SERVER griddb_svr INTO import_grid4;
  import_grid4 | join_foo                  | griddb_svr |             | 
  import_grid4 | join_pt1p1p1              | griddb_svr |             | 
  import_grid4 | join_pt1p2                | griddb_svr |             | 
+ import_grid4 | list_default              | griddb_svr |             | 
+ import_grid4 | list_part1                | griddb_svr |             | 
  import_grid4 | loc1                      | griddb_svr |             | 
  import_grid4 | loc2                      | griddb_svr |             | 
  import_grid4 | loc3                      | griddb_svr |             | 
@@ -9117,6 +9122,7 @@ FROM SERVER griddb_svr INTO import_grid4;
  import_grid4 | loct22                    | griddb_svr |             | 
  import_grid4 | loct3                     | griddb_svr |             | 
  import_grid4 | loct4                     | griddb_svr |             | 
+ import_grid4 | lparted_nonullpart_a      | griddb_svr |             | 
  import_grid4 | mcrparted0                | griddb_svr |             | 
  import_grid4 | mcrparted1                | griddb_svr |             | 
  import_grid4 | mcrparted1_lt_b           | griddb_svr |             | 
@@ -9132,6 +9138,12 @@ FROM SERVER griddb_svr INTO import_grid4;
  import_grid4 | mcrparted7_gt_common_lt_d | griddb_svr |             | 
  import_grid4 | mcrparted8_ge_d           | griddb_svr |             | 
  import_grid4 | minmaxtest                | griddb_svr |             | 
+ import_grid4 | mlparted12                | griddb_svr |             | 
+ import_grid4 | mlparted3                 | griddb_svr |             | 
+ import_grid4 | mlparted5_a               | griddb_svr |             | 
+ import_grid4 | mlparted_def1             | griddb_svr |             | 
+ import_grid4 | mlparted_def2             | griddb_svr |             | 
+ import_grid4 | mlparted_defd             | griddb_svr |             | 
  import_grid4 | multi_arg_agg             | griddb_svr |             | 
  import_grid4 | nt1                       | griddb_svr |             | 
  import_grid4 | nt2                       | griddb_svr |             | 
@@ -9158,9 +9170,15 @@ FROM SERVER griddb_svr INTO import_grid4;
  import_grid4 | part2                     | griddb_svr |             | 
  import_grid4 | part3                     | griddb_svr |             | 
  import_grid4 | part4                     | griddb_svr |             | 
+ import_grid4 | part_a_10_a_20            | griddb_svr |             | 
+ import_grid4 | part_a_1_a_10             | griddb_svr |             | 
  import_grid4 | part_aa_bb                | griddb_svr |             | 
+ import_grid4 | part_b_1_b_10             | griddb_svr |             | 
  import_grid4 | part_cc_dd                | griddb_svr |             | 
+ import_grid4 | part_d_15_20              | griddb_svr |             | 
+ import_grid4 | part_d_1_15               | griddb_svr |             | 
  import_grid4 | part_def                  | griddb_svr |             | 
+ import_grid4 | part_def1                 | griddb_svr |             | 
  import_grid4 | part_default              | griddb_svr |             | 
  import_grid4 | part_default_p1           | griddb_svr |             | 
  import_grid4 | part_default_p2           | griddb_svr |             | 
@@ -9172,6 +9190,8 @@ FROM SERVER griddb_svr INTO import_grid4;
  import_grid4 | person                    | griddb_svr |             | 
  import_grid4 | regr_test                 | griddb_svr |             | 
  import_grid4 | regr_test_array           | griddb_svr |             | 
+ import_grid4 | returningwrtest1          | griddb_svr |             | 
+ import_grid4 | returningwrtest2          | griddb_svr |             | 
  import_grid4 | road                      | griddb_svr |             | 
  import_grid4 | shorty                    | griddb_svr |             | 
  import_grid4 | simple                    | griddb_svr |             | 
@@ -9226,7 +9246,7 @@ FROM SERVER griddb_svr INTO import_grid4;
  import_grid4 | zt1                       | griddb_svr |             | 
  import_grid4 | zt2                       | griddb_svr |             | 
  import_grid4 | zt3                       | griddb_svr |             | 
-(205 rows)
+(228 rows)
 
 -- Assorted error cases
 IMPORT FOREIGN SCHEMA griddb_schema FROM SERVER griddb_svr INTO import_grid4;
@@ -9236,7 +9256,10 @@ NOTICE:  relation "simple" already exists, skipping
 NOTICE:  relation "x" already exists, skipping
 NOTICE:  relation "fprt1_p2" already exists, skipping
 NOTICE:  relation "minmaxtest" already exists, skipping
+NOTICE:  relation "mlparted_def2" already exists, skipping
+NOTICE:  relation "brtrigpartcon1" already exists, skipping
 NOTICE:  relation "J1_TBL" already exists, skipping
+NOTICE:  relation "part_b_1_b_10" already exists, skipping
 NOTICE:  relation "empdata" already exists, skipping
 NOTICE:  relation "FLOAT4_TBL" already exists, skipping
 NOTICE:  relation "mcrparted4_common_lt_0" already exists, skipping
@@ -9244,6 +9267,7 @@ NOTICE:  relation "FLOAT8_TBL" already exists, skipping
 NOTICE:  relation "regr_test" already exists, skipping
 NOTICE:  relation "part_xx_yy_defpart" already exists, skipping
 NOTICE:  relation "department" already exists, skipping
+NOTICE:  relation "part_a_1_a_10" already exists, skipping
 NOTICE:  relation "part_default_p1" already exists, skipping
 NOTICE:  relation "locp2" already exists, skipping
 NOTICE:  relation "num_exp_sub" already exists, skipping
@@ -9259,6 +9283,7 @@ NOTICE:  relation "update_test" already exists, skipping
 NOTICE:  relation "t31" already exists, skipping
 NOTICE:  relation "y" already exists, skipping
 NOTICE:  relation "j22" already exists, skipping
+NOTICE:  relation "part_def1" already exists, skipping
 NOTICE:  relation "t11" already exists, skipping
 NOTICE:  relation "onek2" already exists, skipping
 NOTICE:  relation "num_exp_log10" already exists, skipping
@@ -9315,17 +9340,22 @@ NOTICE:  relation "T1" already exists, skipping
 NOTICE:  relation "num_exp_add" already exists, skipping
 NOTICE:  relation "T4" already exists, skipping
 NOTICE:  relation "gloc1" already exists, skipping
+NOTICE:  relation "part_d_1_15" already exists, skipping
 NOTICE:  relation "part_aa_bb" already exists, skipping
 NOTICE:  relation "loct4" already exists, skipping
 NOTICE:  relation "uniquetbl" already exists, skipping
 NOTICE:  relation "bool_test" already exists, skipping
 NOTICE:  relation "fprt1_p1" already exists, skipping
+NOTICE:  relation "mlparted_def1" already exists, skipping
 NOTICE:  relation "shorty" already exists, skipping
+NOTICE:  relation "list_part1" already exists, skipping
 NOTICE:  relation "mcrparted5" already exists, skipping
 NOTICE:  relation "part1" already exists, skipping
 NOTICE:  relation "part_null" already exists, skipping
 NOTICE:  relation "type_blob" already exists, skipping
 NOTICE:  relation "agg_t2" already exists, skipping
+NOTICE:  relation "hpart4" already exists, skipping
+NOTICE:  relation "mlparted_defd" already exists, skipping
 NOTICE:  relation "hpart10" already exists, skipping
 NOTICE:  relation "ft4" already exists, skipping
 NOTICE:  relation "ft1" already exists, skipping
@@ -9336,6 +9366,7 @@ NOTICE:  relation "num_exp_power_10_ln" already exists, skipping
 NOTICE:  relation "nt2" already exists, skipping
 NOTICE:  relation "d3" already exists, skipping
 NOTICE:  relation "mcrparted6_common_ge_10" already exists, skipping
+NOTICE:  relation "hpart1" already exists, skipping
 NOTICE:  relation "text_tbl" already exists, skipping
 NOTICE:  relation "b3" already exists, skipping
 NOTICE:  relation "extremely_skewed" already exists, skipping
@@ -9346,13 +9377,16 @@ NOTICE:  relation "fract_only" already exists, skipping
 NOTICE:  relation "mcrparted0" already exists, skipping
 NOTICE:  relation "tt5" already exists, skipping
 NOTICE:  relation "parent" already exists, skipping
+NOTICE:  relation "mlparted5_a" already exists, skipping
 NOTICE:  relation "fprt2_p1" already exists, skipping
 NOTICE:  relation "ft5" already exists, skipping
 NOTICE:  relation "onek" already exists, skipping
 NOTICE:  relation "agg_t3" already exists, skipping
+NOTICE:  relation "list_default" already exists, skipping
 NOTICE:  relation "donothingbrtrig_test1" already exists, skipping
 NOTICE:  relation "hpart11" already exists, skipping
 NOTICE:  relation "j32" already exists, skipping
+NOTICE:  relation "part_d_15_20" already exists, skipping
 NOTICE:  relation "part_default" already exists, skipping
 NOTICE:  relation "type_short" already exists, skipping
 NOTICE:  relation "t21" already exists, skipping
@@ -9372,6 +9406,7 @@ NOTICE:  relation "b2" already exists, skipping
 NOTICE:  relation "to_number_test" already exists, skipping
 NOTICE:  relation "loct13" already exists, skipping
 NOTICE:  relation "regr_test_array" already exists, skipping
+NOTICE:  relation "inserttest3" already exists, skipping
 NOTICE:  relation "zt1" already exists, skipping
 NOTICE:  relation "nt3" already exists, skipping
 NOTICE:  relation "agg_t6" already exists, skipping
@@ -9380,6 +9415,7 @@ NOTICE:  relation "INT2_TBL" already exists, skipping
 NOTICE:  relation "tenk1" already exists, skipping
 NOTICE:  relation "innertab" already exists, skipping
 NOTICE:  relation "bytea_test_table" already exists, skipping
+NOTICE:  relation "returningwrtest2" already exists, skipping
 NOTICE:  relation "type_long" already exists, skipping
 NOTICE:  relation "b1" already exists, skipping
 NOTICE:  relation "part_cc_dd" already exists, skipping
@@ -9393,9 +9429,12 @@ NOTICE:  relation "type_bool_array" already exists, skipping
 NOTICE:  relation "tenk2" already exists, skipping
 NOTICE:  relation "join_pt1p2" already exists, skipping
 NOTICE:  relation "VARCHAR_TBL" already exists, skipping
+NOTICE:  relation "returningwrtest1" already exists, skipping
 NOTICE:  relation "type_byte" already exists, skipping
 NOTICE:  relation "zt2" already exists, skipping
 NOTICE:  relation "agg_t5" already exists, skipping
+NOTICE:  relation "hpart3" already exists, skipping
+NOTICE:  relation "mlparted3" already exists, skipping
 NOTICE:  relation "agg_t0" already exists, skipping
 NOTICE:  relation "donothingbrtrig_test2" already exists, skipping
 NOTICE:  relation "hpart12" already exists, skipping
@@ -9404,9 +9443,11 @@ NOTICE:  relation "fprt2_p2" already exists, skipping
 NOTICE:  relation "part_def" already exists, skipping
 NOTICE:  relation "tt2" already exists, skipping
 NOTICE:  relation "j11" already exists, skipping
+NOTICE:  relation "part_a_10_a_20" already exists, skipping
 NOTICE:  relation "local_tbl" already exists, skipping
 NOTICE:  relation "j31" already exists, skipping
 NOTICE:  relation "part3" already exists, skipping
+NOTICE:  relation "lparted_nonullpart_a" already exists, skipping
 NOTICE:  relation "t22" already exists, skipping
 NOTICE:  relation "b4" already exists, skipping
 NOTICE:  relation "join_foo" already exists, skipping
@@ -9415,6 +9456,7 @@ NOTICE:  relation "nt1" already exists, skipping
 NOTICE:  relation "multi_arg_agg" already exists, skipping
 NOTICE:  relation "agg_t4" already exists, skipping
 NOTICE:  relation "num_exp_mul" already exists, skipping
+NOTICE:  relation "hpart2" already exists, skipping
 NOTICE:  relation "ft2" already exists, skipping
 NOTICE:  relation "mcrparted3" already exists, skipping
 NOTICE:  relation "child_tbl" already exists, skipping
@@ -9429,6 +9471,7 @@ NOTICE:  relation "tt3" already exists, skipping
 NOTICE:  relation "test_having" already exists, skipping
 NOTICE:  relation "width_bucket_test" already exists, skipping
 NOTICE:  relation "loct" already exists, skipping
+NOTICE:  relation "mlparted12" already exists, skipping
 NOTICE:  relation "type_integer" already exists, skipping
 NOTICE:  relation "INT4_TBL" already exists, skipping
 NOTICE:  relation "bitwise_test" already exists, skipping
@@ -9442,7 +9485,10 @@ NOTICE:  relation "simple" already exists, skipping
 NOTICE:  relation "x" already exists, skipping
 NOTICE:  relation "fprt1_p2" already exists, skipping
 NOTICE:  relation "minmaxtest" already exists, skipping
+NOTICE:  relation "mlparted_def2" already exists, skipping
+NOTICE:  relation "brtrigpartcon1" already exists, skipping
 NOTICE:  relation "J1_TBL" already exists, skipping
+NOTICE:  relation "part_b_1_b_10" already exists, skipping
 NOTICE:  relation "empdata" already exists, skipping
 NOTICE:  relation "FLOAT4_TBL" already exists, skipping
 NOTICE:  relation "mcrparted4_common_lt_0" already exists, skipping
@@ -9450,6 +9496,7 @@ NOTICE:  relation "FLOAT8_TBL" already exists, skipping
 NOTICE:  relation "regr_test" already exists, skipping
 NOTICE:  relation "part_xx_yy_defpart" already exists, skipping
 NOTICE:  relation "department" already exists, skipping
+NOTICE:  relation "part_a_1_a_10" already exists, skipping
 NOTICE:  relation "part_default_p1" already exists, skipping
 NOTICE:  relation "locp2" already exists, skipping
 NOTICE:  relation "num_exp_sub" already exists, skipping
@@ -9466,6 +9513,7 @@ NOTICE:  relation "update_test" already exists, skipping
 NOTICE:  relation "t31" already exists, skipping
 NOTICE:  relation "y" already exists, skipping
 NOTICE:  relation "j22" already exists, skipping
+NOTICE:  relation "part_def1" already exists, skipping
 NOTICE:  relation "t11" already exists, skipping
 NOTICE:  relation "onek2" already exists, skipping
 NOTICE:  relation "num_exp_log10" already exists, skipping
@@ -9522,17 +9570,22 @@ NOTICE:  relation "T1" already exists, skipping
 NOTICE:  relation "num_exp_add" already exists, skipping
 NOTICE:  relation "T4" already exists, skipping
 NOTICE:  relation "gloc1" already exists, skipping
+NOTICE:  relation "part_d_1_15" already exists, skipping
 NOTICE:  relation "part_aa_bb" already exists, skipping
 NOTICE:  relation "loct4" already exists, skipping
 NOTICE:  relation "uniquetbl" already exists, skipping
 NOTICE:  relation "bool_test" already exists, skipping
 NOTICE:  relation "fprt1_p1" already exists, skipping
+NOTICE:  relation "mlparted_def1" already exists, skipping
 NOTICE:  relation "shorty" already exists, skipping
+NOTICE:  relation "list_part1" already exists, skipping
 NOTICE:  relation "mcrparted5" already exists, skipping
 NOTICE:  relation "part1" already exists, skipping
 NOTICE:  relation "part_null" already exists, skipping
 NOTICE:  relation "type_blob" already exists, skipping
 NOTICE:  relation "agg_t2" already exists, skipping
+NOTICE:  relation "hpart4" already exists, skipping
+NOTICE:  relation "mlparted_defd" already exists, skipping
 NOTICE:  relation "hpart10" already exists, skipping
 NOTICE:  relation "ft4" already exists, skipping
 NOTICE:  relation "ft1" already exists, skipping
@@ -9543,6 +9596,7 @@ NOTICE:  relation "num_exp_power_10_ln" already exists, skipping
 NOTICE:  relation "nt2" already exists, skipping
 NOTICE:  relation "d3" already exists, skipping
 NOTICE:  relation "mcrparted6_common_ge_10" already exists, skipping
+NOTICE:  relation "hpart1" already exists, skipping
 NOTICE:  relation "text_tbl" already exists, skipping
 NOTICE:  relation "b3" already exists, skipping
 NOTICE:  relation "extremely_skewed" already exists, skipping
@@ -9553,13 +9607,16 @@ NOTICE:  relation "fract_only" already exists, skipping
 NOTICE:  relation "mcrparted0" already exists, skipping
 NOTICE:  relation "tt5" already exists, skipping
 NOTICE:  relation "parent" already exists, skipping
+NOTICE:  relation "mlparted5_a" already exists, skipping
 NOTICE:  relation "fprt2_p1" already exists, skipping
 NOTICE:  relation "ft5" already exists, skipping
 NOTICE:  relation "onek" already exists, skipping
 NOTICE:  relation "agg_t3" already exists, skipping
+NOTICE:  relation "list_default" already exists, skipping
 NOTICE:  relation "donothingbrtrig_test1" already exists, skipping
 NOTICE:  relation "hpart11" already exists, skipping
 NOTICE:  relation "j32" already exists, skipping
+NOTICE:  relation "part_d_15_20" already exists, skipping
 NOTICE:  relation "part_default" already exists, skipping
 NOTICE:  relation "type_short" already exists, skipping
 NOTICE:  relation "t21" already exists, skipping
@@ -9579,6 +9636,7 @@ NOTICE:  relation "b2" already exists, skipping
 NOTICE:  relation "to_number_test" already exists, skipping
 NOTICE:  relation "loct13" already exists, skipping
 NOTICE:  relation "regr_test_array" already exists, skipping
+NOTICE:  relation "inserttest3" already exists, skipping
 NOTICE:  relation "zt1" already exists, skipping
 NOTICE:  relation "nt3" already exists, skipping
 NOTICE:  relation "agg_t6" already exists, skipping
@@ -9587,6 +9645,7 @@ NOTICE:  relation "INT2_TBL" already exists, skipping
 NOTICE:  relation "tenk1" already exists, skipping
 NOTICE:  relation "innertab" already exists, skipping
 NOTICE:  relation "bytea_test_table" already exists, skipping
+NOTICE:  relation "returningwrtest2" already exists, skipping
 NOTICE:  relation "type_long" already exists, skipping
 NOTICE:  relation "b1" already exists, skipping
 NOTICE:  relation "part_cc_dd" already exists, skipping
@@ -9600,9 +9659,12 @@ NOTICE:  relation "type_bool_array" already exists, skipping
 NOTICE:  relation "tenk2" already exists, skipping
 NOTICE:  relation "join_pt1p2" already exists, skipping
 NOTICE:  relation "VARCHAR_TBL" already exists, skipping
+NOTICE:  relation "returningwrtest1" already exists, skipping
 NOTICE:  relation "type_byte" already exists, skipping
 NOTICE:  relation "zt2" already exists, skipping
 NOTICE:  relation "agg_t5" already exists, skipping
+NOTICE:  relation "hpart3" already exists, skipping
+NOTICE:  relation "mlparted3" already exists, skipping
 NOTICE:  relation "agg_t0" already exists, skipping
 NOTICE:  relation "donothingbrtrig_test2" already exists, skipping
 NOTICE:  relation "hpart12" already exists, skipping
@@ -9611,9 +9673,11 @@ NOTICE:  relation "fprt2_p2" already exists, skipping
 NOTICE:  relation "part_def" already exists, skipping
 NOTICE:  relation "tt2" already exists, skipping
 NOTICE:  relation "j11" already exists, skipping
+NOTICE:  relation "part_a_10_a_20" already exists, skipping
 NOTICE:  relation "local_tbl" already exists, skipping
 NOTICE:  relation "j31" already exists, skipping
 NOTICE:  relation "part3" already exists, skipping
+NOTICE:  relation "lparted_nonullpart_a" already exists, skipping
 NOTICE:  relation "t22" already exists, skipping
 NOTICE:  relation "b4" already exists, skipping
 NOTICE:  relation "join_foo" already exists, skipping
@@ -9622,6 +9686,7 @@ NOTICE:  relation "nt1" already exists, skipping
 NOTICE:  relation "multi_arg_agg" already exists, skipping
 NOTICE:  relation "agg_t4" already exists, skipping
 NOTICE:  relation "num_exp_mul" already exists, skipping
+NOTICE:  relation "hpart2" already exists, skipping
 NOTICE:  relation "ft2" already exists, skipping
 NOTICE:  relation "mcrparted3" already exists, skipping
 NOTICE:  relation "child_tbl" already exists, skipping
@@ -9636,6 +9701,7 @@ NOTICE:  relation "tt3" already exists, skipping
 NOTICE:  relation "test_having" already exists, skipping
 NOTICE:  relation "width_bucket_test" already exists, skipping
 NOTICE:  relation "loct" already exists, skipping
+NOTICE:  relation "mlparted12" already exists, skipping
 NOTICE:  relation "type_integer" already exists, skipping
 NOTICE:  relation "INT4_TBL" already exists, skipping
 NOTICE:  relation "bitwise_test" already exists, skipping
