@@ -157,7 +157,7 @@ ALTER FOREIGN TABLE ft1 DROP COLUMN c0;
 ```
 #### Don't support ON CONFLICT.
 PostgreSQL has upsert (update or insert) feature. When inserting a new row into the table, PostgreSQL will update the row if it already exists, otherwise, PostgreSQL inserts the new row.
-However, griddb_fdw does not support the upsert feature now. For example, it shows an error message if user execute the following query.
+However, griddb_fdw does not support the upsert feature now. For example, it shows an error message if user executes the following query.
 
 ```
 INSERT INTO ft1(c1, c2) VALUES(11, 12) ON CONFLICT DO NOTHING;
