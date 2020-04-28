@@ -623,6 +623,40 @@ SELECT AVG(val) FROM num_data;
 SELECT STDDEV(val) FROM num_data;
 SELECT VARIANCE(val) FROM num_data;
 
+-- Check for appropriate rounding and overflow
+CREATE FOREIGN TABLE fract_only (id serial OPTIONS (rowkey 'true'), val float8) server griddb_svr;
+INSERT INTO fract_only VALUES (1, '0.0'::numeric(4,4));
+INSERT INTO fract_only VALUES (2, '0.1'::numeric(4,4));
+INSERT INTO fract_only VALUES (3, '1.0'::numeric(4,4));	-- should fail
+INSERT INTO fract_only VALUES (4, '-0.9999'::numeric(4,4));
+INSERT INTO fract_only VALUES (5, '0.99994'::numeric(4,4));
+INSERT INTO fract_only VALUES (6, '0.99995'::numeric(4,4));  -- should fail
+INSERT INTO fract_only VALUES (7, '0.00001'::numeric(4,4));
+INSERT INTO fract_only VALUES (8, '0.00017'::numeric(4,4));
+SELECT id, val::numeric(4,4) FROM fract_only;
+
+-- Check inf/nan conversion behavior
+DELETE FROM fract_only;
+INSERT INTO fract_only(val) VALUES ('NaN'::float8);
+SELECT val::numeric FROM fract_only;
+DELETE FROM fract_only;
+INSERT INTO fract_only(val) VALUES ('Infinity'::float8);
+SELECT val::numeric FROM fract_only;
+DELETE FROM fract_only;
+INSERT INTO fract_only(val) VALUES ('-Infinity'::float8);
+SELECT val::numeric FROM fract_only;
+DELETE FROM fract_only;
+INSERT INTO fract_only(val) VALUES ('NaN'::float8);
+SELECT val::numeric FROM fract_only;
+DELETE FROM fract_only;
+INSERT INTO fract_only(val) VALUES ('Infinity'::float4);
+SELECT val::numeric FROM fract_only;
+DELETE FROM fract_only;
+INSERT INTO fract_only(val) VALUES ('-Infinity'::float4);
+SELECT val::numeric FROM fract_only;
+DELETE FROM fract_only;
+DROP FOREIGN TABLE fract_only;
+
 -- Simple check that ceil(), floor(), and round() work correctly
 CREATE FOREIGN TABLE ceil_floor_round (id serial options (rowkey 'true'), a float8) SERVER griddb_svr;
 INSERT INTO ceil_floor_round(a) VALUES ('-5.5');
@@ -632,10 +666,32 @@ INSERT INTO ceil_floor_round(a) VALUES ('9.4999999');
 INSERT INTO ceil_floor_round(a) VALUES ('0.0');
 INSERT INTO ceil_floor_round(a) VALUES ('0.0000001');
 INSERT INTO ceil_floor_round(a) VALUES ('-0.000001');
-SELECT a, ceil(a::numeric), ceiling(a), floor(a), round(a) FROM ceil_floor_round;
+SELECT a::numeric, ceil(a::numeric), ceiling(a::numeric), floor(a::numeric), round(a::numeric) FROM ceil_floor_round;
+
+-- Check rounding, it should round ties away from zero.
+DELETE FROM ceil_floor_round;
+INSERT INTO ceil_floor_round(a) SELECT * FROM generate_series(-5,5);
+SELECT a as pow, 
+	round((-2.5 * 10 ^ a)::numeric, -a::int),
+	round((-1.5 * 10 ^ a)::numeric, -a::int),
+	round((-0.5 * 10 ^ a)::numeric, -a::int),
+	round((0.5 * 10 ^ a)::numeric, -a::int),
+	round((1.5 * 10 ^ a)::numeric, -a::int),
+	round((2.5 * 10 ^ a)::numeric, -a::int)
+FROM ceil_floor_round;
 
 -- Testing for width_bucket(). For convenience, we test both the
 -- numeric and float8 versions of the function in this file.
+
+-- errors
+SELECT width_bucket(5.0, 3.0, 4.0, 0);
+SELECT width_bucket(5.0, 3.0, 4.0, -5);
+SELECT width_bucket(3.5, 3.0, 3.0, 888);
+SELECT width_bucket(5.0::float8, 3.0::float8, 4.0::float8, 0);
+SELECT width_bucket(5.0::float8, 3.0::float8, 4.0::float8, -5);
+SELECT width_bucket(3.5::float8, 3.0::float8, 3.0::float8, 888);
+SELECT width_bucket('NaN', 3.0, 4.0, 888);
+SELECT width_bucket(0::float8, 'NaN', 4.0::float8, 888);
 
 -- normal operation
 CREATE FOREIGN TABLE width_bucket_test (
@@ -669,7 +725,7 @@ COPY width_bucket_test (operand_num) FROM stdin;
 UPDATE width_bucket_test SET operand_f8 = operand_num::float8;
 
 SELECT
-    operand_num,
+    operand_num::numeric,
     width_bucket(operand_num, 0, 10, 5) AS wb_1,
     width_bucket(operand_f8, 0, 10, 5) AS wb_1f,
     width_bucket(operand_num, 10, 0, 5) AS wb_2,
@@ -743,6 +799,42 @@ SELECT '' AS to_char_34, to_char(a::numeric, 'f"\\ool"999') FROM ceil_floor_roun
 SELECT '' AS to_char_35, to_char(a::numeric, 'f"ool\"999') FROM ceil_floor_round;
 SELECT '' AS to_char_36, to_char(a::numeric, 'f"ool\\"999') FROM ceil_floor_round;
 
+-- TO_NUMBER()
+--
+SET lc_numeric = 'C';
+CREATE FOREIGN TABLE to_number_test (
+	id serial OPTIONS (rowkey 'true'),
+	val text,
+	fmt text
+) SERVER griddb_svr;
+
+INSERT INTO to_number_test(val, fmt) VALUES
+	('-34,338,492', '99G999G999'),
+	('-34,338,492.654,878', '99G999G999D999G999'),
+	('<564646.654564>', '999999.999999PR'),
+	('0.00001-', '9.999999S'),
+	('5.01-', 'FM9.999999S'),
+	('5.01-', 'FM9.999999MI'),
+	('5 4 4 4 4 8 . 7 8', '9 9 9 9 9 9 . 9 9'),
+	('.01', 'FM9.99'),
+	('.0', '99999999.99999999'),
+	('0', '99.99'),
+	('.-01', 'S99.99'),
+	('.01-', '99.99S'),
+	(' . 0 1-', ' 9 9 . 9 9 S'),
+	('34,50','999,99'),
+	('123,000','999G'),
+	('123456','999G999'),
+	('$1234.56','L9,999.99'),
+	('$1234.56','L99,999.99'),
+	('$1,234.56','L99,999.99'),
+	('1234.56','L99,999.99'),
+	('1,234.56','L99,999.99'),
+	('42nd', '99th');
+SELECT id AS to_number,  to_number(val, fmt) from to_number_test;
+RESET lc_numeric;
+DROP FOREIGN TABLE to_number_test;
+
 --
 -- Input syntax
 --
@@ -771,6 +863,66 @@ INSERT INTO num_input_test(n1) VALUES (' N aN ');
 SELECT * FROM num_input_test;
 
 --
+-- Test some corner cases for multiplication
+--
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) VALUES (4790999999999999999999999999999999999999999999999999999999999999999999999999999999999999 * 9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999);
+INSERT INTO num_input_test(n1) VALUES (4790999999999999999999999999999999999999999999999999999999999999999999999999999999999999 * 9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999);
+INSERT INTO num_input_test(n1) VALUES (4789999999999999999999999999999999999999999999999999999999999999999999999999999999999999 * 9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999);
+INSERT INTO num_input_test(n1) VALUES (4770999999999999999999999999999999999999999999999999999999999999999999999999999999999999 * 9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999);
+INSERT INTO num_input_test(n1) VALUES (4769999999999999999999999999999999999999999999999999999999999999999999999999999999999999 * 9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999);
+SELECT n1::numeric FROM num_input_test;
+--
+-- Test some corner cases for division
+--
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) VALUES ('999999999999999999999.00');
+SELECT n1::numeric/1000000000000000000000 FROM num_input_test;
+SELECT div(n1::numeric,1000000000000000000000) FROM num_input_test;
+SELECT mod(n1::numeric,1000000000000000000000) FROM num_input_test;
+SELECT div(-n1::numeric,1000000000000000000000) FROM num_input_test;
+SELECT mod(-n1::numeric,1000000000000000000000) FROM num_input_test;
+SELECT div(-n1::numeric,1000000000000000000000)*1000000000000000000000 + 
+	mod(-n1::numeric,1000000000000000000000) FROM num_input_test;
+
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) VALUES ('70.0');
+SELECT mod (n1::numeric,70) FROM num_input_test;
+SELECT div (n1::numeric,70)) FROM num_input_test;
+SELECT n1::numeric / 70 FROM num_input_test;
+
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) VALUES ('12345678901234567890');
+SELECT n1::numeric % 123 FROM num_input_test;
+SELECT n1::numeric / 123 FROM num_input_test;
+SELECT div(n1::numeric, 123) FROM num_input_test;
+SELECT div(n1::numeric, 123) * 123 + (n1::numeric % 123) FROM num_input_test;
+
+--
+-- Test code path for raising to integer powers
+--
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) VALUES (10.0 ^ -2147483648);
+INSERT INTO num_input_test(n1) VALUES (10.0 ^ -2147483647);
+INSERT INTO num_input_test(n1) VALUES (10.0 ^ 2147483647);
+INSERT INTO num_input_test(n1) VALUES (117743296169.0 ^ 1000000000);
+SELECT n1::numeric FROM num_input_test;
+
+-- cases that used to return inaccurate results
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) VALUES (3.789 ^ 21);
+INSERT INTO num_input_test(n1) VALUES (3.789 ^ 35);
+INSERT INTO num_input_test(n1) VALUES (1.2 ^ 345);
+INSERT INTO num_input_test(n1) VALUES (0.12 ^ (-20));
+SELECT n1::numeric FROM num_input_test;
+
+-- cases that used to error out
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) VALUES (0.12 ^ (-25));
+INSERT INTO num_input_test(n1) VALUES (0.5678 ^ (-85));
+SELECT n1::numeric FROM num_input_test;
+
+--
 -- Tests for raising to non-integer powers
 --
 
@@ -780,7 +932,7 @@ INSERT INTO num_input_test(n1) VALUES (0.0 ^ 0.0);
 INSERT INTO num_input_test(n1) VALUES ((-12.34) ^ 0.0);
 INSERT INTO num_input_test(n1) VALUES (12.34 ^ 0.0);
 INSERT INTO num_input_test(n1) VALUES (0.0 ^ 12.34);
-SELECT n1 FROM num_input_test;
+SELECT n1::numeric(17,16) FROM num_input_test;
 
 -- NaNs
 DELETE FROM num_input_test;
@@ -789,19 +941,218 @@ INSERT INTO num_input_test(n1) VALUES ('NaN'::numeric ^ 0);
 INSERT INTO num_input_test(n1) VALUES ('NaN'::numeric ^ 1);
 INSERT INTO num_input_test(n1) VALUES (0 ^ 'NaN'::numeric);
 INSERT INTO num_input_test(n1) VALUES (1 ^ 'NaN'::numeric);
-SELECT n1 FROM num_input_test;
+SELECT n1::numeric FROM num_input_test;
 
 -- invalid inputs
 DELETE FROM num_input_test;
 INSERT INTO num_input_test(n1) VALUES (0.0 ^ (-12.34));
 INSERT INTO num_input_test(n1) VALUES ((-12.34) ^ 1.2);
+SELECT n1::numeric FROM num_input_test;
 
 -- cases that used to generate inaccurate results
+DELETE FROM num_input_test;
 INSERT INTO num_input_test(n1) VALUES (32.1 ^ 9.8);
 INSERT INTO num_input_test(n1) VALUES (32.1 ^ (-9.8));
 INSERT INTO num_input_test(n1) VALUES (12.3 ^ 45.6);
 INSERT INTO num_input_test(n1) VALUES (12.3 ^ (-45.6));
-SELECT n1 FROM num_input_test;
+SELECT n1::numeric FROM num_input_test;
+
+-- big test
+-- out of range
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) VALUES (1.234 & 5678);
+SELECT n1::numeric FROM num_input_test;
+
+--
+-- Tests for EXP()
+--
+
+-- special cases
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) VALUES ('0.0');
+SELECT exp(n1::numeric) from num_input_test;
+
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) VALUES ('1.0');
+SELECT exp(n1::numeric) from num_input_test;
+
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) VALUES ('1.0');
+SELECT exp(n1::numeric(71, 70)) from num_input_test;
+
+-- cases that used to generate inaccurate results
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) VALUES ('32.999');
+SELECT exp(n1::numeric) from num_input_test;
+SELECT exp(-n1::numeric) from num_input_test;
+
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) VALUES ('123.456');
+SELECT exp(n1::numeric) from num_input_test;
+SELECT exp(-n1::numeric) from num_input_test;
+
+-- big test
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) VALUES ('1234.5678');
+SELECT exp(n1::numeric) from num_input_test;
+
+--
+-- Tests for generate_series
+--
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) select * from generate_series(0.0, 4.0);
+SELECT n1::numeric(2,1) FROM num_input_test;
+
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) select * from generate_series(0.1, 4.0, 1.3);
+SELECT n1::numeric(2,1) FROM num_input_test;
+
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) select * from generate_series(4.0, -1.5, -2.2);
+SELECT n1::numeric(2,1) FROM num_input_test;
+
+-- skip, cannot insert out of range value
+-- Trigger errors
+select * from generate_series(-100::numeric, 100::numeric, 0::numeric);
+select * from generate_series(-100::numeric, 100::numeric, 'nan'::numeric);
+select * from generate_series('nan'::numeric, 100::numeric, 10::numeric);
+select * from generate_series(0::numeric, 'nan'::numeric, 10::numeric);
+-- Checks maximum, output is truncated
+select (i / (10::numeric ^ 131071))::numeric(1,0)
+	from generate_series(6 * (10::numeric ^ 131071),
+			     9 * (10::numeric ^ 131071),
+			     10::numeric ^ 131071) as a(i);
+-- Check usage with variables
+select * from generate_series(1::numeric, 3::numeric) i, generate_series(i,3) j;
+select * from generate_series(1::numeric, 3::numeric) i, generate_series(1,i) j;
+select * from generate_series(1::numeric, 3::numeric) i, generate_series(1,5,i) j;
+
+--
+-- Tests for LN()
+--
+
+-- Invalid inputs
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) values('-12.34');
+SELECT ln(n1::numeric) FROM num_input_test;
+
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) values('0.0');
+SELECT ln(n1::numeric) FROM num_input_test;
+
+-- Some random tests
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) values(1.2345678e-28);
+SELECT ln(n1::numeric) FROM num_input_test;
+
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) values(0.0456789);
+SELECT ln(n1::numeric) FROM num_input_test;
+
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) values(0.349873948359354029493948309745709580730482050975);
+SELECT ln(n1::numeric) FROM num_input_test;
+
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) values(0.99949452);
+SELECT ln(n1::numeric) FROM num_input_test;
+
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) values(1.00049687395);
+SELECT ln(n1::numeric) FROM num_input_test;
+
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) values(1234.567890123456789);
+SELECT ln(n1::numeric) FROM num_input_test;
+
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) values(5.80397490724e5);
+SELECT ln(n1::numeric) FROM num_input_test;
+
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) values(9.342536355e34);
+SELECT ln(n1::numeric) FROM num_input_test;
+
+-- 
+-- Tests for LOG() (base 10)
+--
+
+-- invalid inputs
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) values('-12.34');
+SELECT ln(n1::numeric) FROM num_input_test;
+
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) values('0.0');
+SELECT ln(n1::numeric) FROM num_input_test;
+
+-- some random tests
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) values(1.234567e-89);
+SELECT log(n1::numeric) FROM num_input_test;
+
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) values(3.4634998359873254962349856073435545);
+SELECT log(n1::numeric) FROM num_input_test;
+
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) values(9.999999999999999999);
+SELECT log(n1::numeric) FROM num_input_test;
+
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) values(10.00000000000000000);
+SELECT log(n1::numeric) FROM num_input_test;
+
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) values(10.00000000000000001);
+SELECT log(n1::numeric) FROM num_input_test;
+
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) values(590489.45235237);
+SELECT log(n1::numeric) FROM num_input_test;
+
+-- similar as above test. Basically, we can get float8 value and 
+-- convert to numeric
+-- Tests for LOG() (arbitrary base)
+--
+
+-- invalid inputs
+select log(-12.34, 56.78);
+select log(-12.34, -56.78);
+select log(12.34, -56.78);
+select log(0.0, 12.34);
+select log(12.34, 0.0);
+select log(1.0, 12.34);
+
+-- some random tests
+select log(1.23e-89, 6.4689e45);
+select log(0.99923, 4.58934e34);
+select log(1.000016, 8.452010e18);
+select log(3.1954752e47, 9.4792021e-73);
+
+--
+-- Tests for scale()
+--
+
+select scale(numeric 'NaN');
+select scale(NULL::numeric);
+select scale(1.12);
+select scale(0);
+select scale(0.00);
+select scale(1.12345);
+select scale(110123.12475871856128);
+select scale(-1123.12471856128);
+select scale(-13.000000000000000);
+
+--
+-- Tests for SUM()
+--
+
+-- cases that need carry propagation
+DELETE FROM num_input_test;
+INSERT INTO num_input_test(n1) values(generate_series(1, 100000));
+SELECT SUM(999::numeric) FROM num_input_test;
+SELECT SUM((-999)::numeric) FROM num_input_test;
 
 DROP FOREIGN TABLE num_data;
 DROP FOREIGN TABLE num_exp_add;

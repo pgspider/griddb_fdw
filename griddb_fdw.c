@@ -28,7 +28,6 @@
 #include "optimizer/paths.h"
 #include "optimizer/pathnode.h"
 #include "optimizer/planmain.h"
-#include "optimizer/var.h"
 #include "parser/parsetree.h"
 #include "storage/ipc.h"
 #include "utils/builtins.h"
@@ -442,6 +441,8 @@ griddbGetForeignRelSize(PlannerInfo *root,
 	RangeTblEntry *rte = planner_rt_fetch(baserel->relid, root);
 	griddb_opt *options = NULL;
 
+	elog(DEBUG1, "griddb_fdw: %s", __func__);
+
 	/*
 	 * We use PgFdwRelationInfo to pass various information to subsequent
 	 * functions.
@@ -578,6 +579,8 @@ griddbGetForeignPaths(PlannerInfo *root,
 	(GriddbFdwRelationInfo *) baserel->fdw_private;
 	ForeignPath *path;
 
+	elog(DEBUG1, "griddb_fdw: %s", __func__);
+
 	/*
 	 * Create simplest ForeignScan path node and add it to baserel.  This path
 	 * corresponds to SeqScan path of regular tables (though depending on what
@@ -591,7 +594,11 @@ griddbGetForeignPaths(PlannerInfo *root,
 								   fpinfo->startup_cost,
 								   fpinfo->total_cost,
 								   NIL, /* no pathkeys */
+#if (PG_VERSION_NUM >= 120000)
+								   baserel->lateral_relids,
+#else
 								   NULL,	/* no outer rel either */
+#endif
 								   NULL,	/* no extra plan */
 								   NIL);	/* no fdw_private list */
 	add_path(baserel, (Path *) path);
@@ -683,6 +690,9 @@ griddbGetForeignPlan(PlannerInfo *root,
 	ListCell   *lc;
 	int			for_update = 0;
 	int guc_level = 0;
+
+	elog(DEBUG1, "griddb_fdw: %s", __func__);
+
 	/*
 	 * Separate the scan_clauses into those that can be executed remotely and
 	 * those that can't.  baserestrictinfo clauses that were previously
@@ -794,6 +804,8 @@ griddbBeginForeignScan(ForeignScanState *node, int eflags)
 	int			rtindex;
 	int			for_update;
 
+	elog(DEBUG1, "griddb_fdw: %s", __func__);
+
 	/*
 	 * Do nothing in EXPLAIN (no ANALYZE) case.  node->fdw_state stays NULL.
 	 */
@@ -878,6 +890,8 @@ griddbIterateForeignScan(ForeignScanState *node)
 	TupleTableSlot *tupleSlot = node->ss.ss_ScanTupleSlot;
 	TupleDesc	tupleDescriptor = tupleSlot->tts_tupleDescriptor;
 
+	elog(DEBUG1, "griddb_fdw: %s", __func__);
+
 	memset(tupleSlot->tts_values, 0, sizeof(Datum) * tupleDescriptor->natts);
 	memset(tupleSlot->tts_isnull, true, sizeof(bool) * tupleDescriptor->natts);
 	ExecClearTuple(tupleSlot);
@@ -952,6 +966,8 @@ griddbReScanForeignScan(ForeignScanState *node)
 {
 	GridDBFdwScanState *fsstate = (GridDBFdwScanState *) node->fdw_state;
 
+	elog(DEBUG1, "griddb_fdw: %s", __func__);
+
 	/* If we haven't fetched the result set yet, nothing to do. */
 	if (fsstate->row_set == NULL)
 		return;
@@ -973,6 +989,8 @@ static void
 griddbEndForeignScan(ForeignScanState *node)
 {
 	GridDBFdwScanState *fsstate = (GridDBFdwScanState *) node->fdw_state;
+
+	elog(DEBUG1, "griddb_fdw: %s", __func__);
 
 	/* if fsstate is NULL, we are in EXPLAIN; nothing to do */
 	if (fsstate == NULL)
@@ -1008,12 +1026,14 @@ griddbAddForeignUpdateTargets(Query *parsetree,
 	Var		   *var = NULL;
 	const char *attrname = NULL;
 	TargetEntry *tle = NULL;
+	Form_pg_attribute attr = NULL;
+
+	elog(DEBUG1, "griddb_fdw: %s", __func__);
 
 	/*
 	 * What we need is the rowkey which is the first column
 	 */
-	Form_pg_attribute attr =
-	TupleDescAttr(RelationGetDescr(target_relation), ROWKEY_ATTNO - 1);
+	attr =	TupleDescAttr(RelationGetDescr(target_relation), ROWKEY_ATTNO - 1);
 
 	/* Make a Var representing the desired value */
 	var = makeVar(parsetree->resultRelation,
@@ -1049,6 +1069,8 @@ griddbPlanForeignModify(PlannerInfo *root,
 	RangeTblEntry *rte = planner_rt_fetch(resultRelation, root);
 	Relation	rel;
 	List	   *targetAttrs = NIL;
+
+	elog(DEBUG1, "griddb_fdw: %s", __func__);
 
 	/*
 	 * Core code already has some lock on each rel being planned, so we can
@@ -1086,9 +1108,13 @@ griddbPlanForeignModify(PlannerInfo *root,
 	else if (operation == CMD_UPDATE)
 	{
 		int			col;
-
+		Bitmapset  *allUpdatedCols;
+		allUpdatedCols = rte->updatedCols;
+#if (PG_VERSION_NUM >= 120000)
+		allUpdatedCols = bms_union(rte->updatedCols, rte->extraUpdatedCols);
+#endif
 		col = -1;
-		while ((col = bms_next_member(rte->updatedCols, col)) >= 0)
+		while ((col = bms_next_member(allUpdatedCols, col)) >= 0)
 		{
 			/* bit numbers are offset by FirstLowInvalidHeapAttributeNumber */
 			AttrNumber	attno = col + FirstLowInvalidHeapAttributeNumber;
@@ -1207,6 +1233,8 @@ griddbBeginForeignModify(ModifyTableState *mtstate,
 	List	   *target_attrs;
 	RangeTblEntry *rte;
 
+	elog(DEBUG1, "griddb_fdw: %s", __func__);
+
 	/*
 	 * Do nothing in EXPLAIN (no ANALYZE) case.  resultRelInfo->ri_FdwState
 	 * stays NULL.
@@ -1251,6 +1279,8 @@ griddbExecForeignInsert(EState *estate,
 	GSContainerInfo cont_info = GS_CONTAINER_INFO_INITIALIZER;
 	GSRow	   *row;
 	GridDBFdwFieldInfo field_info = {0};
+
+	elog(DEBUG1, "griddb_fdw: %s", __func__);
 
 	ret = gsCreateRowByContainer(fmstate->cont, &row);
 	if (!GS_SUCCEEDED(ret))
@@ -1301,6 +1331,8 @@ griddbExecForeignUpdate(EState *estate,
 	bool		isnull;
 	bool		found;
 	GridDBFdwRowKeyHashEntry *rowket_hash_entry;
+
+	elog(DEBUG1, "griddb_fdw: %s", __func__);
 
 	/* Check if it is already modified or not. */
 	rowkey = ExecGetJunkAttribute(planSlot, fmstate->junk_att_no, &isnull);
@@ -1363,6 +1395,8 @@ griddbExecForeignDelete(EState *estate,
 	bool		found;
 	GridDBFdwRowKeyHashEntry *rowket_hash_entry;
 
+	elog(DEBUG1, "griddb_fdw: %s", __func__);
+
 	/* Check if it is already modified or not. */
 	rowkey = ExecGetJunkAttribute(planSlot, fmstate->junk_att_no, &isnull);
 	Assert(isnull == false);
@@ -1411,6 +1445,8 @@ griddbEndForeignModify(EState *estate,
 	GridDBFdwModifyState *fmstate =
 	(GridDBFdwModifyState *) resultRelInfo->ri_FdwState;
 
+	elog(DEBUG1, "griddb_fdw: %s", __func__);
+
 	/* If fmstate is NULL, we are in EXPLAIN; nothing to do */
 	if (fmstate == NULL)
 		return;
@@ -1455,6 +1491,27 @@ griddbBeginForeignInsert(ModifyTableState *mtstate,
 	int			attnum;
 	StringInfoData sql;
 	List	   *targetAttrs = NIL;
+
+	elog(DEBUG1, "griddb_fdw: %s", __func__);
+
+#if (PG_VERSION_NUM >= 110007)
+	/*
+	 * If the foreign table we are about to insert routed rows into is also an
+	 * UPDATE subplan result rel that will be updated later, proceeding with
+	 * the INSERT will result in the later UPDATE incorrectly modifying those
+	 * routed rows, so prevent the INSERT --- it would be nice if we could
+	 * handle this case; but for now, throw an error for safety.
+	 */
+	if (plan && plan->operation == CMD_UPDATE &&
+		(resultRelInfo->ri_usesFdwDirectModify ||
+		 resultRelInfo->ri_FdwState) &&
+		resultRelInfo > mtstate->resultRelInfo + mtstate->mt_whichplan){
+		ereport(ERROR,
+				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+				 errmsg("cannot route tuples into foreign table to be updated \"%s\"",
+						RelationGetRelationName(rel))));
+	}
+#endif
 
 	initStringInfo(&sql);
 
@@ -1532,7 +1589,7 @@ griddbEndForeignInsert(EState *estate,
 {
 	GridDBFdwModifyState *fmstate = (GridDBFdwModifyState *) resultRelInfo->ri_FdwState;
 
-	elog(DEBUG1, "griddb_fdw: %s for %s", __FUNCTION__, fmstate->cont_name);
+	elog(DEBUG1, "griddb_fdw: %s", __func__);
 
 	Assert(fmstate != NULL);
 
@@ -1554,6 +1611,8 @@ griddbIsForeignRelUpdatable(Relation rel)
 	ForeignTable *table;
 	ForeignServer *server;
 	ListCell   *lc;
+
+	elog(DEBUG1, "griddb_fdw: %s", __func__);
 
 	/*
 	 * By default, all griddb_fdw foreign tables are assumed updatable. This
@@ -1613,6 +1672,8 @@ griddbExplainForeignScan(ForeignScanState *node, ExplainState *es)
 {
 	List	   *fdw_private;
 	char	   *sql;
+
+	elog(DEBUG1, "griddb_fdw: %s", __FUNCTION__);
 
 	fdw_private = ((ForeignScan *) node->ss.ps.plan)->fdw_private;
 
@@ -1682,6 +1743,8 @@ griddbImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 	int32_t		partition_count;
 	int32_t		part_idx;
 	ListCell   *lc;
+
+	elog(DEBUG1, "griddb_fdw: %s", __func__);
 
 	/* Parse statement options */
 	foreach(lc, stmt->options)

@@ -57,9 +57,18 @@ CREATE FOREIGN TABLE tenk1 (
 
 CREATE FOREIGN TABLE multi_arg_agg (a int OPTIONS (rowkey 'true'), b int, c text) SERVER griddb_svr;
 
-CREATE FOREIGN TABLE INT4_TBL(f1 int4 OPTIONS (rowkey 'true')) SERVER griddb_svr; 
+CREATE FOREIGN TABLE INT4_TBL(id serial OPTIONS (rowkey 'true'), f1 int4) SERVER griddb_svr; 
 
 CREATE FOREIGN TABLE INT8_TBL(id serial OPTIONS (rowkey 'true'), q1 int8 , q2 int8) SERVER griddb_svr; 
+
+CREATE FOREIGN TABLE VARCHAR_TBL(f1 text OPTIONS (rowkey 'true')) SERVER griddb_svr;
+
+CREATE FOREIGN TABLE FLOAT8_TBL(id serial OPTIONS (rowkey 'true'), f1 float8) SERVER griddb_svr;
+
+CREATE FOREIGN TABLE FLOAT8_TMP(id serial OPTIONS (rowkey 'true'), f1 float8, f2 float8) SERVER griddb_svr;
+
+-- avoid bit-exact output here because operations may not be bit-exact.
+SET extra_float_digits = 0;
 
 SELECT avg(four) AS avg_1 FROM onek;
 
@@ -93,6 +102,12 @@ SELECT stddev_samp(b::numeric) FROM aggtest;
 SELECT var_pop(b::numeric) FROM aggtest;
 SELECT var_samp(b::numeric) FROM aggtest;
 
+-- skip this test, the above tests already covered
+-- population variance is defined for a single tuple, sample variance
+-- is not
+--SELECT var_pop(1.0), var_samp(2.0);
+--SELECT stddev_pop(3.0::numeric), stddev_samp(4.0::numeric);
+
 -- verify correct results for null and NaN inputs
 begin;
 delete from INT4_TBL;
@@ -109,6 +124,45 @@ select sum('NaN'::numeric) from INT4_TBL;
 select avg('NaN'::numeric) from INT4_TBL;
 rollback;
 
+-- verify correct results for infinite inputs
+BEGIN;
+DELETE FROM FLOAT8_TBL;
+INSERT INTO FLOAT8_TBL(f1) VALUES ('1'), ('infinity');
+SELECT avg(f1), var_pop(f1) FROM FLOAT8_TBL;
+ROLLBACK;
+
+BEGIN;
+DELETE FROM FLOAT8_TBL;
+INSERT INTO FLOAT8_TBL(f1) VALUES ('infinity'), ('1');
+SELECT avg(f1), var_pop(f1) FROM FLOAT8_TBL;
+ROLLBACK;
+
+BEGIN;
+DELETE FROM FLOAT8_TBL;
+INSERT INTO FLOAT8_TBL(f1) VALUES ('infinity'), ('infinity');
+SELECT avg(f1), var_pop(f1) FROM FLOAT8_TBL;
+ROLLBACK;
+
+BEGIN;
+DELETE FROM FLOAT8_TBL;
+INSERT INTO FLOAT8_TBL(f1) VALUES ('-infinity'), ('infinity');
+SELECT avg(f1), var_pop(f1) FROM FLOAT8_TBL;
+ROLLBACK;
+
+-- test accuracy with a large input offset
+BEGIN;
+DELETE FROM FLOAT8_TBL;
+INSERT INTO FLOAT8_TBL(f1) VALUES ('100000003'), ('100000004'), 
+				('100000006'), ('100000007');
+SELECT avg(f1), var_pop(f1) FROM FLOAT8_TBL;
+ROLLBACK;
+
+BEGIN;
+DELETE FROM FLOAT8_TBL;
+INSERT INTO FLOAT8_TBL(f1) VALUES ('7000000000005'), ('7000000000007');
+SELECT avg(f1), var_pop(f1) FROM FLOAT8_TBL;
+ROLLBACK;
+
 -- SQL2003 binary aggregates
 SELECT regr_count(b, a) FROM aggtest;
 SELECT regr_sxx(b, a) FROM aggtest;
@@ -120,6 +174,67 @@ SELECT regr_slope(b, a), regr_intercept(b, a) FROM aggtest;
 SELECT covar_pop(b, a), covar_samp(b, a) FROM aggtest;
 SELECT corr(b, a) FROM aggtest;
 
+-- test accum and combine functions directly
+CREATE FOREIGN TABLE regr_test (id serial OPTIONS (rowkey 'true'), x int4, y int4) SERVER griddb_svr;
+INSERT INTO regr_test(x, y) VALUES (10,150),(20,250),(30,350),(80,540),(100,200);
+SELECT count(*), sum(x), regr_sxx(y,x), sum(y),regr_syy(y,x), regr_sxy(y,x)
+FROM regr_test WHERE x IN (10,20,30,80);
+SELECT count(*), sum(x), regr_sxx(y,x), sum(y),regr_syy(y,x), regr_sxy(y,x)
+FROM regr_test;
+
+CREATE FOREIGN TABLE regr_test_array (id serial OPTIONS (rowkey 'true'), x float8[], y float8[]) SERVER griddb_svr;
+BEGIN;
+INSERT INTO regr_test_array(x) VALUES ('{4,140,2900}'::float8[]);
+SELECT float8_accum(x, 100) FROM regr_test_array;
+ROLLBACK;
+
+BEGIN;
+INSERT INTO regr_test_array(x) VALUES ('{4,140,2900,1290,83075,15050}'::float8[]);
+SELECT float8_regr_accum(x, 200, 100) FROM regr_test_array;
+ROLLBACK;
+
+SELECT count(*), sum(x), regr_sxx(y,x), sum(y),regr_syy(y,x), regr_sxy(y,x)
+FROM regr_test WHERE x IN (10,20,30);
+SELECT count(*), sum(x), regr_sxx(y,x), sum(y),regr_syy(y,x), regr_sxy(y,x)
+FROM regr_test WHERE x IN (80,100);
+
+BEGIN;
+INSERT INTO regr_test_array(x,y) VALUES ('{3,60,200}'::float8[], '{0,0,0}'::float8[]);
+SELECT float8_combine(x, y) FROM regr_test_array;
+ROLLBACK;
+
+BEGIN;
+INSERT INTO regr_test_array(x,y) VALUES ('{0,0,0}'::float8[], '{2,180,200}'::float8[]);
+SELECT float8_combine(x, y) FROM regr_test_array;
+ROLLBACK;
+
+BEGIN;
+INSERT INTO regr_test_array(x,y) VALUES ('{3,60,200}'::float8[], '{2,180,200}'::float8[]);
+SELECT float8_combine(x, y) FROM regr_test_array;
+ROLLBACK;
+
+BEGIN;
+INSERT INTO regr_test_array(x,y) VALUES ('{3,60,200,750,20000,2000}'::float8[],
+                           '{0,0,0,0,0,0}'::float8[]);
+SELECT float8_regr_combine(x, y) FROM regr_test_array;
+ROLLBACK;
+
+BEGIN;
+INSERT INTO regr_test_array(x,y) VALUES ('{0,0,0,0,0,0}'::float8[],
+                           '{2,180,200,740,57800,-3400}'::float8[]);
+SELECT float8_regr_combine(x, y) FROM regr_test_array;
+ROLLBACK;
+
+BEGIN;
+INSERT INTO regr_test_array(x,y) VALUES ('{3,60,200,750,20000,2000}'::float8[],
+                           '{2,180,200,740,57800,-3400}'::float8[]);
+SELECT float8_regr_combine(x, y) FROM regr_test_array;
+ROLLBACK;
+
+DROP FOREIGN TABLE regr_test;
+DROP FOREIGN TABLE regr_test_array;
+
+-- test count, distinct
 SELECT count(four) AS cnt_1000 FROM onek;
 SELECT count(DISTINCT four) AS cnt_4 FROM onek;
 
@@ -190,12 +305,39 @@ select
   (select max((select i.unique2 from tenk1 i where i.unique1 = o.unique1)))
 from tenk1 o;
 
+-- Test handling of Params within aggregate arguments in hashed aggregation.
+-- Per bug report from Jeevan Chalke.
+BEGIN;
+DELETE FROM INT4_TBL;
+INSERT INTO INT4_TBL(f1) values (generate_series(1, 3));
+explain (verbose, costs off)
+select s1.f1, ss.f1, sm
+from INT4_TBL s1,
+     lateral (select s2.f1, sum(s1.f1 + s2.f1) sm
+              from INT4_TBL s2 group by s2.f1) ss
+order by 1, 2;
+select s1.f1, ss.f1, sm
+from INT4_TBL s1,
+     lateral (select s2.f1, sum(s1.f1 + s2.f1) sm
+              from INT4_TBL s2 group by s2.f1) ss
+order by 1, 2;
+
+explain (verbose, costs off)
+select array(select sum(x.f1+y.f1) s
+            from INT4_TBL y group by y.f1 order by s)
+  from INT4_TBL x;
+select array(select sum(x.f1+y.f1) s
+            from INT4_TBL y group by y.f1 order by s)
+  from INT4_TBL x;
+ROLLBACK;
+
 --
 -- test for bitwise integer aggregates
 --
 CREATE FOREIGN TABLE bitwise_test(
-  i4 INT4,
+  id serial OPTIONS (rowkey 'true'),
   i2 INT2,
+  i4 INT4,
   i8 INT8,
   i INTEGER,
   x INT2,
@@ -208,11 +350,10 @@ SELECT
   BIT_OR(i4)  AS "?"
 FROM bitwise_test;
 
-COPY bitwise_test FROM STDIN NULL 'null';
-1	1	1	1	1	0101
-3	3	3	null	2	0100
-7	7	7	3	4	1100
-\.
+INSERT INTO bitwise_test(i2, i4, i8, i, x, y) VALUES
+  (1, 1, 1, 1, 1, B'0101'),
+  (3, 3, 3, null, 2, B'0100'),
+  (7, 7, 7, 3, 4, B'1100');
 
 SELECT
   BIT_AND(i2) AS "1",
@@ -233,9 +374,59 @@ FROM bitwise_test;
 --
 -- test boolean aggregates
 --
+-- first test all possible transition and final states
+
+CREATE FOREIGN TABLE bool_test_a(
+  id serial OPTIONS (rowkey 'true'),
+  a1 BOOL,
+  a2 BOOL,
+  a3 BOOL,
+  a4 BOOL,
+  a5 BOOL,
+  a6 BOOL,
+  a7 BOOL,
+  a8 BOOL,
+  a9 BOOL
+) SERVER griddb_svr;
+
+CREATE FOREIGN TABLE bool_test_b(
+  id serial OPTIONS (rowkey 'true'),
+  b1 BOOL,
+  b2 BOOL,
+  b3 BOOL,
+  b4 BOOL,
+  b5 BOOL,
+  b6 BOOL,
+  b7 BOOL,
+  b8 BOOL,
+  b9 BOOL
+) SERVER griddb_svr;
+
+INSERT INTO bool_test_a(a1, a2, a3, a4, a5, a6, a7, a8, a9) VALUES 
+(NULL, TRUE, FALSE, NULL, NULL, TRUE, TRUE, FALSE, FALSE);
+INSERT INTO bool_test_b(b1, b2, b3, b4, b5, b6, b7, b8, b9) VALUES 
+(NULL, NULL, NULL, TRUE, FALSE, TRUE, FALSE, TRUE, FALSE);
+
+SELECT
+  -- boolean or transitions
+  -- null because strict
+  boolor_statefunc(a.a1, b.b1)  IS NULL AS "t",
+  boolor_statefunc(a.a2, b.b2)  IS NULL AS "t",
+  boolor_statefunc(a.a3, b.b3) IS NULL AS "t",
+  boolor_statefunc(a.a4, b.b4)  IS NULL AS "t",
+  boolor_statefunc(a.a5, b.b5) IS NULL AS "t",
+  -- actual computations
+  boolor_statefunc(a.a6, b.b6) AS "t",
+  boolor_statefunc(a.a7, b.b7) AS "t",
+  boolor_statefunc(a.a8, b.b8) AS "t",
+  NOT boolor_statefunc(a.a9, b.b9) AS "t" FROM bool_test_a a, bool_test_b b;
+
+--
+-- test boolean aggregates
+--
 
 CREATE FOREIGN TABLE bool_test(
-  id serial,
+  id serial OPTIONS (rowkey 'true'),
   b1 BOOL,
   b2 BOOL,
   b3 BOOL,
@@ -248,11 +439,10 @@ SELECT
   BOOL_OR(b3)    AS "n"
 FROM bool_test;
 
-COPY bool_test(b1, b2, b3, b4) FROM STDIN NULL 'null';
-TRUE	null	FALSE	null
-FALSE	TRUE	null	null
-null	TRUE	FALSE	null
-\.
+INSERT INTO bool_test(b1, b2, b3, b4) VALUES
+  (TRUE, null, FALSE, null),
+  (FALSE, TRUE, null, null),
+  (null, TRUE, FALSE, null);
 
 SELECT
   BOOL_AND(b1)     AS "f",
@@ -383,6 +573,9 @@ select (select max(min(unique1)) from int8_tbl) from tenk1;
 
 create foreign table agg_t1 (a int OPTIONS (rowkey 'true'), b int, c int, d int) server griddb_svr;
 create foreign table agg_t2 (x int OPTIONS (rowkey 'true'), y int, z int) server griddb_svr;
+-- GridDB does not support deferable for primary key
+-- Skip this test
+-- create foreign table t3 (a int, b int, c int, primary key(a, b) deferrable);
 
 -- Non-primary-key columns can be removed from GROUP BY
 explain (costs off) select * from agg_t1 group by a,b,c,d;
@@ -400,10 +593,36 @@ explain (costs off) select agg_t1.*,agg_t2.x,agg_t2.z
 from agg_t1 inner join agg_t2 on agg_t1.a = agg_t2.x and agg_t1.b = agg_t2.y
 group by agg_t1.a,agg_t1.b,agg_t1.c,agg_t1.d,agg_t2.x,agg_t2.z;
 
+-- skip this test
+-- Cannot optimize when PK is deferrable
+--explain (costs off) select * from t3 group by a,b,c;
+
+--create temp table t1c () inherits (t1);
+
+-- Ensure we don't remove any columns when t1 has a child table
+explain (costs off) select * from agg_t1 group by a,b,c,d;
+
+-- Okay to remove columns if we're only querying the parent.
+explain (costs off) select * from only agg_t1 group by a,b,c,d;
+
+--create temp table p_t1 (
+--  a int,
+--  b int,
+--  c int,
+-- d int,
+--  primary key(a,b)
+--) partition by list(a);
+--create temp table p_t1_1 partition of p_t1 for values in(1);
+--create temp table p_t1_2 partition of p_t1 for values in(2);
+
+-- Ensure we can remove non-PK columns for partitioned tables.
+--explain (costs off) select * from p_t1 group by a,b,c,d;
+
+--drop table p_t1;
+
 --
 -- Test combinations of DISTINCT and/or ORDER BY
 --
-
 begin;
 delete from INT8_TBL;
 insert into INT8_TBL(q1,q2) values (1,4),(2,3),(3,1),(4,2);
@@ -542,12 +761,11 @@ select string_agg(c,',') from multi_arg_agg;
 rollback;
 
 -- check some implicit casting cases, as per bug #5564
-CREATE FOREIGN TABLE VARCHAR_TBL(f1 text) SERVER griddb_svr;
 
 select string_agg(distinct f1, ',' order by f1) from varchar_tbl;  -- ok
-select string_agg(distinct f1::text, ',' order by f1) from varchar_tbl;  -- ok
-select string_agg(distinct f1, ',' order by f1::text) from varchar_tbl;  -- ok
-select string_agg(distinct f1::text, ',' order by f1::text) from varchar_tbl;  -- ok
+select string_agg(distinct f1::varchar, ',' order by f1) from varchar_tbl;  -- not ok
+select string_agg(distinct f1, ',' order by f1::varchar) from varchar_tbl;  -- not ok
+select string_agg(distinct f1::varchar, ',' order by f1::varchar) from varchar_tbl;  -- ok
 
 -- string_agg bytea tests
 create foreign table bytea_test_table(id serial, v bytea) server griddb_svr;
@@ -579,6 +797,23 @@ select ten, sum(distinct four) filter (where four > 10) from onek a
 group by ten
 having exists (select 1 from onek b where sum(distinct a.four) = b.four);
 
+create foreign table agg_t0(foo text, bar text) server griddb_svr;
+insert into agg_t0 values ('a', 'b');
+select max(foo COLLATE "C") filter (where (bar collate "POSIX") > '0')
+from agg_t0;
+
+-- outer reference in FILTER (PostgreSQL extension)
+create foreign table agg_t3 (inner_c int) server griddb_svr;
+create foreign table agg_t4 (outer_c int) server griddb_svr;
+
+insert into agg_t3 values (1);
+insert into agg_t4 values (2), (3);
+
+select (select count(*) from agg_t3) from agg_t4; -- inner query is aggregation query
+select (select count(*) filter (where outer_c <> 0) from agg_t3)
+from agg_t4; -- outer query is aggregation query
+select (select count(inner_c) filter (where outer_c <> 0) from agg_t3)
+from agg_t4; -- inner query is aggregation query
 select
   (select max((select i.unique2 from tenk1 i where i.unique1 = o.unique1))
      filter (where o.unique1 < 10))
@@ -589,7 +824,6 @@ select sum(unique1) FILTER (WHERE
   unique1 IN (SELECT unique1 FROM onek where unique1 < 100)) FROM tenk1;
 
 -- exercise lots of aggregate parts with FILTER
-
 begin;
 delete from multi_arg_agg;
 insert into multi_arg_agg values (1,3,'foo'),(0,null,null),(2,2,'bar'),(3,1,'baz');
@@ -597,8 +831,6 @@ select aggfns(distinct a,b,c order by a,c using ~<~,b) filter (where a > 1) from
 rollback;
 
 -- ordered-set aggregates
-
-CREATE FOREIGN TABLE FLOAT8_TBL(id serial OPTIONS (rowkey 'true'), f1 float8) SERVER griddb_svr;
 
 begin;
 delete from FLOAT8_TBL;
@@ -665,8 +897,28 @@ from tenk1;
 select percentile_disc(array[[null,1,0.5],[0.75,0.25,null]]) within group (order by thousand)
 from tenk1;
 
+create foreign table agg_t5 (x int) server griddb_svr;
+begin;
+insert into agg_t5 select * from generate_series(1,6);
+select percentile_cont(array[0,1,0.25,0.75,0.5,1,0.3,0.32,0.35,0.38,0.4]) within group (order by x)
+from agg_t5;
+rollback;
+
 select ten, mode() within group (order by string4) from tenk1 group by ten;
 
+create foreign table agg_t6 (id serial OPTIONS (rowkey 'true'), x text) server griddb_svr;
+begin;
+insert into agg_t6(x) values (unnest('{fred,jim,fred,jack,jill,fred,jill,jim,jim,sheila,jim,sheila}'::text[]));
+select percentile_disc(array[0.25,0.5,0.75]) within group (order by x)
+from agg_t6;
+rollback;
+
+-- check collation propagates up in suitable cases:
+begin;
+insert into agg_t6(x) values ('fred'), ('jim');
+select pg_collation_for(percentile_disc(1) within group (order by x collate "POSIX"))
+  from agg_t6;
+rollback;
 -- ordered-set aggs created with CREATE 
 create aggregate my_percentile_disc(float8 ORDER BY anyelement) (
   stype = internal,
@@ -694,6 +946,64 @@ select test_rank(3) within group (order by q1) from INT8_TBL;
 rollback;
 
 select test_percentile_disc(0.5) within group (order by thousand) from tenk1;
+
+-- ordered-set aggs can't use ungrouped vars in direct args:
+begin;
+insert into agg_t5(x) select * from generate_series(1,5);
+select rank(x) within group (order by x) from agg_t5;
+rollback;
+
+-- outer-level agg can't use a grouped arg of a lower level, either:
+
+begin;
+insert into agg_t5(x) select * from generate_series(1,5);
+select array(select percentile_disc(a) within group (order by x)
+               from (values (0.3),(0.7)) v(a) group by a)
+  from agg_t5;
+rollback;
+
+-- agg in the direct args is a grouping violation, too:
+begin;
+insert into agg_t5(x) select * from generate_series(1,5);
+select rank(sum(x)) within group (order by x) from agg_t5;
+rollback;
+
+-- hypothetical-set type unification and argument-count failures:
+begin;
+insert into agg_t6(x) values ('fred'), ('jim');
+select rank(3) within group (order by x) from agg_t6;
+rollback;
+
+select rank(3) within group (order by stringu1,stringu2) from tenk1;
+
+begin;
+insert into agg_t5 select * from generate_series(1,5);
+select rank('fred') within group (order by x) from agg_t5;
+rollback;
+
+begin;
+insert into agg_t6(x) values ('fred'), ('jim');
+select rank('adam'::text collate "C") within group (order by x collate "POSIX")
+  from agg_t6;
+rollback;
+
+-- hypothetical-set type unification successes:
+begin;
+insert into agg_t6(x) values ('fred'), ('jim');
+select rank('adam'::varchar) within group (order by x) from agg_t6;
+rollback;
+
+begin;
+insert into agg_t5 select * from generate_series(1,5);
+select rank('3') within group (order by x) from agg_t5;
+rollback;
+
+-- divide by zero check
+begin;
+insert into agg_t5 select * from generate_series(1,5);
+select percent_rank(0) within group (order by x) from agg_t5;
+rollback;
+
 
 -- deparse and multiple features:
 create view aggordview1 as
@@ -953,6 +1263,42 @@ SELECT balk(hundred) FROM tenk1;
 
 ROLLBACK;
 
+-- Secondly test the case of a parallel aggregate combiner function
+-- returning NULL. For that use normal transition function, but a
+-- combiner function returning NULL.
+BEGIN ISOLATION LEVEL REPEATABLE READ;
+CREATE FUNCTION balkifnull(int8, int8)
+RETURNS int8
+PARALLEL SAFE
+STRICT
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF $1 IS NULL THEN
+       RAISE 'erroneously called with NULL argument';
+    END IF;
+    RETURN NULL;
+END$$;
+
+CREATE AGGREGATE balk(int4)
+(
+    SFUNC = int4_sum(int8, int4),
+    STYPE = int8,
+    COMBINEFUNC = balkifnull(int8, int8),
+    PARALLEL = SAFE,
+    INITCOND = '0'
+);
+
+-- Skip this test case, cannot alter tenk1.
+-- force use of parallelism
+-- ALTER TABLE tenk1 set (parallel_workers = 4);
+-- SET LOCAL parallel_setup_cost=0;
+--SET LOCAL max_parallel_workers_per_gather=4;
+
+--EXPLAIN (COSTS OFF) SELECT balk(hundred) FROM tenk1;
+--SELECT balk(hundred) FROM tenk1;
+
+ROLLBACK;
+
 -- test coverage for aggregate combine/serial/deserial functions
 BEGIN ISOLATION LEVEL REPEATABLE READ;
 
@@ -964,10 +1310,11 @@ SET enable_indexonlyscan = off;
 
 -- variance(int4) covers numeric_poly_combine
 -- sum(int8) covers int8_avg_combine
-EXPLAIN (COSTS OFF)
-  SELECT variance(unique1::int4), sum(unique1::int8) FROM tenk1;
+-- regr_count(float8, float8) covers int8inc_float8_float8 and aggregates with > 1 arg
+EXPLAIN (COSTS OFF, VERBOSE)
+  SELECT variance(unique1::int4), sum(unique1::int8), regr_count(unique1::float8, unique1::float8) FROM tenk1;
 
-SELECT variance(unique1::int4), sum(unique1::int8) FROM tenk1;
+SELECT variance(unique1::int4), sum(unique1::int8), regr_count(unique1::float8, unique1::float8) FROM tenk1;
 
 ROLLBACK;
 
@@ -977,6 +1324,39 @@ DELETE FROM INT8_TBL;
 INSERT INTO INT8_TBL(q1) VALUES (1),(1),(2),(2),(3),(3);
 SELECT dense_rank(q1) WITHIN GROUP (ORDER BY q1) FROM INT8_TBL GROUP BY (q1) ORDER BY 1;
 ROLLBACK;
+
+-- Ensure that the STRICT checks for aggregates does not take NULLness
+-- of ORDER BY columns into account. See bug report around
+-- 2a505161-2727-2473-7c46-591ed108ac52@email.cz
+begin;
+insert into INT8_TBL(q1, q2) values (1, NULL);
+SELECT min(x ORDER BY y) FROM INT8_TBL AS d(x,y);
+rollback;
+
+begin;
+insert into INT8_TBL(q1, q2) values (1, 2);
+SELECT min(x ORDER BY y) FROM INT8_TBL AS d(x,y);
+rollback;
+
+-- check collation-sensitive matching between grouping expressions
+begin;
+insert into agg_t6(x) values (unnest(array['a','b']));
+select x||'a', case x||'a' when 'aa' then 1 else 0 end, count(*)
+  from agg_t6 group by x||'a' order by 1;
+rollback;
+
+begin;
+insert into agg_t6(x) values (unnest(array['a','b']));
+select x||'a', case when x||'a' = 'aa' then 1 else 0 end, count(*)
+  from agg_t6 group by x||'a' order by 1;
+rollback;
+
+-- Make sure that generation of HashAggregate for uniqification purposes
+-- does not lead to array overflow due to unexpected duplicate hash keys
+-- see CAFeeJoKKu0u+A_A9R9316djW-YW3-+Gtgvy3ju655qRHR3jtdA@mail.gmail.com
+explain (costs off)
+  select 1 from tenk1
+   where (hundred, thousand) in (select twothousand, twothousand from onek);
 
 DO $d$
 declare
