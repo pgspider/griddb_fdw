@@ -1,0 +1,2 @@
+# griddb_fdw
+
