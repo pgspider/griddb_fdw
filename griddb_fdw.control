@@ -1,0 +1,5 @@
+# griddb_fdw extension
+comment = 'foreign-data wrapper for remote GridDB servers'
+default_version = '1.0'
+module_pathname = '$libdir/griddb_fdw'
+relocatable = true

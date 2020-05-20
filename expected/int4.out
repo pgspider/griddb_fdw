@@ -1,0 +1,511 @@
+--
+-- INT4
+--
+DROP EXTENSION griddb_fdw cascade;
+NOTICE:  drop cascades to 4 other objects
+DETAIL:  drop cascades to server griddb_svr
+drop cascades to user mapping for public on server griddb_svr
+drop cascades to foreign table float8_tbl
+drop cascades to foreign table test_data
+CREATE EXTENSION griddb_fdw;
+CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS(host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster');
+CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS(username 'admin', password 'testadmin');
+CREATE FOREIGN TABLE INT4_TBL(id serial OPTIONS (rowkey 'true'), f1 int4) SERVER griddb_svr;
+INSERT INTO INT4_TBL(f1) VALUES ('   0  ');
+INSERT INTO INT4_TBL(f1) VALUES ('123456     ');
+INSERT INTO INT4_TBL(f1) VALUES ('    -123456');
+INSERT INTO INT4_TBL(f1) VALUES ('34.5');
+ERROR:  invalid input syntax for type integer: "34.5"
+LINE 1: INSERT INTO INT4_TBL(f1) VALUES ('34.5');
+                                         ^
+-- largest and smallest values
+INSERT INTO INT4_TBL(f1) VALUES ('2147483647');
+INSERT INTO INT4_TBL(f1) VALUES ('-2147483647');
+-- bad input values -- should give errors
+INSERT INTO INT4_TBL(f1) VALUES ('1000000000000');
+ERROR:  value "1000000000000" is out of range for type integer
+LINE 1: INSERT INTO INT4_TBL(f1) VALUES ('1000000000000');
+                                         ^
+INSERT INTO INT4_TBL(f1) VALUES ('asdf');
+ERROR:  invalid input syntax for type integer: "asdf"
+LINE 1: INSERT INTO INT4_TBL(f1) VALUES ('asdf');
+                                         ^
+INSERT INTO INT4_TBL(f1) VALUES ('     ');
+ERROR:  invalid input syntax for type integer: "     "
+LINE 1: INSERT INTO INT4_TBL(f1) VALUES ('     ');
+                                         ^
+INSERT INTO INT4_TBL(f1) VALUES ('   asdf   ');
+ERROR:  invalid input syntax for type integer: "   asdf   "
+LINE 1: INSERT INTO INT4_TBL(f1) VALUES ('   asdf   ');
+                                         ^
+INSERT INTO INT4_TBL(f1) VALUES ('- 1234');
+ERROR:  invalid input syntax for type integer: "- 1234"
+LINE 1: INSERT INTO INT4_TBL(f1) VALUES ('- 1234');
+                                         ^
+INSERT INTO INT4_TBL(f1) VALUES ('123       5');
+ERROR:  invalid input syntax for type integer: "123       5"
+LINE 1: INSERT INTO INT4_TBL(f1) VALUES ('123       5');
+                                         ^
+INSERT INTO INT4_TBL(f1) VALUES ('');
+ERROR:  invalid input syntax for type integer: ""
+LINE 1: INSERT INTO INT4_TBL(f1) VALUES ('');
+                                         ^
+SELECT '' AS five, f1 FROM INT4_TBL;
+ five |     f1      
+------+-------------
+      |           0
+      |      123456
+      |     -123456
+      |  2147483647
+      | -2147483647
+(5 rows)
+
+SELECT '' AS four, i.f1 FROM INT4_TBL i WHERE i.f1 <> int2 '0';
+ four |     f1      
+------+-------------
+      |      123456
+      |     -123456
+      |  2147483647
+      | -2147483647
+(4 rows)
+
+SELECT '' AS four, i.f1 FROM INT4_TBL i WHERE i.f1 <> int4 '0';
+ four |     f1      
+------+-------------
+      |      123456
+      |     -123456
+      |  2147483647
+      | -2147483647
+(4 rows)
+
+SELECT '' AS one, i.f1 FROM INT4_TBL i WHERE i.f1 = int2 '0';
+ one | f1 
+-----+----
+     |  0
+(1 row)
+
+SELECT '' AS one, i.f1 FROM INT4_TBL i WHERE i.f1 = int4 '0';
+ one | f1 
+-----+----
+     |  0
+(1 row)
+
+SELECT '' AS two, i.f1 FROM INT4_TBL i WHERE i.f1 < int2 '0';
+ two |     f1      
+-----+-------------
+     |     -123456
+     | -2147483647
+(2 rows)
+
+SELECT '' AS two, i.f1 FROM INT4_TBL i WHERE i.f1 < int4 '0';
+ two |     f1      
+-----+-------------
+     |     -123456
+     | -2147483647
+(2 rows)
+
+SELECT '' AS three, i.f1 FROM INT4_TBL i WHERE i.f1 <= int2 '0';
+ three |     f1      
+-------+-------------
+       |           0
+       |     -123456
+       | -2147483647
+(3 rows)
+
+SELECT '' AS three, i.f1 FROM INT4_TBL i WHERE i.f1 <= int4 '0';
+ three |     f1      
+-------+-------------
+       |           0
+       |     -123456
+       | -2147483647
+(3 rows)
+
+SELECT '' AS two, i.f1 FROM INT4_TBL i WHERE i.f1 > int2 '0';
+ two |     f1     
+-----+------------
+     |     123456
+     | 2147483647
+(2 rows)
+
+SELECT '' AS two, i.f1 FROM INT4_TBL i WHERE i.f1 > int4 '0';
+ two |     f1     
+-----+------------
+     |     123456
+     | 2147483647
+(2 rows)
+
+SELECT '' AS three, i.f1 FROM INT4_TBL i WHERE i.f1 >= int2 '0';
+ three |     f1     
+-------+------------
+       |          0
+       |     123456
+       | 2147483647
+(3 rows)
+
+SELECT '' AS three, i.f1 FROM INT4_TBL i WHERE i.f1 >= int4 '0';
+ three |     f1     
+-------+------------
+       |          0
+       |     123456
+       | 2147483647
+(3 rows)
+
+-- positive odds
+SELECT '' AS one, i.f1 FROM INT4_TBL i WHERE (i.f1 % int2 '2') = int2 '1';
+ one |     f1     
+-----+------------
+     | 2147483647
+(1 row)
+
+-- any evens
+SELECT '' AS three, i.f1 FROM INT4_TBL i WHERE (i.f1 % int4 '2') = int2 '0';
+ three |   f1    
+-------+---------
+       |       0
+       |  123456
+       | -123456
+(3 rows)
+
+SELECT '' AS five, i.f1, i.f1 * int2 '2' AS x FROM INT4_TBL i;
+ERROR:  integer out of range
+SELECT '' AS five, i.f1, i.f1 * int2 '2' AS x FROM INT4_TBL i
+WHERE abs(f1) < 1073741824;
+ five |   f1    |    x    
+------+---------+---------
+      |       0 |       0
+      |  123456 |  246912
+      | -123456 | -246912
+(3 rows)
+
+SELECT '' AS five, i.f1, i.f1 * int4 '2' AS x FROM INT4_TBL i;
+ERROR:  integer out of range
+SELECT '' AS five, i.f1, i.f1 * int4 '2' AS x FROM INT4_TBL i
+WHERE abs(f1) < 1073741824;
+ five |   f1    |    x    
+------+---------+---------
+      |       0 |       0
+      |  123456 |  246912
+      | -123456 | -246912
+(3 rows)
+
+SELECT '' AS five, i.f1, i.f1 + int2 '2' AS x FROM INT4_TBL i;
+ERROR:  integer out of range
+SELECT '' AS five, i.f1, i.f1 + int2 '2' AS x FROM INT4_TBL i
+WHERE f1 < 2147483646;
+ five |     f1      |      x      
+------+-------------+-------------
+      |           0 |           2
+      |      123456 |      123458
+      |     -123456 |     -123454
+      | -2147483647 | -2147483645
+(4 rows)
+
+SELECT '' AS five, i.f1, i.f1 + int4 '2' AS x FROM INT4_TBL i;
+ERROR:  integer out of range
+SELECT '' AS five, i.f1, i.f1 + int4 '2' AS x FROM INT4_TBL i
+WHERE f1 < 2147483646;
+ five |     f1      |      x      
+------+-------------+-------------
+      |           0 |           2
+      |      123456 |      123458
+      |     -123456 |     -123454
+      | -2147483647 | -2147483645
+(4 rows)
+
+SELECT '' AS five, i.f1, i.f1 - int2 '2' AS x FROM INT4_TBL i;
+ERROR:  integer out of range
+SELECT '' AS five, i.f1, i.f1 - int2 '2' AS x FROM INT4_TBL i
+WHERE f1 > -2147483647;
+ five |     f1     |     x      
+------+------------+------------
+      |          0 |         -2
+      |     123456 |     123454
+      |    -123456 |    -123458
+      | 2147483647 | 2147483645
+(4 rows)
+
+SELECT '' AS five, i.f1, i.f1 - int4 '2' AS x FROM INT4_TBL i;
+ERROR:  integer out of range
+SELECT '' AS five, i.f1, i.f1 - int4 '2' AS x FROM INT4_TBL i
+WHERE f1 > -2147483647;
+ five |     f1     |     x      
+------+------------+------------
+      |          0 |         -2
+      |     123456 |     123454
+      |    -123456 |    -123458
+      | 2147483647 | 2147483645
+(4 rows)
+
+SELECT '' AS five, i.f1, i.f1 / int2 '2' AS x FROM INT4_TBL i;
+ five |     f1      |      x      
+------+-------------+-------------
+      |           0 |           0
+      |      123456 |       61728
+      |     -123456 |      -61728
+      |  2147483647 |  1073741823
+      | -2147483647 | -1073741823
+(5 rows)
+
+SELECT '' AS five, i.f1, i.f1 / int4 '2' AS x FROM INT4_TBL i;
+ five |     f1      |      x      
+------+-------------+-------------
+      |           0 |           0
+      |      123456 |       61728
+      |     -123456 |      -61728
+      |  2147483647 |  1073741823
+      | -2147483647 | -1073741823
+(5 rows)
+
+--
+-- more complex expressions
+--
+-- variations on unary minus parsing
+BEGIN;
+DELETE FROM INT4_TBL;
+INSERT INTO INT4_TBL(f1) VALUES (-2+3);
+SELECT f1 as one FROM INT4_TBL;
+ one 
+-----
+   1
+(1 row)
+
+ROLLBACK;
+BEGIN;
+DELETE FROM INT4_TBL;
+INSERT INTO INT4_TBL(f1) VALUES (4-2);
+SELECT f1 as two FROM INT4_TBL;
+ two 
+-----
+   2
+(1 row)
+
+ROLLBACK;
+BEGIN;
+DELETE FROM INT4_TBL;
+INSERT INTO INT4_TBL(f1) VALUES (2- -1);
+SELECT f1 as three FROM INT4_TBL;
+ three 
+-------
+     3
+(1 row)
+
+ROLLBACK;
+BEGIN;
+DELETE FROM INT4_TBL;
+INSERT INTO INT4_TBL(f1) VALUES (2 - -2);
+SELECT f1 as four FROM INT4_TBL;
+ four 
+------
+    4
+(1 row)
+
+ROLLBACK;
+BEGIN;
+DELETE FROM INT4_TBL;
+INSERT INTO INT4_TBL(f1) VALUES ((int2 '2' * int2 '2' = int2 '16' / int2 '4')::int4);
+SELECT f1::BOOLEAN as true FROM INT4_TBL;
+ true 
+------
+ t
+(1 row)
+
+ROLLBACK;
+BEGIN;
+DELETE FROM INT4_TBL;
+INSERT INTO INT4_TBL(f1) VALUES ((int4 '2' * int2 '2' = int2 '16' / int4 '4')::int4);
+SELECT f1::BOOLEAN as true FROM INT4_TBL;
+ true 
+------
+ t
+(1 row)
+
+ROLLBACK;
+BEGIN;
+DELETE FROM INT4_TBL;
+INSERT INTO INT4_TBL(f1) VALUES ((int2 '2' * int4 '2' = int4 '16' / int2 '4')::int4);
+SELECT f1::BOOLEAN as true FROM INT4_TBL;
+ true 
+------
+ t
+(1 row)
+
+ROLLBACK;
+BEGIN;
+DELETE FROM INT4_TBL;
+INSERT INTO INT4_TBL(f1) VALUES ((int4 '1000' < int4 '999')::int4);
+SELECT f1::BOOLEAN as false FROM INT4_TBL;
+ false 
+-------
+ f
+(1 row)
+
+ROLLBACK;
+BEGIN;
+DELETE FROM INT4_TBL;
+INSERT INTO INT4_TBL(f1) VALUES (4!);
+SELECT f1 as twenty_four FROM INT4_TBL;
+ twenty_four 
+-------------
+          24
+(1 row)
+
+ROLLBACK;
+BEGIN;
+DELETE FROM INT4_TBL;
+INSERT INTO INT4_TBL(f1) VALUES (!!3);
+SELECT f1 as six FROM INT4_TBL;
+ six 
+-----
+   6
+(1 row)
+
+ROLLBACK;
+BEGIN;
+DELETE FROM INT4_TBL;
+INSERT INTO INT4_TBL(f1) VALUES (1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1);
+SELECT f1 as ten FROM INT4_TBL;
+ ten 
+-----
+  10
+(1 row)
+
+ROLLBACK;
+BEGIN;
+DELETE FROM INT4_TBL;
+INSERT INTO INT4_TBL(f1) VALUES (2 + 2 / 2);
+SELECT f1 as three FROM INT4_TBL;
+ three 
+-------
+     3
+(1 row)
+
+ROLLBACK;
+BEGIN;
+DELETE FROM INT4_TBL;
+INSERT INTO INT4_TBL(f1) VALUES ((2 + 2) / 2);
+SELECT f1 as two FROM INT4_TBL;
+ two 
+-----
+   2
+(1 row)
+
+ROLLBACK;
+-- corner case
+BEGIN;
+DELETE FROM INT4_TBL;
+INSERT INTO INT4_TBL(f1) VALUES ((-1::int4<<31));
+INSERT INTO INT4_TBL(f1) VALUES (((-1::int4<<31)+1));
+SELECT f1 FROM INT4_TBL;
+     f1      
+-------------
+ -2147483648
+ -2147483647
+(2 rows)
+
+ROLLBACK;
+-- check sane handling of INT_MIN overflow cases
+BEGIN;
+DELETE FROM INT4_TBL;
+INSERT INTO INT4_TBL(f1) VALUES ((-2147483648)::int4 * f1 (-1)::int4);
+ERROR:  function f1(integer) does not exist
+LINE 1: ...T INTO INT4_TBL(f1) VALUES ((-2147483648)::int4 * f1 (-1)::i...
+                                                             ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
+SELECT f1 FROM INT4_TBL;
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
+ROLLBACK;
+BEGIN;
+DELETE FROM INT4_TBL;
+INSERT INTO INT4_TBL(f1) VALUES ((-2147483648)::int4 / (-1)::int4);
+ERROR:  integer out of range
+SELECT f1 FROM INT4_TBL;
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
+ROLLBACK;
+BEGIN;
+DELETE FROM INT4_TBL;
+INSERT INTO INT4_TBL(f1) VALUES ((-2147483648)::int4 % (-1)::int4);
+SELECT f1 FROM INT4_TBL;
+ f1 
+----
+  0
+(1 row)
+
+ROLLBACK;
+BEGIN;
+DELETE FROM INT4_TBL;
+INSERT INTO INT4_TBL(f1) VALUES ((-2147483648)::int4 * (-1)::int2);
+ERROR:  integer out of range
+SELECT f1 FROM INT4_TBL;
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
+ROLLBACK;
+BEGIN;
+DELETE FROM INT4_TBL;
+INSERT INTO INT4_TBL(f1) VALUES ((-2147483648)::int4 / (-1)::int2);
+ERROR:  integer out of range
+SELECT f1 FROM INT4_TBL;
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
+ROLLBACK;
+BEGIN;
+DELETE FROM INT4_TBL;
+INSERT INTO INT4_TBL(f1) VALUES ((-2147483648)::int4 % (-1)::int2);
+SELECT f1 FROM INT4_TBL;
+ f1 
+----
+  0
+(1 row)
+
+ROLLBACK;
+-- check rounding when casting from float
+CREATE FOREIGN TABLE FLOAT8_TBL(id serial OPTIONS (rowkey 'true'), f1 float8) SERVER griddb_svr; 
+BEGIN;
+DELETE FROM FLOAT8_TBL;
+INSERT INTO FLOAT8_TBL(f1) VALUES 
+	(-2.5::float8),
+        (-1.5::float8),
+        (-0.5::float8),
+        (0.0::float8),
+        (0.5::float8),
+        (1.5::float8),
+        (2.5::float8);
+SELECT f1 as x, f1::int4 AS int4_value FROM FLOAT8_TBL;
+  x   | int4_value 
+------+------------
+ -2.5 |         -2
+ -1.5 |         -2
+ -0.5 |          0
+    0 |          0
+  0.5 |          0
+  1.5 |          2
+  2.5 |          2
+(7 rows)
+
+ROLLBACK;
+-- check rounding when casting from numeric
+BEGIN;
+DELETE FROM FLOAT8_TBL;
+INSERT INTO FLOAT8_TBL(f1) VALUES 
+	(-2.5::numeric),
+        (-1.5::numeric),
+        (-0.5::numeric),
+        (0.0::numeric),
+        (0.5::numeric),
+        (1.5::numeric),
+        (2.5::numeric);
+SELECT f1::numeric as x, f1::numeric::int4 AS int4_value FROM FLOAT8_TBL;
+  x   | int4_value 
+------+------------
+ -2.5 |         -3
+ -1.5 |         -2
+ -0.5 |         -1
+    0 |          0
+  0.5 |          1
+  1.5 |          2
+  2.5 |          3
+(7 rows)
+
+ROLLBACK;
+DROP FOREIGN TABLE INT4_TBL;
+DROP FOREIGN TABLE FLOAT8_TBL;
+DROP USER MAPPING FOR public SERVER griddb_svr;
+DROP SERVER griddb_svr;
+DROP EXTENSION griddb_fdw CASCADE;

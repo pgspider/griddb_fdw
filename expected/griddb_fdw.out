@@ -1,0 +1,538 @@
+CREATE EXTENSION griddb_fdw;
+CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS(host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster');
+CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS(username 'admin', password 'testadmin');
+IMPORT FOREIGN SCHEMA griddb_schema FROM SERVER griddb_svr INTO public;
+-- GridDB containers must be created for this test on GridDB server
+/*
+CREATE TABLE department (department_id integer primary key, department_name text)
+CREATE TABLE employee (emp_id integer primary key, emp_name text, emp_dept_id integer)
+CREATE TABLE empdata (emp_id integer primary key, emp_dat blob)
+CREATE TABLE numbers (a integer primary key, b text)
+CREATE TABLE shorty (id integer primary key, c text)
+CREATE TABLE evennumbers (a integer primary key, b text)
+*/
+DELETE FROM department;
+DELETE FROM employee;
+DELETE FROM empdata;
+DELETE FROM numbers;
+DELETE FROM evennumbers;
+SELECT * FROM department LIMIT 10;
+ department_id | department_name 
+---------------+-----------------
+(0 rows)
+
+SELECT * FROM employee LIMIT 10;
+ emp_id | emp_name | emp_dept_id 
+--------+----------+-------------
+(0 rows)
+
+SELECT * FROM empdata LIMIT 10;
+ emp_id | emp_dat 
+--------+---------
+(0 rows)
+
+INSERT INTO department VALUES(generate_series(1,100), 'dept - ' || generate_series(1,100));
+INSERT INTO employee VALUES(generate_series(1,100), 'emp - ' || generate_series(1,100), generate_series(1,100));
+INSERT INTO empdata  VALUES(1, decode ('01234567', 'hex'));
+INSERT INTO numbers VALUES(1, 'One');
+INSERT INTO numbers VALUES(2, 'Two');
+INSERT INTO numbers VALUES(3, 'Three');
+INSERT INTO numbers VALUES(4, 'Four');
+INSERT INTO numbers VALUES(5, 'Five');
+INSERT INTO numbers VALUES(6, 'Six');
+INSERT INTO numbers VALUES(7, 'Seven');
+INSERT INTO numbers VALUES(8, 'Eight');
+INSERT INTO numbers VALUES(9, 'Nine');
+INSERT INTO evennumbers VALUES(2, 'Two');
+INSERT INTO evennumbers VALUES(4, 'Four');
+INSERT INTO evennumbers VALUES(6, 'Six');
+INSERT INTO evennumbers VALUES(8, 'Eight');
+SELECT count(*) FROM department;
+ count 
+-------
+   100
+(1 row)
+
+SELECT count(*) FROM employee;
+ count 
+-------
+   100
+(1 row)
+
+SELECT count(*) FROM empdata;
+ count 
+-------
+     1
+(1 row)
+
+-- Join
+SELECT * FROM department d, employee e WHERE d.department_id = e.emp_dept_id LIMIT 10;
+ department_id | department_name | emp_id | emp_name | emp_dept_id 
+---------------+-----------------+--------+----------+-------------
+             1 | dept - 1        |      1 | emp - 1  |           1
+             2 | dept - 2        |      2 | emp - 2  |           2
+             3 | dept - 3        |      3 | emp - 3  |           3
+             4 | dept - 4        |      4 | emp - 4  |           4
+             5 | dept - 5        |      5 | emp - 5  |           5
+             6 | dept - 6        |      6 | emp - 6  |           6
+             7 | dept - 7        |      7 | emp - 7  |           7
+             8 | dept - 8        |      8 | emp - 8  |           8
+             9 | dept - 9        |      9 | emp - 9  |           9
+            10 | dept - 10       |     10 | emp - 10 |          10
+(10 rows)
+
+-- Subquery
+SELECT * FROM department d, employee e WHERE d.department_id IN (SELECT department_id FROM department) LIMIT 10;
+ department_id | department_name | emp_id | emp_name | emp_dept_id 
+---------------+-----------------+--------+----------+-------------
+             1 | dept - 1        |      1 | emp - 1  |           1
+             1 | dept - 1        |      2 | emp - 2  |           2
+             1 | dept - 1        |      3 | emp - 3  |           3
+             1 | dept - 1        |      4 | emp - 4  |           4
+             1 | dept - 1        |      5 | emp - 5  |           5
+             1 | dept - 1        |      6 | emp - 6  |           6
+             1 | dept - 1        |      7 | emp - 7  |           7
+             1 | dept - 1        |      8 | emp - 8  |           8
+             1 | dept - 1        |      9 | emp - 9  |           9
+             1 | dept - 1        |     10 | emp - 10 |          10
+(10 rows)
+
+SELECT * FROM empdata;
+ emp_id |  emp_dat   
+--------+------------
+      1 | \x01234567
+(1 row)
+
+-- Delete single row
+DELETE FROM employee WHERE emp_id = 10;
+SELECT COUNT(*) FROM department LIMIT 10;
+ count 
+-------
+   100
+(1 row)
+
+SELECT COUNT(*) FROM employee WHERE emp_id = 10;
+ count 
+-------
+     0
+(1 row)
+
+-- Update single row
+UPDATE employee SET emp_name = 'Updated emp' WHERE emp_id = 20;
+SELECT emp_id, emp_name FROM employee WHERE emp_name like 'Updated emp';
+ emp_id |  emp_name   
+--------+-------------
+     20 | Updated emp
+(1 row)
+
+UPDATE empdata SET emp_dat = decode ('0123', 'hex');
+SELECT * FROM empdata;
+ emp_id | emp_dat 
+--------+---------
+      1 | \x0123
+(1 row)
+
+SELECT * FROM employee LIMIT 10;
+ emp_id | emp_name | emp_dept_id 
+--------+----------+-------------
+      1 | emp - 1  |           1
+      2 | emp - 2  |           2
+      3 | emp - 3  |           3
+      4 | emp - 4  |           4
+      5 | emp - 5  |           5
+      6 | emp - 6  |           6
+      7 | emp - 7  |           7
+      8 | emp - 8  |           8
+      9 | emp - 9  |           9
+     11 | emp - 11 |          11
+(10 rows)
+
+SELECT * FROM employee WHERE emp_id IN (1);
+ emp_id | emp_name | emp_dept_id 
+--------+----------+-------------
+      1 | emp - 1  |           1
+(1 row)
+
+SELECT * FROM employee WHERE emp_id IN (1,3,4,5);
+ emp_id | emp_name | emp_dept_id 
+--------+----------+-------------
+      1 | emp - 1  |           1
+      3 | emp - 3  |           3
+      4 | emp - 4  |           4
+      5 | emp - 5  |           5
+(4 rows)
+
+SELECT * FROM employee WHERE emp_id IN (10000,1000);
+ emp_id | emp_name | emp_dept_id 
+--------+----------+-------------
+(0 rows)
+
+SELECT * FROM employee WHERE emp_id NOT IN (1) LIMIT 5;
+ emp_id | emp_name | emp_dept_id 
+--------+----------+-------------
+      2 | emp - 2  |           2
+      3 | emp - 3  |           3
+      4 | emp - 4  |           4
+      5 | emp - 5  |           5
+      6 | emp - 6  |           6
+(5 rows)
+
+SELECT * FROM employee WHERE emp_id NOT IN (1,3,4,5) LIMIT 5;
+ emp_id | emp_name | emp_dept_id 
+--------+----------+-------------
+      2 | emp - 2  |           2
+      6 | emp - 6  |           6
+      7 | emp - 7  |           7
+      8 | emp - 8  |           8
+      9 | emp - 9  |           9
+(5 rows)
+
+SELECT * FROM employee WHERE emp_id NOT IN (10000,1000) LIMIT 5;
+ emp_id | emp_name | emp_dept_id 
+--------+----------+-------------
+      1 | emp - 1  |           1
+      2 | emp - 2  |           2
+      3 | emp - 3  |           3
+      4 | emp - 4  |           4
+      5 | emp - 5  |           5
+(5 rows)
+
+SELECT * FROM employee WHERE emp_id NOT IN (SELECT emp_id FROM employee WHERE emp_id IN (1,10));
+ emp_id |  emp_name   | emp_dept_id 
+--------+-------------+-------------
+      2 | emp - 2     |           2
+      3 | emp - 3     |           3
+      4 | emp - 4     |           4
+      5 | emp - 5     |           5
+      6 | emp - 6     |           6
+      7 | emp - 7     |           7
+      8 | emp - 8     |           8
+      9 | emp - 9     |           9
+     11 | emp - 11    |          11
+     12 | emp - 12    |          12
+     13 | emp - 13    |          13
+     14 | emp - 14    |          14
+     15 | emp - 15    |          15
+     16 | emp - 16    |          16
+     17 | emp - 17    |          17
+     18 | emp - 18    |          18
+     19 | emp - 19    |          19
+     20 | Updated emp |          20
+     21 | emp - 21    |          21
+     22 | emp - 22    |          22
+     23 | emp - 23    |          23
+     24 | emp - 24    |          24
+     25 | emp - 25    |          25
+     26 | emp - 26    |          26
+     27 | emp - 27    |          27
+     28 | emp - 28    |          28
+     29 | emp - 29    |          29
+     30 | emp - 30    |          30
+     31 | emp - 31    |          31
+     32 | emp - 32    |          32
+     33 | emp - 33    |          33
+     34 | emp - 34    |          34
+     35 | emp - 35    |          35
+     36 | emp - 36    |          36
+     37 | emp - 37    |          37
+     38 | emp - 38    |          38
+     39 | emp - 39    |          39
+     40 | emp - 40    |          40
+     41 | emp - 41    |          41
+     42 | emp - 42    |          42
+     43 | emp - 43    |          43
+     44 | emp - 44    |          44
+     45 | emp - 45    |          45
+     46 | emp - 46    |          46
+     47 | emp - 47    |          47
+     48 | emp - 48    |          48
+     49 | emp - 49    |          49
+     50 | emp - 50    |          50
+     51 | emp - 51    |          51
+     52 | emp - 52    |          52
+     53 | emp - 53    |          53
+     54 | emp - 54    |          54
+     55 | emp - 55    |          55
+     56 | emp - 56    |          56
+     57 | emp - 57    |          57
+     58 | emp - 58    |          58
+     59 | emp - 59    |          59
+     60 | emp - 60    |          60
+     61 | emp - 61    |          61
+     62 | emp - 62    |          62
+     63 | emp - 63    |          63
+     64 | emp - 64    |          64
+     65 | emp - 65    |          65
+     66 | emp - 66    |          66
+     67 | emp - 67    |          67
+     68 | emp - 68    |          68
+     69 | emp - 69    |          69
+     70 | emp - 70    |          70
+     71 | emp - 71    |          71
+     72 | emp - 72    |          72
+     73 | emp - 73    |          73
+     74 | emp - 74    |          74
+     75 | emp - 75    |          75
+     76 | emp - 76    |          76
+     77 | emp - 77    |          77
+     78 | emp - 78    |          78
+     79 | emp - 79    |          79
+     80 | emp - 80    |          80
+     81 | emp - 81    |          81
+     82 | emp - 82    |          82
+     83 | emp - 83    |          83
+     84 | emp - 84    |          84
+     85 | emp - 85    |          85
+     86 | emp - 86    |          86
+     87 | emp - 87    |          87
+     88 | emp - 88    |          88
+     89 | emp - 89    |          89
+     90 | emp - 90    |          90
+     91 | emp - 91    |          91
+     92 | emp - 92    |          92
+     93 | emp - 93    |          93
+     94 | emp - 94    |          94
+     95 | emp - 95    |          95
+     96 | emp - 96    |          96
+     97 | emp - 97    |          97
+     98 | emp - 98    |          98
+     99 | emp - 99    |          99
+    100 | emp - 100   |         100
+(98 rows)
+
+SELECT * FROM employee WHERE emp_name NOT IN ('emp - 1', 'emp - 2') LIMIT 5;
+ emp_id | emp_name | emp_dept_id 
+--------+----------+-------------
+      3 | emp - 3  |           3
+      4 | emp - 4  |           4
+      5 | emp - 5  |           5
+      6 | emp - 6  |           6
+      7 | emp - 7  |           7
+(5 rows)
+
+SELECT * FROM employee WHERE emp_name NOT IN ('emp - 10') LIMIT 5;
+ emp_id | emp_name | emp_dept_id 
+--------+----------+-------------
+      1 | emp - 1  |           1
+      2 | emp - 2  |           2
+      3 | emp - 3  |           3
+      4 | emp - 4  |           4
+      5 | emp - 5  |           5
+(5 rows)
+
+CREATE OR REPLACE FUNCTION test_param_where() RETURNS void AS $$
+DECLARE
+  n varchar;
+BEGIN
+  FOR x IN 1..9 LOOP
+    SELECT b INTO n FROM numbers WHERE a=x;
+    RAISE NOTICE 'Found number %', n;
+  END LOOP;
+  RETURN;
+END
+$$ LANGUAGE plpgsql;
+SELECT test_param_where();
+NOTICE:  Found number One
+NOTICE:  Found number Two
+NOTICE:  Found number Three
+NOTICE:  Found number Four
+NOTICE:  Found number Five
+NOTICE:  Found number Six
+NOTICE:  Found number Seven
+NOTICE:  Found number Eight
+NOTICE:  Found number Nine
+ test_param_where 
+------------------
+ 
+(1 row)
+
+ALTER FOREIGN TABLE numbers OPTIONS (table_name 'evennumbers');
+INSERT INTO numbers VALUES(10, 'Ten');
+SELECT * FROM numbers;
+ a  |   b   
+----+-------
+  2 | Two
+  4 | Four
+  6 | Six
+  8 | Eight
+ 10 | Ten
+(5 rows)
+
+SET griddbfdw.enable_partial_execution TO TRUE;
+SELECT * FROM numbers;
+ a  |   b   
+----+-------
+  2 | Two
+  4 | Four
+  6 | Six
+  8 | Eight
+ 10 | Ten
+(5 rows)
+
+SET griddbfdw.enable_partial_execution TO FALSE;
+DELETE FROM employee;
+DELETE FROM department;
+DELETE FROM empdata;
+DELETE FROM numbers;
+DROP FUNCTION test_param_where();
+DROP FOREIGN TABLE numbers;
+DROP FOREIGN TABLE department;
+DROP FOREIGN TABLE employee;
+DROP FOREIGN TABLE empdata;
+-- -----------------------------------------------------------------------------
+DELETE FROM shorty;
+INSERT INTO shorty (id, c) VALUES (1, 'Z');
+INSERT INTO shorty (id, c) VALUES (2, 'Y');
+INSERT INTO shorty (id, c) VALUES (5, 'A');
+INSERT INTO shorty (id, c) VALUES (3, 'X');
+INSERT INTO shorty (id, c) VALUES (4, 'B');
+-- ORDER BY.
+SELECT c FROM shorty ORDER BY id;
+ c 
+---
+ Z
+ Y
+ X
+ B
+ A
+(5 rows)
+
+-- Transaction INSERT
+BEGIN;
+INSERT INTO shorty (id, c) VALUES (6, 'T');
+ROLLBACK;
+SELECT id, c FROM shorty;
+ id | c 
+----+---
+  1 | Z
+  2 | Y
+  5 | A
+  3 | X
+  4 | B
+(5 rows)
+
+-- Transaction UPDATE single row
+BEGIN;
+UPDATE shorty SET c = 'd' WHERE id = 5;
+ROLLBACK;
+SELECT id, c FROM shorty;
+ id | c 
+----+---
+  1 | Z
+  2 | Y
+  5 | A
+  3 | X
+  4 | B
+(5 rows)
+
+-- Transaction UPDATE all
+BEGIN;
+UPDATE shorty SET c = 'd';
+ROLLBACK;
+SELECT id, c FROM shorty;
+ id | c 
+----+---
+  1 | Z
+  2 | Y
+  5 | A
+  3 | X
+  4 | B
+(5 rows)
+
+-- Transaction DELETE single row
+BEGIN;
+DELETE FROM shorty WHERE id = 1;
+ROLLBACK;
+SELECT id, c FROM shorty;
+ id | c 
+----+---
+  1 | Z
+  2 | Y
+  5 | A
+  3 | X
+  4 | B
+(5 rows)
+
+-- Transaction DELETE all
+BEGIN;
+DELETE FROM shorty;
+ROLLBACK;
+SELECT id, c FROM shorty;
+ id | c 
+----+---
+  1 | Z
+  2 | Y
+  5 | A
+  3 | X
+  4 | B
+(5 rows)
+
+-- Use of NULL value
+BEGIN;
+INSERT INTO shorty VALUES(99, NULL);
+UPDATE shorty SET c = NULL WHERE id = 3;
+SELECT id FROM shorty WHERE c IS NULL;
+ id 
+----
+  3
+ 99
+(2 rows)
+
+ROLLBACK;
+-- parameters.
+PREPARE stmt(integer) AS SELECT * FROM shorty WHERE id = $1;
+EXECUTE stmt(1);
+ id | c 
+----+---
+  1 | Z
+(1 row)
+
+EXECUTE stmt(2);
+ id | c 
+----+---
+  2 | Y
+(1 row)
+
+DEALLOCATE stmt;
+-- test NULL parameter
+SELECT id FROM shorty WHERE c = (SELECT NULL::text);
+ id 
+----
+(0 rows)
+
+-- Use of system column
+SELECT tableoid::regclass, * from shorty WHERE id = 1;
+ tableoid | id | c 
+----------+----+---
+ shorty   |  1 | Z
+(1 row)
+
+SELECT * from shorty WHERE id = 1 AND tableoid = 'shorty'::regclass;
+ id | c 
+----+---
+  1 | Z
+(1 row)
+
+-- Clean up
+DROP FOREIGN TABLE shorty;
+CREATE OR REPLACE FUNCTION drop_all_foreign_tables() RETURNS void AS $$
+DECLARE
+  tbl_name varchar;
+  cmd varchar;
+BEGIN
+  FOR tbl_name IN SELECT foreign_table_name FROM information_schema._pg_foreign_tables LOOP
+    cmd := 'DROP FOREIGN TABLE ' || quote_ident(tbl_name);
+    EXECUTE cmd;
+  END LOOP;
+  RETURN;
+END
+$$ LANGUAGE plpgsql;
+SELECT drop_all_foreign_tables();
+ drop_all_foreign_tables 
+-------------------------
+ 
+(1 row)
+
+DROP USER MAPPING FOR public SERVER griddb_svr;
+DROP SERVER griddb_svr CASCADE;
+DROP EXTENSION griddb_fdw CASCADE;
