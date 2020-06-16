@@ -1,7 +1,6 @@
 def NODE_NAME = 'AWS_Instance_CentOS'
 def MAIL_TO = '$DEFAULT_RECIPIENTS'
 def MAIL_SUBJECT = '[CI PGSpider] GridDB FDW Test FAILED'
-def GRIDDB_FDW_URL = 'https://github.com/pgspider/griddb_fdw.git'
 def GRIDDB_CLIENT_DIR = '/home/jenkins/GridDB/c_client_4.1.0/griddb'
 
 def retrySh(String shCmd) {
@@ -42,7 +41,7 @@ pipeline {
                 '''
                 dir("postgresql/contrib") {
                     sh 'rm -rf griddb_fdw || true'
-                    retrySh('git clone ' + GRIDDB_FDW_URL)
+                    retrySh('git clone -b ' + env.GIT_BRANCH + ' ' + env.GIT_URL)
                 }
             }
             post {
