@@ -17,36 +17,50 @@ CREATE FOREIGN TABLE upsert_test (
     b   TEXT
 ) SERVER griddb_svr;
 
+--Testcase 1:
 DELETE FROM update_test;
+--Testcase 2:
 DELETE FROM upsert_test;
+--Testcase 3:
 INSERT INTO update_test(a, b, c) VALUES (5, 10, 'foo');
+--Testcase 4:
 INSERT INTO update_test(b, a) VALUES (15, 10);
 
+--Testcase 5:
 SELECT * FROM update_test;
 
+--Testcase 6:
 UPDATE update_test SET a = DEFAULT, b = DEFAULT;
 
+--Testcase 7:
 SELECT * FROM update_test;
 
 -- aliases for the UPDATE target table
+--Testcase 8:
 UPDATE update_test AS t SET b = 10 WHERE t.a = 10;
 
+--Testcase 9:
 SELECT * FROM update_test;
 
+--Testcase 10:
 UPDATE update_test t SET b = t.b + 10 WHERE t.a = 10;
 
+--Testcase 11:
 SELECT * FROM update_test;
 
 --
 -- Test VALUES in FROM
 --
 
+--Testcase 12:
 UPDATE update_test SET a=v.i FROM (VALUES(100, 20)) AS v(i, j)
   WHERE update_test.b = v.j;
 
+--Testcase 13:
 SELECT * FROM update_test;
 
 -- fail, wrong data type:
+--Testcase 14:
 UPDATE update_test SET a = v.* FROM (VALUES(100, 20)) AS v(i, j)
   WHERE update_test.b = v.j;
 
@@ -54,69 +68,95 @@ UPDATE update_test SET a = v.* FROM (VALUES(100, 20)) AS v(i, j)
 -- Test multiple-set-clause syntax
 --
 
+--Testcase 15:
 INSERT INTO update_test(a,b,c) SELECT a,b+1,c FROM update_test;
+--Testcase 16:
 SELECT * FROM update_test;
 
+--Testcase 17:
 UPDATE update_test SET (c,b,a) = ('bugle', b+11, DEFAULT) WHERE c = 'foo';
+--Testcase 18:
 SELECT * FROM update_test;
+--Testcase 19:
 UPDATE update_test SET (c,b) = ('car', a+b), a = a + 1 WHERE a = 10;
+--Testcase 20:
 SELECT * FROM update_test;
 -- fail, multi assignment to same column:
+--Testcase 21:
 UPDATE update_test SET (c,b) = ('car', a+b), b = a + 1 WHERE a = 10;
 
 -- uncorrelated sub-select:
+--Testcase 22:
 UPDATE update_test
   SET (b,a) = (select a,b from update_test where b = 41 and c = 'car')
   WHERE a = 100 AND b = 20;
+--Testcase 23:
 SELECT * FROM update_test;
 -- correlated sub-select:
+--Testcase 24:
 UPDATE update_test o
   SET (b,a) = (select a+1,b from update_test i
                where i.a=o.a and i.b=o.b and i.c is not distinct from o.c);
+--Testcase 25:
 SELECT * FROM update_test;
 -- fail, multiple rows supplied:
+--Testcase 26:
 UPDATE update_test SET (b,a) = (select a+1,b from update_test);
 -- set to null if no rows supplied:
+--Testcase 27:
 UPDATE update_test SET (b,a) = (select a+1,b from update_test where a = 1000)
   WHERE a = 11;
+--Testcase 28:
 SELECT * FROM update_test;
 -- *-expansion should work in this context:
+--Testcase 29:
 UPDATE update_test SET (a,b) = ROW(v.*) FROM (VALUES(21, 100)) AS v(i, j)
   WHERE update_test.a = v.i;
 -- you might expect this to work, but syntactically it's not a RowExpr:
+--Testcase 30:
 UPDATE update_test SET (a,b) = (v.*) FROM (VALUES(21, 101)) AS v(i, j)
   WHERE update_test.a = v.i;
 
 -- if an alias for the target table is specified, don't allow references
 -- to the original table name
+--Testcase 31:
 UPDATE update_test AS t SET b = update_test.b + 10 WHERE t.a = 10;
 
 -- Make sure that we can update to a TOASTed value.
+--Testcase 32:
 UPDATE update_test SET c = repeat('x', 10000) WHERE c = 'car';
+--Testcase 33:
 SELECT a, b, char_length(c) FROM update_test;
 
 -- Check multi-assignment with a Result node to handle a one-time filter.
+--Testcase 34:
 EXPLAIN (VERBOSE, COSTS OFF)
 UPDATE update_test t
   SET (a, b) = (SELECT b, a FROM update_test s WHERE s.a = t.a)
   WHERE CURRENT_USER = SESSION_USER;
+--Testcase 35:
 UPDATE update_test t
   SET (a, b) = (SELECT b, a FROM update_test s WHERE s.a = t.a)
   WHERE CURRENT_USER = SESSION_USER;
+--Testcase 36:
 SELECT a, b, char_length(c) FROM update_test;
 
 -- ON CONFLICT is not supported.
 -- Test ON CONFLICT DO UPDATE
+--Testcase 37:
 INSERT INTO upsert_test VALUES(1, 'Boo');
 -- uncorrelated  sub-select:
+--Testcase 38:
 WITH aaa AS (SELECT 1 AS a, 'Foo' AS b) INSERT INTO upsert_test
   VALUES (1, 'Bar') ON CONFLICT(a)
   DO UPDATE SET (b, a) = (SELECT b, a FROM aaa) RETURNING *;
 -- correlated sub-select:
+--Testcase 39:
 INSERT INTO upsert_test VALUES (1, 'Baz') ON CONFLICT(a)
   DO UPDATE SET (b, a) = (SELECT b || ', Correlated', a from upsert_test i WHERE i.a = upsert_test.a)
   RETURNING *;
 -- correlated sub-select (EXCLUDED.* alias):
+--Testcase 40:
 INSERT INTO upsert_test VALUES (1, 'Bat') ON CONFLICT(a)
   DO UPDATE SET (b, a) = (SELECT b || ', Excluded', a from upsert_test i WHERE i.a = excluded.a)
   RETURNING *;
@@ -125,11 +165,13 @@ INSERT INTO upsert_test VALUES (1, 'Bat') ON CONFLICT(a)
 -- inserting and updating paths. See bug report at:
 -- https://www.postgresql.org/message-id/73436355-6432-49B1-92ED-1FE4F7E7E100%40finefun.com.au
 CREATE FUNCTION xid_current() RETURNS xid LANGUAGE SQL AS $$SELECT (txid_current() % ((1::int8<<32)))::text::xid;$$;
+--Testcase 41:
 INSERT INTO upsert_test VALUES (2, 'Beeble') ON CONFLICT(a)
   DO UPDATE SET (b, a) = (SELECT b || ', Excluded', a from upsert_test i WHERE i.a = excluded.a)
   RETURNING tableoid::regclass, xmin = xid_current() AS xmin_correct, xmax = 0 AS xmax_correct;
 -- currently xmax is set after a conflict - that's probably not good,
 -- but it seems worthwhile to have to be explicit if that changes.
+--Testcase 42:
 INSERT INTO upsert_test VALUES (2, 'Brox') ON CONFLICT(a)
   DO UPDATE SET (b, a) = (SELECT b || ', Excluded', a from upsert_test i WHERE i.a = excluded.a)
   RETURNING tableoid::regclass, xmin = xid_current() AS xmin_correct, xmax = xid_current() AS xmax_correct;
@@ -177,6 +219,7 @@ alter foreign table part_a_1_a_10 alter column id options (rowkey 'true');
 
 -- Check that partition-key UPDATE works sanely on a partitioned table that
 -- does not have any child partitions.
+--Testcase 43:
 UPDATE part_b_10_b_20 set b = b - 6;
 
 -- Create some more partitions following the above pattern of descending bound
@@ -207,14 +250,19 @@ EXPLAIN (costs off) UPDATE range_parted set c = c - 50 WHERE c > 97;
 -- UPDATE part_c_100_200 set c = c - 20, d = c WHERE c = 105;
 -- fail, no partition key update, so no attempt to move tuple,
 -- but "a = 'a'" violates partition constraint enforced by root partition)
+--Testcase 44:
 UPDATE part_b_10_b_20 set a = 'a';
 -- ok, partition key update, no constraint violation
+--Testcase 45:
 UPDATE range_parted set d = d - 10 WHERE d > 10;
 -- ok, no partition key update, no constraint violation
+--Testcase 46:
 UPDATE range_parted set e = d;
 -- No row found
+--Testcase 47:
 UPDATE part_c_1_100 set c = c + 20 WHERE c = 98;
 -- ok, row movement
+--Testcase 48:
 UPDATE part_b_10_b_20 set c = c + 20;
 :show_data;
 
@@ -222,23 +270,27 @@ UPDATE part_b_10_b_20 set c = c + 20;
 -- skip, bound check is not applied.
 -- UPDATE part_b_10_b_20 set b = b - 6 WHERE c > 116 returning *;
 -- ok, row movement, with subset of rows moved into different partition.
+--Testcase 49:
 UPDATE range_parted set b = b - 6 WHERE c > 116;
 
 :show_data;
 
 -- Common table needed for multiple test scenarios.
 CREATE TABLE mintab(c1 int);
+--Testcase 50:
 INSERT into mintab VALUES (120);
 
 -- update partition key using updatable view.
 CREATE VIEW upview AS SELECT * FROM range_parted WHERE (select c > c1 FROM mintab) WITH CHECK OPTION;
 -- ok
+--Testcase 51:
 UPDATE upview set c = 199 WHERE b = 4;
 -- fail, check option violation
 -- UPDATE upview set c = 120 WHERE b = 4;
 -- fail, row movement with check option violation
 -- UPDATE upview set a = 'b', b = 15, c = 120 WHERE b = 4;
 -- ok, row movement, check option passes
+--Testcase 52:
 UPDATE upview set a = 'b', b = 15 WHERE b = 4;
 
 :show_data;
@@ -248,6 +300,7 @@ DROP VIEW upview;
 
 -- RETURNING having whole-row vars.
 :init_range_parted;
+--Testcase 53:
 UPDATE range_parted set c = 95 WHERE a = 'b' and b > 10 and c > 100;
 :show_data;
 
@@ -270,6 +323,7 @@ CREATE TRIGGER trans_updatetrig
   AFTER UPDATE ON range_parted REFERENCING OLD TABLE AS old_table NEW TABLE AS new_table
   FOR EACH STATEMENT EXECUTE PROCEDURE trans_updatetrigfunc();
 
+--Testcase 54:
 UPDATE range_parted set c = (case when c = 96 then 110 else c + 1 end ) WHERE a = 'b' and b > 10 and c >= 96;
 :show_data;
 :init_range_parted;
@@ -283,6 +337,7 @@ CREATE TRIGGER trans_deletetrig
 CREATE TRIGGER trans_inserttrig
   AFTER INSERT ON range_parted REFERENCING NEW TABLE AS new_table
   FOR EACH STATEMENT EXECUTE PROCEDURE trans_updatetrigfunc();
+--Testcase 55:
 UPDATE range_parted set c = c + 50 WHERE a = 'b' and b > 10 and c >= 96;
 :show_data;
 DROP TRIGGER trans_deletetrig ON range_parted;
@@ -308,9 +363,11 @@ CREATE TRIGGER trig_d1_15 BEFORE UPDATE OR INSERT ON part_d_1_15
 CREATE TRIGGER trig_d15_20 BEFORE UPDATE OR INSERT ON part_d_15_20
    FOR EACH ROW EXECUTE PROCEDURE func_parted_mod_b();
 :init_range_parted;
+--Testcase 56:
 UPDATE range_parted set c = (case when c = 96 then 110 else c + 1 end) WHERE a = 'b' and b > 10 and c >= 96;
 :show_data;
 :init_range_parted;
+--Testcase 57:
 UPDATE range_parted set c = c + 50 WHERE a = 'b' and b > 10 and c >= 96;
 :show_data;
 
@@ -318,6 +375,7 @@ UPDATE range_parted set c = c + 50 WHERE a = 'b' and b > 10 and c >= 96;
 -- map is not required for the particular tuple that is routed, thanks to
 -- matching table attributes of the partition and the target table.
 :init_range_parted;
+--Testcase 58:
 UPDATE range_parted set b = 15 WHERE b = 1;
 :show_data;
 
@@ -358,6 +416,7 @@ SET SESSION AUTHORIZATION regress_range_parted_user;
 -- Here, RLS checks should succeed while moving row from part_a_10_a_20 to
 -- part_d_1_15. Even though the UPDATE is setting 'c' to an odd number, the
 -- trigger at the destination partition again makes it an even number.
+--Testcase 59:
 UPDATE range_parted set a = 'b', c = 151 WHERE a = 'a' and c = 200;
 
 RESET SESSION AUTHORIZATION;
@@ -383,6 +442,7 @@ SET SESSION AUTHORIZATION regress_range_parted_user;
 -- fail, mintab has row with c1 = 120
 -- UPDATE range_parted set a = 'b', c = 122 WHERE a = 'a' and c = 200;
 -- ok
+--Testcase 60:
 UPDATE range_parted set a = 'b', c = 120 WHERE a = 'a' and c = 200;
 
 -- RLS policy expression contains whole row.
@@ -393,6 +453,7 @@ CREATE POLICY policy_range_parted_wholerow on range_parted AS RESTRICTIVE for UP
    WITH CHECK (range_parted= row(1000, 'b', 10, 112, 1, NULL)::range_parted);
 SET SESSION AUTHORIZATION regress_range_parted_user;
 -- ok, should pass the RLS check
+--Testcase 61:
 UPDATE range_parted set a = 'b', c = 112 WHERE a = 'a' and c = 200;
 RESET SESSION AUTHORIZATION;
 :init_range_parted;
@@ -456,6 +517,7 @@ CREATE TRIGGER d15_insert_trig
 
 -- Move all rows from part_c_100_200 to part_c_1_100. None of the delete or
 -- insert statement triggers should be fired.
+--Testcase 62:
 UPDATE range_parted set c = c - 50 WHERE c > 97;
 :show_data;
 
@@ -478,8 +540,10 @@ DROP TRIGGER d15_insert_trig ON part_d_15_20;
 create foreign table part_def1 partition of range_parted default server griddb_svr;
 alter foreign table part_def1 alter column id options (rowkey 'true');
 \d+ part_def1
+--Testcase 63:
 insert into range_parted(a, b) values ('c', 9);
 -- ok
+--Testcase 64:
 update range_parted set a = 'd' where a = 'c';
 -- fail
 --update range_parted set a = 'a' where a = 'd';
@@ -490,12 +554,16 @@ update range_parted set a = 'd' where a = 'c';
 -- fail, default partition is not under part_a_10_a_20;
 -- UPDATE part_a_10_a_20 set a = 'ad' WHERE a = 'a';
 -- ok
+--Testcase 65:
 UPDATE range_parted set a = 'ad' WHERE a = 'a';
+--Testcase 66:
 UPDATE range_parted set a = 'bd' WHERE a = 'b';
 :show_data;
 -- Update row movement from default to non-default partitions.
 -- ok
+--Testcase 67:
 UPDATE range_parted set a = 'a' WHERE a = 'ad';
+--Testcase 68:
 UPDATE range_parted set a = 'b' WHERE a = 'bd';
 :show_data;
 
@@ -511,13 +579,17 @@ CREATE FOREIGN TABLE list_part1  PARTITION OF list_parted for VALUES in ('a', 'b
 CREATE FOREIGN TABLE list_default PARTITION OF list_parted default server griddb_svr;
 alter foreign table list_part1 alter column id options (rowkey 'true');
 alter foreign table list_default alter column id options (rowkey 'true');
+--Testcase 69:
 DELETE FROM list_parted;
+--Testcase 70:
 INSERT into list_part1(a, b) VALUES ('a', 1);
+--Testcase 71:
 INSERT into list_default(a, b) VALUES ('d', 10);
 
 -- fail
 -- UPDATE list_default set a = 'a' WHERE a = 'd';
 -- ok
+--Testcase 72:
 UPDATE list_default set a = 'x' WHERE a = 'd';
 
 DROP TABLE list_parted;
@@ -539,19 +611,27 @@ ALTER TABLE sub_parted ATTACH PARTITION sub_part2 for VALUES in (2);
 CREATE TABLE list_part1(a numeric, b int, c int8);
 ALTER TABLE list_parted ATTACH PARTITION list_part1 for VALUES in (2,3);
 
+--Testcase 73:
 INSERT into list_parted VALUES (2,5,50);
+--Testcase 74:
 INSERT into list_parted VALUES (3,6,60);
+--Testcase 75:
 INSERT into sub_parted VALUES (1,1,60);
+--Testcase 76:
 INSERT into sub_parted VALUES (1,2,10);
 
 -- Test partition constraint violation when intermediate ancestor is used and
 -- constraint is inherited from upper root.
+--Testcase 77:
 UPDATE sub_parted set a = 2 WHERE c = 10;
 
 -- Test update-partition-key, where the unpruned partitions do not have their
 -- partition keys updated.
+--Testcase 78:
 SELECT tableoid::regclass::text, * FROM list_parted WHERE a = 2 ORDER BY 1;
+--Testcase 79:
 UPDATE list_parted set b = c + a WHERE a = 2;
+--Testcase 80:
 SELECT tableoid::regclass::text, * FROM list_parted WHERE a = 2 ORDER BY 1;
 
 
@@ -564,11 +644,14 @@ END $$ LANGUAGE plpgsql;
 CREATE TRIGGER parted_mod_b before update on sub_part1
    for each row execute procedure func_parted_mod_b();
 
+--Testcase 81:
 SELECT tableoid::regclass::text, * FROM list_parted ORDER BY 1, 2, 3, 4;
 
 -- This should do the tuple routing even though there is no explicit
 -- partition-key update, because there is a trigger on sub_part1.
+--Testcase 82:
 UPDATE list_parted set c = 70 WHERE b  = 1;
+--Testcase 83:
 SELECT tableoid::regclass::text, * FROM list_parted ORDER BY 1, 2, 3, 4;
 
 DROP TRIGGER parted_mod_b ON sub_part1;
@@ -582,11 +665,15 @@ BEGIN
 END $$ LANGUAGE plpgsql;
 CREATE TRIGGER trig_skip_delete before delete on sub_part2
    for each row execute procedure func_parted_mod_b();
+--Testcase 84:
 UPDATE list_parted set b = 1 WHERE c = 70;
+--Testcase 85:
 SELECT tableoid::regclass::text, * FROM list_parted ORDER BY 1, 2, 3, 4;
 -- Drop the trigger. Now the row should be moved.
 DROP TRIGGER trig_skip_delete ON sub_part2;
+--Testcase 86:
 UPDATE list_parted set b = 1 WHERE c = 70;
+--Testcase 87:
 SELECT tableoid::regclass::text, * FROM list_parted ORDER BY 1, 2, 3, 4;
 DROP FUNCTION func_parted_mod_b();
 
@@ -594,8 +681,11 @@ DROP FUNCTION func_parted_mod_b();
 -- rows for the same row to be modified, we should tuple-route the row only
 -- once. There should not be any rows inserted.
 CREATE TABLE non_parted (id int);
+--Testcase 88:
 INSERT into non_parted VALUES (1), (1), (1), (2), (2), (2), (3), (3), (3);
+--Testcase 89:
 UPDATE list_parted t1 set a = 2 FROM non_parted t2 WHERE t1.a = t2.id and a = 1;
+--Testcase 90:
 SELECT tableoid::regclass::text, * FROM list_parted ORDER BY 1, 2, 3, 4;
 DROP TABLE non_parted;
 
@@ -623,17 +713,23 @@ alter foreign table hpart1 alter column id options (rowkey 'true');
 alter foreign table hpart2 alter column id options (rowkey 'true');
 alter foreign table hpart3 alter column id options (rowkey 'true');
 alter foreign table hpart4 alter column id options (rowkey 'true');
+--Testcase 91:
 delete from hash_parted;
+--Testcase 92:
 insert into hpart1(a, b) values (1, 1);
+--Testcase 93:
 insert into hpart2(a, b) values (2, 5);
+--Testcase 94:
 insert into hpart4(a, b) values (3, 4);
 
 -- fail
 -- skip
 -- update hpart1 set a = 3, b=4 where a = 1;
 -- ok, row movement
+--Testcase 95:
 update hash_parted set b = b - 1 where b = 1;
 -- ok
+--Testcase 96:
 update hash_parted set b = b + 8 where b = 1;
 
 --drop all foreign tables
