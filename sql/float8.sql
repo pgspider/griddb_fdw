@@ -6,112 +6,167 @@ CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS(host '239.0.0.1
 CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS(username 'admin', password 'testadmin');
 CREATE FOREIGN TABLE FLOAT8_TBL(id serial OPTIONS (rowkey 'true'), f1 float8) SERVER griddb_svr;
 
+--Testcase 1:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('    0.0   ');
+--Testcase 2:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('1004.30  ');
+--Testcase 3:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('   -34.84');
+--Testcase 4:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('1.2345678901234e+200');
+--Testcase 5:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('1.2345678901234e-200');
 
 -- test for underflow and overflow handling
+--Testcase 6:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('10e400'::float8);
+--Testcase 7:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('-10e400'::float8);
+--Testcase 8:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('10e-400'::float8);
+--Testcase 9:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('-10e-400'::float8);
 
 -- test smallest normalized input
 BEGIN;
+--Testcase 10:
 DELETE FROM FLOAT8_TBL;
+--Testcase 11:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('2.2250738585072014E-308'::float8);
+--Testcase 12:
 SELECT float8send(f1) FROM FLOAT8_TBL;
 ROLLBACK;
 
 -- bad input
+--Testcase 13:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('');
+--Testcase 14:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('     ');
+--Testcase 15:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('xyz');
+--Testcase 16:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('5.0.0');
+--Testcase 17:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('5 . 0');
+--Testcase 18:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('5.   0');
+--Testcase 19:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('    - 3');
+--Testcase 20:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('123           5');
 
 -- special inputs
 BEGIN;
+--Testcase 21:
 DELETE FROM FLOAT8_TBL;
+--Testcase 22:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('NaN'::float8);
+--Testcase 23:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('nan'::float8);
+--Testcase 24:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('   NAN  '::float8);
+--Testcase 25:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('infinity'::float8);
+--Testcase 26:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('          -INFINiTY   '::float8);
+--Testcase 27:
 SELECT f1 AS float8 FROM FLOAT8_TBL;
 ROLLBACK;
 -- bad special inputs
+--Testcase 28:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('N A N'::float8);
+--Testcase 29:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('NaN x'::float8);
+--Testcase 30:
 INSERT INTO FLOAT8_TBL(f1) VALUES (' INFINITY    x'::float8);
 
 BEGIN;
+--Testcase 31:
 DELETE FROM FLOAT8_TBL;
+--Testcase 32:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('Infinity'::float8 + 100.0);
+--Testcase 33:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('Infinity'::float8 / 'Infinity'::float8);
+--Testcase 34:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('nan'::float8 / 'nan'::float8);
+--Testcase 35:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('nan'::numeric::float8);
+--Testcase 36:
 SELECT f1 AS float8 FROM FLOAT8_TBL;
 ROLLBACK;
 
+--Testcase 37:
 SELECT '' AS five, f1 FROM FLOAT8_TBL;
 
+--Testcase 38:
 SELECT '' AS four, f.f1 FROM FLOAT8_TBL f WHERE f.f1 <> '1004.3';
 
+--Testcase 39:
 SELECT '' AS one, f.f1 FROM FLOAT8_TBL f WHERE f.f1 = '1004.3';
 
+--Testcase 40:
 SELECT '' AS three, f.f1 FROM FLOAT8_TBL f WHERE '1004.3' > f.f1;
 
+--Testcase 41:
 SELECT '' AS three, f.f1 FROM FLOAT8_TBL f WHERE  f.f1 < '1004.3';
 
+--Testcase 42:
 SELECT '' AS four, f.f1 FROM FLOAT8_TBL f WHERE '1004.3' >= f.f1;
 
+--Testcase 43:
 SELECT '' AS four, f.f1 FROM FLOAT8_TBL f WHERE  f.f1 <= '1004.3';
 
+--Testcase 44:
 SELECT '' AS three, f.f1, f.f1 * '-10' AS x
    FROM FLOAT8_TBL f
    WHERE f.f1 > '0.0';
 
+--Testcase 45:
 SELECT '' AS three, f.f1, f.f1 + '-10' AS x
    FROM FLOAT8_TBL f
    WHERE f.f1 > '0.0';
 
+--Testcase 46:
 SELECT '' AS three, f.f1, f.f1 / '-10' AS x
    FROM FLOAT8_TBL f
    WHERE f.f1 > '0.0';
 
+--Testcase 47:
 SELECT '' AS three, f.f1, f.f1 - '-10' AS x
    FROM FLOAT8_TBL f
    WHERE f.f1 > '0.0';
 
+--Testcase 48:
 SELECT '' AS one, f.f1 ^ '2.0' AS square_f1
    FROM FLOAT8_TBL f where f.f1 = '1004.3';
 
 -- absolute value
+--Testcase 49:
 SELECT '' AS five, f.f1, @f.f1 AS abs_f1
    FROM FLOAT8_TBL f;
 
 -- truncate
+--Testcase 50:
 SELECT '' AS five, f.f1, trunc(f.f1) AS trunc_f1
    FROM FLOAT8_TBL f;
 
 -- round
+--Testcase 51:
 SELECT '' AS five, f.f1, round(f.f1) AS round_f1
    FROM FLOAT8_TBL f;
 
 -- ceil / ceiling
+--Testcase 52:
 select ceil(f1) as ceil_f1 from float8_tbl f;
+--Testcase 53:
 select ceiling(f1) as ceiling_f1 from float8_tbl f;
 
 -- floor
+--Testcase 54:
 select floor(f1) as floor_f1 from float8_tbl f;
 
 -- sign
+--Testcase 55:
 select sign(f1) as sign_f1 from float8_tbl f;
 
 -- avoid bit-exact output here because operations may not be bit-exact.
@@ -119,124 +174,187 @@ SET extra_float_digits = 0;
 
 -- square root
 BEGIN;
+--Testcase 56:
 DELETE FROM FLOAT8_TBL;
+--Testcase 57:
 INSERT INTO FLOAT8_TBL(f1) VALUES (sqrt(float8 '64'));
+--Testcase 58:
 INSERT INTO FLOAT8_TBL(f1) VALUES (|/ float8 '64');
+--Testcase 59:
 SELECT f1 AS eight FROM FLOAT8_TBL;
 ROLLBACK;
 
+--Testcase 60:
 SELECT '' AS three, f.f1, |/f.f1 AS sqrt_f1
    FROM FLOAT8_TBL f
    WHERE f.f1 > '0.0';
 
 -- power
 BEGIN;
+--Testcase 61:
 DELETE FROM FLOAT8_TBL;
+--Testcase 62:
 INSERT INTO FLOAT8_TBL(f1) VALUES (power(float8 '144', float8 '0.5'));
+--Testcase 63:
 INSERT INTO FLOAT8_TBL(f1) VALUES (power(float8 'NaN', float8 '0.5'));
+--Testcase 64:
 INSERT INTO FLOAT8_TBL(f1) VALUES (power(float8 '144', float8 'NaN'));
+--Testcase 65:
 INSERT INTO FLOAT8_TBL(f1) VALUES (power(float8 'NaN', float8 'NaN'));
+--Testcase 66:
 INSERT INTO FLOAT8_TBL(f1) VALUES (power(float8 '-1', float8 'NaN'));
+--Testcase 67:
 INSERT INTO FLOAT8_TBL(f1) VALUES (power(float8 '1', float8 'NaN'));
+--Testcase 68:
 INSERT INTO FLOAT8_TBL(f1) VALUES (power(float8 'NaN', float8 '0'));
+--Testcase 69:
 SELECT f1 AS power FROM FLOAT8_TBL;
 ROLLBACK; 
 
 -- take exp of ln(f.f1)
+--Testcase 70:
 SELECT '' AS three, f.f1, exp(ln(f.f1)) AS exp_ln_f1
    FROM FLOAT8_TBL f
    WHERE f.f1 > '0.0';
 
 -- cube root
 BEGIN;
+--Testcase 71:
 DELETE FROM FLOAT8_TBL;
+--Testcase 72:
 INSERT INTO FLOAT8_TBL(f1) VALUES (||/ float8 '27');
+--Testcase 73:
 SELECT f1 as three FROM FLOAT8_TBL;
 ROLLBACK;
 
+--Testcase 74:
 SELECT '' AS five, f.f1, ||/f.f1 AS cbrt_f1 FROM FLOAT8_TBL f;
 
 
+--Testcase 75:
 SELECT '' AS five, f1 FROM FLOAT8_TBL;
 
+--Testcase 76:
 UPDATE FLOAT8_TBL
    SET f1 = FLOAT8_TBL.f1 * '-1'
    WHERE FLOAT8_TBL.f1 > '0.0';
 
+--Testcase 77:
 SELECT '' AS bad, f.f1 * '1e200' from FLOAT8_TBL f;
 
+--Testcase 78:
 SELECT '' AS bad, f.f1 ^ '1e200' from FLOAT8_TBL f;
 
 BEGIN;
+--Testcase 79:
 DELETE FROM FLOAT8_TBL;
+--Testcase 80:
 INSERT INTO FLOAT8_TBL(f1) VALUES (0 ^ 0 + 0 ^ 1 + 0 ^ 0.0 + 0 ^ 0.5);
+--Testcase 81:
 SELECT f1 FROM FLOAT8_TBL;
 ROLLBACK;
 
+--Testcase 82:
 SELECT '' AS bad, ln(f.f1) from FLOAT8_TBL f where f.f1 = '0.0' ;
 
+--Testcase 83:
 SELECT '' AS bad, ln(f.f1) from FLOAT8_TBL f where f.f1 < '0.0' ;
 
+--Testcase 84:
 SELECT '' AS bad, exp(f.f1) from FLOAT8_TBL f;
 
+--Testcase 85:
 SELECT '' AS bad, f.f1 / '0.0' from FLOAT8_TBL f;
 
+--Testcase 86:
 SELECT '' AS five, f1 FROM FLOAT8_TBL;
 
 -- hyperbolic functions
 -- we run these with extra_float_digits = 0 too, since different platforms
 -- tend to produce results that vary in the last place.
 BEGIN;
+--Testcase 87:
 DELETE FROM FLOAT8_TBL;
+--Testcase 88:
 INSERT INTO FLOAT8_TBL(f1) VALUES (1);
+--Testcase 89:
 SELECT sinh(f1) FROM FLOAT8_TBL;
+--Testcase 90:
 SELECT cosh(f1) FROM FLOAT8_TBL;
+--Testcase 91:
 SELECT tanh(f1) FROM FLOAT8_TBL;
+--Testcase 92:
 SELECT asinh(f1) FROM FLOAT8_TBL;
 ROLLBACK;
 
 BEGIN;
+--Testcase 93:
 DELETE FROM FLOAT8_TBL;
+--Testcase 94:
 INSERT INTO FLOAT8_TBL(f1) VALUES (2);
+--Testcase 95:
 SELECT acosh(f1) FROM FLOAT8_TBL;
 ROLLBACK;
 
 BEGIN;
+--Testcase 96:
 DELETE FROM FLOAT8_TBL;
+--Testcase 97:
 INSERT INTO FLOAT8_TBL(f1) VALUES (0.5);
+--Testcase 98:
 SELECT atanh(f1) FROM FLOAT8_TBL;
 ROLLBACK;
 
 -- test Inf/NaN cases for hyperbolic functions
 BEGIN;
+--Testcase 99:
 DELETE FROM FLOAT8_TBL;
+--Testcase 100:
 INSERT INTO FLOAT8_TBL(f1) VALUES ((float8 'infinity'));
+--Testcase 101:
 INSERT INTO FLOAT8_TBL(f1) VALUES ((float8 '-infinity'));
+--Testcase 102:
 INSERT INTO FLOAT8_TBL(f1) VALUES ((float8 'nan'));
+--Testcase 103:
 SELECT sinh(f1) FROM FLOAT8_TBL;
 ROLLBACK;
 
 BEGIN;
+--Testcase 104:
 DELETE FROM FLOAT8_TBL;
+--Testcase 105:
 INSERT INTO FLOAT8_TBL(f1) VALUES ((float8 'infinity'));
+--Testcase 106:
 INSERT INTO FLOAT8_TBL(f1) VALUES ((float8 '-infinity'));
+--Testcase 107:
 INSERT INTO FLOAT8_TBL(f1) VALUES ((float8 'nan'));
+--Testcase 108:
 SELECT cosh(f1) FROM FLOAT8_TBL;
 ROLLBACK;
 
 BEGIN;
+--Testcase 109:
 DELETE FROM FLOAT8_TBL;
+--Testcase 110:
 INSERT INTO FLOAT8_TBL(f1) VALUES ((float8 'infinity'));
+--Testcase 111:
 INSERT INTO FLOAT8_TBL(f1) VALUES ((float8 '-infinity'));
+--Testcase 112:
 INSERT INTO FLOAT8_TBL(f1) VALUES ((float8 'nan'));
+--Testcase 113:
 SELECT tanh(f1) FROM FLOAT8_TBL;
 ROLLBACK;
 
 BEGIN;
+--Testcase 114:
 DELETE FROM FLOAT8_TBL;
+--Testcase 115:
 INSERT INTO FLOAT8_TBL(f1) VALUES ((float8 'infinity'));
+--Testcase 116:
 INSERT INTO FLOAT8_TBL(f1) VALUES ((float8 '-infinity'));
+--Testcase 117:
 INSERT INTO FLOAT8_TBL(f1) VALUES ((float8 'nan'));
+--Testcase 118:
 SELECT asinh(f1) FROM FLOAT8_TBL;
 ROLLBACK;
 
@@ -244,151 +362,222 @@ ROLLBACK;
 -- acosh(Inf) should be Inf, but some mingw versions produce NaN, so skip test
 -- SELECT acosh(float8 'infinity');
 BEGIN;
+--Testcase 119:
 DELETE FROM FLOAT8_TBL;
+--Testcase 120:
 INSERT INTO FLOAT8_TBL(f1) VALUES (acosh(float8 '-infinity'));
+--Testcase 121:
 SELECT f1 FROM FLOAT8_TBL;
 ROLLBACK;
 
 BEGIN;
+--Testcase 122:
 DELETE FROM FLOAT8_TBL;
+--Testcase 123:
 INSERT INTO FLOAT8_TBL(f1) VALUES (acosh(float8 'nan'));
+--Testcase 124:
 SELECT f1 FROM FLOAT8_TBL;
 ROLLBACK;
 
 BEGIN;
+--Testcase 125:
 DELETE FROM FLOAT8_TBL;
+--Testcase 126:
 INSERT INTO FLOAT8_TBL(f1) VALUES (atanh(float8 'infinity'));
+--Testcase 127:
 SELECT f1 FROM FLOAT8_TBL;
 ROLLBACK;
 
 BEGIN;
+--Testcase 128:
 DELETE FROM FLOAT8_TBL;
+--Testcase 129:
 INSERT INTO FLOAT8_TBL(f1) VALUES (atanh(float8 '-infinity'));
+--Testcase 130:
 SELECT f1 FROM FLOAT8_TBL;
 ROLLBACK;
 
 BEGIN;
+--Testcase 131:
 DELETE FROM FLOAT8_TBL;
+--Testcase 132:
 INSERT INTO FLOAT8_TBL(f1) VALUES (atanh(float8 'nan'));
+--Testcase 133:
 SELECT f1 FROM FLOAT8_TBL;
 ROLLBACK;
 
 RESET extra_float_digits;
 
 -- test for over- and underflow
+--Testcase 134:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('10e400');
 
+--Testcase 135:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('-10e400');
 
+--Testcase 136:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('10e-400');
 
+--Testcase 137:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('-10e-400');
 
 -- maintain external table consistency across platforms
 -- delete all values and reinsert well-behaved ones
 
+--Testcase 138:
 DELETE FROM FLOAT8_TBL;
 
+--Testcase 139:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('0.0');
 
+--Testcase 140:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('-34.84');
 
+--Testcase 141:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('-1004.30');
 
+--Testcase 142:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('-1.2345678901234e+200');
 
+--Testcase 143:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('-1.2345678901234e-200');
 
+--Testcase 144:
 SELECT '' AS five, f1 FROM FLOAT8_TBL;
 
 -- test edge-case coercions to integer
 BEGIN;
+--Testcase 145:
 DELETE FROM FLOAT8_TBL;
+--Testcase 146:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('32767.4'::float8::int2);
+--Testcase 147:
 SELECT f1::int2 FROM FLOAT8_TBL;
 ROLLBACK;
 
 BEGIN;
+--Testcase 148:
 DELETE FROM FLOAT8_TBL;
+--Testcase 149:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('32767.6'::float8::int2);
+--Testcase 150:
 SELECT f1::int2 FROM FLOAT8_TBL;
 ROLLBACK;
 
 BEGIN;
+--Testcase 151:
 DELETE FROM FLOAT8_TBL;
+--Testcase 152:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('-32768.4'::float8::int2);
+--Testcase 153:
 SELECT f1::int2 FROM FLOAT8_TBL;
 ROLLBACK;
 
 BEGIN;
+--Testcase 154:
 DELETE FROM FLOAT8_TBL;
+--Testcase 155:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('-32768.6'::float8::int2);
+--Testcase 156:
 SELECT f1::int2 FROM FLOAT8_TBL;
 ROLLBACK;
 
 BEGIN;
+--Testcase 157:
 DELETE FROM FLOAT8_TBL;
+--Testcase 158:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('2147483647.4'::float8::int4);
+--Testcase 159:
 SELECT f1::int4 FROM FLOAT8_TBL;
 ROLLBACK;
 BEGIN;
+--Testcase 160:
 DELETE FROM FLOAT8_TBL;
+--Testcase 161:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('2147483647.6'::float8::int4);
+--Testcase 162:
 SELECT f1::int4 FROM FLOAT8_TBL;
 ROLLBACK;
 BEGIN;
+--Testcase 163:
 DELETE FROM FLOAT8_TBL;
+--Testcase 164:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('-2147483648.4'::float8::int4);
+--Testcase 165:
 SELECT f1::int4 FROM FLOAT8_TBL;
 ROLLBACK;
 BEGIN;
+--Testcase 166:
 DELETE FROM FLOAT8_TBL;
+--Testcase 167:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('-2147483648.6'::float8::int4);
+--Testcase 168:
 SELECT f1::int4 FROM FLOAT8_TBL;
 ROLLBACK;
 
 BEGIN;
+--Testcase 169:
 DELETE FROM FLOAT8_TBL;
+--Testcase 170:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('9223372036854773760'::float8::int8);
+--Testcase 171:
 SELECT f1::int8 FROM FLOAT8_TBL;
 ROLLBACK;
 BEGIN;
+--Testcase 172:
 DELETE FROM FLOAT8_TBL;
+--Testcase 173:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('9223372036854775807'::float8::int8);
+--Testcase 174:
 SELECT f1::int8 FROM FLOAT8_TBL;
 ROLLBACK;
 BEGIN;
+--Testcase 175:
 DELETE FROM FLOAT8_TBL;
+--Testcase 176:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('-9223372036854775808.5'::float8::int8);
+--Testcase 177:
 SELECT f1::int8 FROM FLOAT8_TBL;
 ROLLBACK;
 BEGIN;
+--Testcase 178:
 DELETE FROM FLOAT8_TBL;
+--Testcase 179:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('-9223372036854780000'::float8::int8);
+--Testcase 180:
 SELECT f1::int8 FROM FLOAT8_TBL;
 ROLLBACK;
 -- test exact cases for trigonometric functions in degrees
 
 BEGIN;
+--Testcase 181:
 DELETE FROM FLOAT8_TBL;
+--Testcase 182:
 INSERT INTO FLOAT8_TBL(f1) VALUES (0), (30), (90), (150), (180),
       (210), (270), (330), (360);
+--Testcase 183:
 SELECT f1,
        sind(f1),
        sind(f1) IN (-1,-0.5,0,0.5,1) AS sind_exact
        FROM FLOAT8_TBL;
 
+--Testcase 184:
 DELETE FROM FLOAT8_TBL;
+--Testcase 185:
 INSERT INTO FLOAT8_TBL(f1) VALUES (0), (60), (90), (120), (180),
       (240), (270), (300), (360);
+--Testcase 186:
 SELECT f1,
        cosd(f1),
        cosd(f1) IN (-1,-0.5,0,0.5,1) AS cosd_exact
        FROM FLOAT8_TBL;
 
+--Testcase 187:
 DELETE FROM FLOAT8_TBL;
+--Testcase 188:
 INSERT INTO FLOAT8_TBL(f1) VALUES (0), (45), (90), (135), (180),
       (225), (270), (315), (360);
+--Testcase 189:
 SELECT f1,
        tand(f1),
        tand(f1) IN ('-Infinity'::float8,-1,0,
@@ -398,8 +587,11 @@ SELECT f1,
                    1,'Infinity'::float8) AS cotd_exact
           FROM FLOAT8_TBL;
 
+--Testcase 190:
 DELETE FROM FLOAT8_TBL;
+--Testcase 191:
 INSERT INTO FLOAT8_TBL(f1) VALUES (-1), (-0.5), (0), (0.5), (1);
+--Testcase 192:
 SELECT f1,
        asind(f1),
        asind(f1) IN (-90,-30,0,30,90) AS asind_exact,
@@ -407,16 +599,22 @@ SELECT f1,
        acosd(f1) IN (0,60,90,120,180) AS acosd_exact
           FROM FLOAT8_TBL;
 
+--Testcase 193:
 DELETE FROM FLOAT8_TBL;
+--Testcase 194:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('-Infinity'::float8), (-1), (0), (1),
       ('Infinity'::float8);
+--Testcase 195:
 SELECT f1,
        atand(f1),
        atand(f1) IN (-90,-45,0,45,90) AS atand_exact
           FROM FLOAT8_TBL;
 
+--Testcase 196:
 DELETE FROM FLOAT8_TBL;
+--Testcase 197:
 INSERT INTO FLOAT8_TBL(f1) SELECT * FROM generate_series(0, 360, 90);
+--Testcase 198:
 SELECT x, y,
        atan2d(y, x),
        atan2d(y, x) IN (-90,0,90,180) AS atan2d_exact
@@ -451,6 +649,7 @@ create cast (bigint as xfloat8) without function;
 create foreign table test_data(id serial OPTIONS (rowkey 'true'),
         bits text) server griddb_svr;
 begin;
+--Testcase 199:
 insert into test_data(bits) values
   -- small subnormals
   (x'0000000000000001'),
@@ -466,6 +665,7 @@ insert into test_data(bits) values
   -- borderline between subnormal and normal
   (x'000ffffffffffff0'), (x'000ffffffffffff1'),
   (x'000ffffffffffffe'), (x'000fffffffffffff');
+--Testcase 200:
 select float8send(flt) as ibits,
        flt
   from (select bits::bit(64)::bigint::xfloat8::float8 as flt
@@ -476,7 +676,9 @@ rollback;
 -- round-trip tests
 
 begin;
+--Testcase 201:
 delete from test_data;
+--Testcase 202:
 insert into test_data(bits) values
   (x'0000000000000000'),
   -- smallest normal values
@@ -614,6 +816,7 @@ insert into test_data(bits) values
   (x'1330000000000000'),
   (x'133fffffffffffff'),
   (x'3a6fa7161a4d6e0c');
+--Testcase 203:
 select float8send(flt) as ibits,
        flt,
        flt::text::float8 as r_flt,

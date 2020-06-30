@@ -70,36 +70,56 @@ CREATE FOREIGN TABLE FLOAT8_TMP(id serial OPTIONS (rowkey 'true'), f1 float8, f2
 -- avoid bit-exact output here because operations may not be bit-exact.
 SET extra_float_digits = 0;
 
+--Testcase 1:
 SELECT avg(four) AS avg_1 FROM onek;
 
+--Testcase 2:
 SELECT avg(a) AS avg_32 FROM aggtest WHERE a < 100;
 
 -- In 7.1, avg(float4) is computed using float8 arithmetic.
 -- Round the result to 3 digits to avoid platform-specific results.
 
+--Testcase 3:
 SELECT avg(b)::numeric(10,3) AS avg_107_943 FROM aggtest;
 
+--Testcase 4:
 SELECT avg(gpa) AS avg_3_4 FROM ONLY student;
 
 
+--Testcase 5:
 SELECT sum(four) AS sum_1500 FROM onek;
+--Testcase 6:
 SELECT sum(a) AS sum_198 FROM aggtest;
+--Testcase 7:
 SELECT sum(b) AS avg_431_773 FROM aggtest;
+--Testcase 8:
 SELECT sum(gpa) AS avg_6_8 FROM ONLY student;
 
+--Testcase 9:
 SELECT max(four) AS max_3 FROM onek;
+--Testcase 10:
 SELECT max(a) AS max_100 FROM aggtest;
+--Testcase 11:
 SELECT max(aggtest.b) AS max_324_78 FROM aggtest;
+--Testcase 12:
 SELECT max(student.gpa) AS max_3_7 FROM student;
 
+--Testcase 13:
 SELECT stddev_pop(b) FROM aggtest;
+--Testcase 14:
 SELECT stddev_samp(b) FROM aggtest;
+--Testcase 15:
 SELECT var_pop(b) FROM aggtest;
+--Testcase 16:
 SELECT var_samp(b) FROM aggtest;
 
+--Testcase 17:
 SELECT stddev_pop(b::numeric) FROM aggtest;
+--Testcase 18:
 SELECT stddev_samp(b::numeric) FROM aggtest;
+--Testcase 19:
 SELECT var_pop(b::numeric) FROM aggtest;
+--Testcase 20:
 SELECT var_samp(b::numeric) FROM aggtest;
 
 -- skip this test, the above tests already covered
@@ -110,124 +130,184 @@ SELECT var_samp(b::numeric) FROM aggtest;
 
 -- verify correct results for null and NaN inputs
 begin;
+--Testcase 21:
 delete from INT4_TBL;
+--Testcase 22:
 insert into INT4_TBL select * from generate_series(1,3);
+--Testcase 23:
 select sum(null::int4) from INT4_TBL;
+--Testcase 24:
 select sum(null::int8) from INT4_TBL;
+--Testcase 25:
 select sum(null::numeric) from INT4_TBL;
+--Testcase 26:
 select sum(null::float8) from INT4_TBL;
+--Testcase 27:
 select avg(null::int4) from INT4_TBL;
+--Testcase 28:
 select avg(null::int8) from INT4_TBL;
+--Testcase 29:
 select avg(null::numeric) from INT4_TBL;
+--Testcase 30:
 select avg(null::float8) from INT4_TBL;
+--Testcase 31:
 select sum('NaN'::numeric) from INT4_TBL;
+--Testcase 32:
 select avg('NaN'::numeric) from INT4_TBL;
 rollback;
 
 -- verify correct results for infinite inputs
 BEGIN;
+--Testcase 33:
 DELETE FROM FLOAT8_TBL;
+--Testcase 34:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('1'), ('infinity');
+--Testcase 35:
 SELECT avg(f1), var_pop(f1) FROM FLOAT8_TBL;
 ROLLBACK;
 
 BEGIN;
+--Testcase 36:
 DELETE FROM FLOAT8_TBL;
+--Testcase 37:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('infinity'), ('1');
+--Testcase 38:
 SELECT avg(f1), var_pop(f1) FROM FLOAT8_TBL;
 ROLLBACK;
 
 BEGIN;
+--Testcase 39:
 DELETE FROM FLOAT8_TBL;
+--Testcase 40:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('infinity'), ('infinity');
+--Testcase 41:
 SELECT avg(f1), var_pop(f1) FROM FLOAT8_TBL;
 ROLLBACK;
 
 BEGIN;
+--Testcase 42:
 DELETE FROM FLOAT8_TBL;
+--Testcase 43:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('-infinity'), ('infinity');
+--Testcase 44:
 SELECT avg(f1), var_pop(f1) FROM FLOAT8_TBL;
 ROLLBACK;
 
 -- test accuracy with a large input offset
 BEGIN;
+--Testcase 45:
 DELETE FROM FLOAT8_TBL;
+--Testcase 46:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('100000003'), ('100000004'), 
 				('100000006'), ('100000007');
+--Testcase 47:
 SELECT avg(f1), var_pop(f1) FROM FLOAT8_TBL;
 ROLLBACK;
 
 BEGIN;
+--Testcase 48:
 DELETE FROM FLOAT8_TBL;
+--Testcase 49:
 INSERT INTO FLOAT8_TBL(f1) VALUES ('7000000000005'), ('7000000000007');
+--Testcase 50:
 SELECT avg(f1), var_pop(f1) FROM FLOAT8_TBL;
 ROLLBACK;
 
 -- SQL2003 binary aggregates
+--Testcase 51:
 SELECT regr_count(b, a) FROM aggtest;
+--Testcase 52:
 SELECT regr_sxx(b, a) FROM aggtest;
+--Testcase 53:
 SELECT regr_syy(b, a) FROM aggtest;
+--Testcase 54:
 SELECT regr_sxy(b, a) FROM aggtest;
+--Testcase 55:
 SELECT regr_avgx(b, a), regr_avgy(b, a) FROM aggtest;
+--Testcase 56:
 SELECT regr_r2(b, a) FROM aggtest;
+--Testcase 57:
 SELECT regr_slope(b, a), regr_intercept(b, a) FROM aggtest;
+--Testcase 58:
 SELECT covar_pop(b, a), covar_samp(b, a) FROM aggtest;
+--Testcase 59:
 SELECT corr(b, a) FROM aggtest;
 
 -- test accum and combine functions directly
 CREATE FOREIGN TABLE regr_test (id serial OPTIONS (rowkey 'true'), x int4, y int4) SERVER griddb_svr;
+--Testcase 60:
 INSERT INTO regr_test(x, y) VALUES (10,150),(20,250),(30,350),(80,540),(100,200);
+--Testcase 61:
 SELECT count(*), sum(x), regr_sxx(y,x), sum(y),regr_syy(y,x), regr_sxy(y,x)
 FROM regr_test WHERE x IN (10,20,30,80);
+--Testcase 62:
 SELECT count(*), sum(x), regr_sxx(y,x), sum(y),regr_syy(y,x), regr_sxy(y,x)
 FROM regr_test;
 
 CREATE FOREIGN TABLE regr_test_array (id serial OPTIONS (rowkey 'true'), x float8[], y float8[]) SERVER griddb_svr;
 BEGIN;
+--Testcase 63:
 INSERT INTO regr_test_array(x) VALUES ('{4,140,2900}'::float8[]);
+--Testcase 64:
 SELECT float8_accum(x, 100) FROM regr_test_array;
 ROLLBACK;
 
 BEGIN;
+--Testcase 65:
 INSERT INTO regr_test_array(x) VALUES ('{4,140,2900,1290,83075,15050}'::float8[]);
+--Testcase 66:
 SELECT float8_regr_accum(x, 200, 100) FROM regr_test_array;
 ROLLBACK;
 
+--Testcase 67:
 SELECT count(*), sum(x), regr_sxx(y,x), sum(y),regr_syy(y,x), regr_sxy(y,x)
 FROM regr_test WHERE x IN (10,20,30);
+--Testcase 68:
 SELECT count(*), sum(x), regr_sxx(y,x), sum(y),regr_syy(y,x), regr_sxy(y,x)
 FROM regr_test WHERE x IN (80,100);
 
 BEGIN;
+--Testcase 69:
 INSERT INTO regr_test_array(x,y) VALUES ('{3,60,200}'::float8[], '{0,0,0}'::float8[]);
+--Testcase 70:
 SELECT float8_combine(x, y) FROM regr_test_array;
 ROLLBACK;
 
 BEGIN;
+--Testcase 71:
 INSERT INTO regr_test_array(x,y) VALUES ('{0,0,0}'::float8[], '{2,180,200}'::float8[]);
+--Testcase 72:
 SELECT float8_combine(x, y) FROM regr_test_array;
 ROLLBACK;
 
 BEGIN;
+--Testcase 73:
 INSERT INTO regr_test_array(x,y) VALUES ('{3,60,200}'::float8[], '{2,180,200}'::float8[]);
+--Testcase 74:
 SELECT float8_combine(x, y) FROM regr_test_array;
 ROLLBACK;
 
 BEGIN;
+--Testcase 75:
 INSERT INTO regr_test_array(x,y) VALUES ('{3,60,200,750,20000,2000}'::float8[],
                            '{0,0,0,0,0,0}'::float8[]);
+--Testcase 76:
 SELECT float8_regr_combine(x, y) FROM regr_test_array;
 ROLLBACK;
 
 BEGIN;
+--Testcase 77:
 INSERT INTO regr_test_array(x,y) VALUES ('{0,0,0,0,0,0}'::float8[],
                            '{2,180,200,740,57800,-3400}'::float8[]);
+--Testcase 78:
 SELECT float8_regr_combine(x, y) FROM regr_test_array;
 ROLLBACK;
 
 BEGIN;
+--Testcase 79:
 INSERT INTO regr_test_array(x,y) VALUES ('{3,60,200,750,20000,2000}'::float8[],
                            '{2,180,200,740,57800,-3400}'::float8[]);
+--Testcase 80:
 SELECT float8_regr_combine(x, y) FROM regr_test_array;
 ROLLBACK;
 
@@ -235,12 +315,16 @@ DROP FOREIGN TABLE regr_test;
 DROP FOREIGN TABLE regr_test_array;
 
 -- test count, distinct
+--Testcase 81:
 SELECT count(four) AS cnt_1000 FROM onek;
+--Testcase 82:
 SELECT count(DISTINCT four) AS cnt_4 FROM onek;
 
+--Testcase 83:
 select ten, count(*), sum(four) from onek
 group by ten order by ten;
 
+--Testcase 84:
 select ten, count(four), sum(DISTINCT four) from onek
 group by ten order by ten;
 
@@ -279,21 +363,29 @@ create aggregate sum2(int8,int8) (
    initcond = '0'
 );
 
+--Testcase 85:
 SELECT newavg(four) AS avg_1 FROM onek;
+--Testcase 86:
 SELECT newsum(four) AS sum_1500 FROM onek;
+--Testcase 87:
 SELECT newcnt(four) AS cnt_1000 FROM onek;
+--Testcase 88:
 SELECT newcnt(*) AS cnt_1000 FROM onek;
+--Testcase 89:
 SELECT oldcnt(*) AS cnt_1000 FROM onek;
+--Testcase 90:
 SELECT sum2(q1,q2) FROM int8_tbl;
 
 -- test for outer-level aggregates
 
 -- this should work
+--Testcase 91:
 select ten, sum(distinct four) from onek a
 group by ten
 having exists (select 1 from onek b where sum(distinct a.four) = b.four);
 
 -- this should fail because subquery has an agg of its own in WHERE
+--Testcase 92:
 select ten, sum(distinct four) from onek a
 group by ten
 having exists (select 1 from onek b
@@ -301,6 +393,7 @@ having exists (select 1 from onek b
 
 -- Test handling of sublinks within outer-level aggregates.
 -- Per bug report from Daniel Grace.
+--Testcase 93:
 select
   (select max((select i.unique2 from tenk1 i where i.unique1 = o.unique1)))
 from tenk1 o;
@@ -308,24 +401,30 @@ from tenk1 o;
 -- Test handling of Params within aggregate arguments in hashed aggregation.
 -- Per bug report from Jeevan Chalke.
 BEGIN;
+--Testcase 94:
 DELETE FROM INT4_TBL;
+--Testcase 95:
 INSERT INTO INT4_TBL(f1) values (generate_series(1, 3));
+--Testcase 96:
 explain (verbose, costs off)
 select s1.f1, ss.f1, sm
 from INT4_TBL s1,
      lateral (select s2.f1, sum(s1.f1 + s2.f1) sm
               from INT4_TBL s2 group by s2.f1) ss
 order by 1, 2;
+--Testcase 97:
 select s1.f1, ss.f1, sm
 from INT4_TBL s1,
      lateral (select s2.f1, sum(s1.f1 + s2.f1) sm
               from INT4_TBL s2 group by s2.f1) ss
 order by 1, 2;
 
+--Testcase 98:
 explain (verbose, costs off)
 select array(select sum(x.f1+y.f1) s
             from INT4_TBL y group by y.f1 order by s)
   from INT4_TBL x;
+--Testcase 99:
 select array(select sum(x.f1+y.f1) s
             from INT4_TBL y group by y.f1 order by s)
   from INT4_TBL x;
@@ -345,16 +444,19 @@ CREATE FOREIGN TABLE bitwise_test(
 ) SERVER griddb_svr;
 
 -- empty case
+--Testcase 100:
 SELECT
   BIT_AND(i2) AS "?",
   BIT_OR(i4)  AS "?"
 FROM bitwise_test;
 
+--Testcase 101:
 INSERT INTO bitwise_test(i2, i4, i8, i, x, y) VALUES
   (1, 1, 1, 1, 1, B'0101'),
   (3, 3, 3, null, 2, B'0100'),
   (7, 7, 7, 3, 4, B'1100');
 
+--Testcase 102:
 SELECT
   BIT_AND(i2) AS "1",
   BIT_AND(i4) AS "1",
@@ -402,11 +504,14 @@ CREATE FOREIGN TABLE bool_test_b(
   b9 BOOL
 ) SERVER griddb_svr;
 
+--Testcase 103:
 INSERT INTO bool_test_a(a1, a2, a3, a4, a5, a6, a7, a8, a9) VALUES 
 (NULL, TRUE, FALSE, NULL, NULL, TRUE, TRUE, FALSE, FALSE);
+--Testcase 104:
 INSERT INTO bool_test_b(b1, b2, b3, b4, b5, b6, b7, b8, b9) VALUES 
 (NULL, NULL, NULL, TRUE, FALSE, TRUE, FALSE, TRUE, FALSE);
 
+--Testcase 105:
 SELECT
   -- boolean or transitions
   -- null because strict
@@ -434,16 +539,19 @@ CREATE FOREIGN TABLE bool_test(
 ) SERVER griddb_svr;
 
 -- empty case
+--Testcase 106:
 SELECT
   BOOL_AND(b1)   AS "n",
   BOOL_OR(b3)    AS "n"
 FROM bool_test;
 
+--Testcase 107:
 INSERT INTO bool_test(b1, b2, b3, b4) VALUES
   (TRUE, null, FALSE, null),
   (FALSE, TRUE, null, null),
   (null, TRUE, FALSE, null);
 
+--Testcase 108:
 SELECT
   BOOL_AND(b1)     AS "f",
   BOOL_AND(b2)     AS "t",
@@ -453,6 +561,7 @@ SELECT
   BOOL_AND(NOT b3) AS "t"
 FROM bool_test;
 
+--Testcase 109:
 SELECT
   EVERY(b1)     AS "f",
   EVERY(b2)     AS "t",
@@ -462,6 +571,7 @@ SELECT
   EVERY(NOT b3) AS "t"
 FROM bool_test;
 
+--Testcase 110:
 SELECT
   BOOL_OR(b1)      AS "t",
   BOOL_OR(b2)      AS "t",
@@ -477,17 +587,25 @@ FROM bool_test;
 --
 
 -- Basic cases
+--Testcase 111:
 explain (costs off)
   select min(unique1) from tenk1;
+--Testcase 112:
 select min(unique1) from tenk1;
+--Testcase 113:
 explain (costs off)
   select max(unique1) from tenk1;
+--Testcase 114:
 select max(unique1) from tenk1;
+--Testcase 115:
 explain (costs off)
   select max(unique1) from tenk1 where unique1 < 42;
+--Testcase 116:
 select max(unique1) from tenk1 where unique1 < 42;
+--Testcase 117:
 explain (costs off)
   select max(unique1) from tenk1 where unique1 > 42;
+--Testcase 118:
 select max(unique1) from tenk1 where unique1 > 42;
 
 -- the planner may choose a generic aggregate here if parallel query is
@@ -496,46 +614,66 @@ select max(unique1) from tenk1 where unique1 > 42;
 -- the optimized plan, so temporarily disable parallel query.
 begin;
 set local max_parallel_workers_per_gather = 0;
+--Testcase 119:
 explain (costs off)
   select max(unique1) from tenk1 where unique1 > 42000;
+--Testcase 120:
 select max(unique1) from tenk1 where unique1 > 42000;
 rollback;
 
 -- multi-column index (uses tenk1_thous_tenthous)
+--Testcase 121:
 explain (costs off)
   select max(tenthous) from tenk1 where thousand = 33;
+--Testcase 122:
 select max(tenthous) from tenk1 where thousand = 33;
+--Testcase 123:
 explain (costs off)
   select min(tenthous) from tenk1 where thousand = 33;
+--Testcase 124:
 select min(tenthous) from tenk1 where thousand = 33;
 
 -- check parameter propagation into an indexscan subquery
+--Testcase 125:
 explain (costs off)
   select f1, (select min(unique1) from tenk1 where unique1 > f1) AS gt
     from int4_tbl;
+--Testcase 126:
 select f1, (select min(unique1) from tenk1 where unique1 > f1) AS gt
   from int4_tbl;
 
 -- check some cases that were handled incorrectly in 8.3.0
+--Testcase 127:
 explain (costs off)
   select distinct max(unique2) from tenk1;
+--Testcase 128:
 select distinct max(unique2) from tenk1;
+--Testcase 129:
 explain (costs off)
   select max(unique2) from tenk1 order by 1;
+--Testcase 130:
 select max(unique2) from tenk1 order by 1;
+--Testcase 131:
 explain (costs off)
   select max(unique2) from tenk1 order by max(unique2);
+--Testcase 132:
 select max(unique2) from tenk1 order by max(unique2);
+--Testcase 133:
 explain (costs off)
   select max(unique2) from tenk1 order by max(unique2)+1;
+--Testcase 134:
 select max(unique2) from tenk1 order by max(unique2)+1;
+--Testcase 135:
 explain (costs off)
   select max(unique2), generate_series(1,3) as g from tenk1 order by g desc;
+--Testcase 136:
 select max(unique2), generate_series(1,3) as g from tenk1 order by g desc;
 
 -- interesting corner case: constant gets optimized into a seqscan
+--Testcase 137:
 explain (costs off)
   select max(100) from tenk1;
+--Testcase 138:
 select max(100) from tenk1;
 
 -- try it on an inheritance tree
@@ -547,24 +685,34 @@ create index minmaxtest1i on minmaxtest1(f1);
 create index minmaxtest2i on minmaxtest2(f1 desc);
 create index minmaxtest3i on minmaxtest3(f1) where f1 is not null;
 
+--Testcase 139:
 insert into minmaxtest values(11), (12);
+--Testcase 140:
 insert into minmaxtest1 values(13), (14);
+--Testcase 141:
 insert into minmaxtest2 values(15), (16);
+--Testcase 142:
 insert into minmaxtest3 values(17), (18);
 
+--Testcase 143:
 explain (costs off)
   select min(f1), max(f1) from minmaxtest;
+--Testcase 144:
 select min(f1), max(f1) from minmaxtest;
 
 -- DISTINCT doesn't do anything useful here, but it shouldn't fail
+--Testcase 145:
 explain (costs off)
   select distinct min(f1), max(f1) from minmaxtest;
+--Testcase 146:
 select distinct min(f1), max(f1) from minmaxtest;
 
 drop foreign table minmaxtest cascade;
 
 -- check for correct detection of nested-aggregate errors
+--Testcase 147:
 select max(min(unique1)) from tenk1;
+--Testcase 148:
 select (select max(min(unique1)) from int8_tbl) from tenk1;
 
 --
@@ -578,17 +726,21 @@ create foreign table agg_t2 (x int OPTIONS (rowkey 'true'), y int, z int) server
 -- create foreign table t3 (a int, b int, c int, primary key(a, b) deferrable);
 
 -- Non-primary-key columns can be removed from GROUP BY
+--Testcase 149:
 explain (costs off) select * from agg_t1 group by a,b,c,d;
 
 -- No removal can happen if the complete PK is not present in GROUP BY
+--Testcase 150:
 explain (costs off) select a,c from agg_t1 group by a,c,d;
 
 -- Test removal across multiple relations
+--Testcase 151:
 explain (costs off) select *
 from agg_t1 inner join agg_t2 on agg_t1.a = agg_t2.x and agg_t1.b = agg_t2.y
 group by agg_t1.a,agg_t1.b,agg_t1.c,agg_t1.d,agg_t2.x,agg_t2.y,agg_t2.z;
 
 -- Test case where agg_t1 can be optimized but not agg_t2
+--Testcase 152:
 explain (costs off) select agg_t1.*,agg_t2.x,agg_t2.z
 from agg_t1 inner join agg_t2 on agg_t1.a = agg_t2.x and agg_t1.b = agg_t2.y
 group by agg_t1.a,agg_t1.b,agg_t1.c,agg_t1.d,agg_t2.x,agg_t2.z;
@@ -600,9 +752,11 @@ group by agg_t1.a,agg_t1.b,agg_t1.c,agg_t1.d,agg_t2.x,agg_t2.z;
 --create temp table t1c () inherits (t1);
 
 -- Ensure we don't remove any columns when t1 has a child table
+--Testcase 153:
 explain (costs off) select * from agg_t1 group by a,b,c,d;
 
 -- Okay to remove columns if we're only querying the parent.
+--Testcase 154:
 explain (costs off) select * from only agg_t1 group by a,b,c,d;
 
 --create temp table p_t1 (
@@ -624,25 +778,37 @@ explain (costs off) select * from only agg_t1 group by a,b,c,d;
 -- Test combinations of DISTINCT and/or ORDER BY
 --
 begin;
+--Testcase 155:
 delete from INT8_TBL;
+--Testcase 156:
 insert into INT8_TBL(q1,q2) values (1,4),(2,3),(3,1),(4,2);
+--Testcase 157:
 select array_agg(q1 order by q2)
   from INT8_TBL;
+--Testcase 158:
 select array_agg(q1 order by q1)
   from INT8_TBL;
+--Testcase 159:
 select array_agg(q1 order by q1 desc)
   from INT8_TBL;
+--Testcase 160:
 select array_agg(q2 order by q1 desc)
   from INT8_TBL;
 
+--Testcase 161:
 delete from INT8_TBL;
+--Testcase 162:
 insert into INT8_TBL(q1) values (1),(2),(1),(3),(null),(2);
+--Testcase 163:
 select array_agg(distinct q1)
   from INT8_TBL;
+--Testcase 164:
 select array_agg(distinct q1 order by q1)
   from INT8_TBL;
+--Testcase 165:
 select array_agg(distinct q1 order by q1 desc)
   from INT8_TBL;
+--Testcase 166:
 select array_agg(distinct q1 order by q1 desc nulls last)
   from INT8_TBL;
 rollback;
@@ -669,21 +835,32 @@ create aggregate aggfns(integer,integer,text) (
 );
 
 begin;
+--Testcase 167:
 insert into multi_arg_agg values (1,3,'foo'),(0,null,null),(2,2,'bar'),(3,1,'baz');
+--Testcase 168:
 select aggfstr(a,b,c) from multi_arg_agg;
+--Testcase 169:
 select aggfns(a,b,c) from multi_arg_agg;
 
+--Testcase 170:
 select aggfstr(distinct a,b,c) from multi_arg_agg, generate_series(1,3) i;
+--Testcase 171:
 select aggfns(distinct a,b,c) from multi_arg_agg, generate_series(1,3) i;
 
+--Testcase 172:
 select aggfstr(distinct a,b,c order by b) from multi_arg_agg, generate_series(1,3) i;
+--Testcase 173:
 select aggfns(distinct a,b,c order by b) from multi_arg_agg, generate_series(1,3) i;
 
 -- test specific code paths
 
+--Testcase 174:
 select aggfns(distinct a,a,c order by c using ~<~,a) from multi_arg_agg, generate_series(1,2) i;
+--Testcase 175:
 select aggfns(distinct a,a,c order by c using ~<~) from multi_arg_agg, generate_series(1,2) i;
+--Testcase 176:
 select aggfns(distinct a,a,c order by a) from multi_arg_agg, generate_series(1,2) i;
+--Testcase 177:
 select aggfns(distinct a,b,c order by a,c using ~<~,b) from multi_arg_agg, generate_series(1,2) i;
 
 -- check node I/O via view creation and usage, also deparsing logic
@@ -691,43 +868,57 @@ select aggfns(distinct a,b,c order by a,c using ~<~,b) from multi_arg_agg, gener
 create view agg_view1 as
   select aggfns(a,b,c) from multi_arg_agg;
 
+--Testcase 178:
 select * from agg_view1;
+--Testcase 179:
 select pg_get_viewdef('agg_view1'::regclass);
 
 create or replace view agg_view1 as
   select aggfns(distinct a,b,c) from multi_arg_agg, generate_series(1,3) i;
 
+--Testcase 180:
 select * from agg_view1;
+--Testcase 181:
 select pg_get_viewdef('agg_view1'::regclass);
 
 create or replace view agg_view1 as
   select aggfns(distinct a,b,c order by b) from multi_arg_agg, generate_series(1,3) i;
 
+--Testcase 182:
 select * from agg_view1;
+--Testcase 183:
 select pg_get_viewdef('agg_view1'::regclass);
 
 create or replace view agg_view1 as
   select aggfns(a,b,c order by b+1) from multi_arg_agg;
 
+--Testcase 184:
 select * from agg_view1;
+--Testcase 185:
 select pg_get_viewdef('agg_view1'::regclass);
 
 create or replace view agg_view1 as
   select aggfns(a,a,c order by b) from multi_arg_agg;
 
+--Testcase 186:
 select * from agg_view1;
+--Testcase 187:
 select pg_get_viewdef('agg_view1'::regclass);
 
 create or replace view agg_view1 as
   select aggfns(a,b,c order by c using ~<~) from multi_arg_agg;
 
+--Testcase 188:
 select * from agg_view1;
+--Testcase 189:
 select pg_get_viewdef('agg_view1'::regclass);
 
 create or replace view agg_view1 as
   select aggfns(distinct a,b,c order by a,c using ~<~,b) from multi_arg_agg, generate_series(1,2) i;
 
+--Testcase 190:
 select * from agg_view1;
+--Testcase 191:
 select pg_get_viewdef('agg_view1'::regclass);
 
 drop view agg_view1;
@@ -735,70 +926,104 @@ rollback;
 
 -- incorrect DISTINCT usage errors
 
+--Testcase 192:
 insert into multi_arg_agg values (1,1,'foo');
+--Testcase 193:
 select aggfns(distinct a,b,c order by i) from multi_arg_agg, generate_series(1,2) i;
+--Testcase 194:
 select aggfns(distinct a,b,c order by a,b+1) from multi_arg_agg, generate_series(1,2) i;
+--Testcase 195:
 select aggfns(distinct a,b,c order by a,b,i,c) from multi_arg_agg, generate_series(1,2) i;
+--Testcase 196:
 select aggfns(distinct a,a,c order by a,b) from multi_arg_agg, generate_series(1,2) i;
 
 -- string_agg tests
 begin;
+--Testcase 197:
 delete from multi_arg_agg;
+--Testcase 198:
 insert into multi_arg_agg(a,c) values (1,'aaaa'),(2,'bbbb'),(3,'cccc');
+--Testcase 199:
 select string_agg(c,',') from multi_arg_agg;
 
+--Testcase 200:
 delete from multi_arg_agg;
+--Testcase 201:
 insert into multi_arg_agg(a,c) values (1,'aaaa'),(2,null),(3,'bbbb'),(4,'cccc');
+--Testcase 202:
 select string_agg(c,',') from multi_arg_agg;
 
+--Testcase 203:
 delete from multi_arg_agg;
+--Testcase 204:
 insert into multi_arg_agg(a,c) values (1,null),(2,null),(3,'bbbb'),(4,'cccc');
+--Testcase 205:
 select string_agg(c,'AB') from multi_arg_agg;
 
+--Testcase 206:
 delete from multi_arg_agg;
+--Testcase 207:
 insert into multi_arg_agg(a,c) values (1,null),(2,null);
+--Testcase 208:
 select string_agg(c,',') from multi_arg_agg;
 rollback;
 
 -- check some implicit casting cases, as per bug #5564
 
+--Testcase 209:
 select string_agg(distinct f1, ',' order by f1) from varchar_tbl;  -- ok
+--Testcase 210:
 select string_agg(distinct f1::varchar, ',' order by f1) from varchar_tbl;  -- not ok
+--Testcase 211:
 select string_agg(distinct f1, ',' order by f1::varchar) from varchar_tbl;  -- not ok
+--Testcase 212:
 select string_agg(distinct f1::varchar, ',' order by f1::varchar) from varchar_tbl;  -- ok
 
 -- string_agg bytea tests
 create foreign table bytea_test_table(id serial, v bytea) server griddb_svr;
 
+--Testcase 213:
 select string_agg(v, '') from bytea_test_table;
 
+--Testcase 214:
 insert into bytea_test_table(v) values(decode('ff','hex'));
 
+--Testcase 215:
 select string_agg(v, '') from bytea_test_table;
 
+--Testcase 216:
 insert into bytea_test_table(v) values(decode('aa','hex'));
 
+--Testcase 217:
 select string_agg(v, '') from bytea_test_table;
+--Testcase 218:
 select string_agg(v, NULL) from bytea_test_table;
+--Testcase 219:
 select string_agg(v, decode('ee', 'hex')) from bytea_test_table;
 
 drop foreign table bytea_test_table;
 
 -- FILTER tests
 
+--Testcase 220:
 select min(unique1) filter (where unique1 > 100) from tenk1;
 
+--Testcase 221:
 select sum(1/ten) filter (where ten > 0) from tenk1;
 
+--Testcase 222:
 select ten, sum(distinct four) filter (where four::text ~ '123') from onek a
 group by ten;
 
+--Testcase 223:
 select ten, sum(distinct four) filter (where four > 10) from onek a
 group by ten
 having exists (select 1 from onek b where sum(distinct a.four) = b.four);
 
 create foreign table agg_t0(foo text, bar text) server griddb_svr;
+--Testcase 224:
 insert into agg_t0 values ('a', 'b');
+--Testcase 225:
 select max(foo COLLATE "C") filter (where (bar collate "POSIX") > '0')
 from agg_t0;
 
@@ -806,35 +1031,48 @@ from agg_t0;
 create foreign table agg_t3 (inner_c int) server griddb_svr;
 create foreign table agg_t4 (outer_c int) server griddb_svr;
 
+--Testcase 226:
 insert into agg_t3 values (1);
+--Testcase 227:
 insert into agg_t4 values (2), (3);
 
+--Testcase 228:
 select (select count(*) from agg_t3) from agg_t4; -- inner query is aggregation query
+--Testcase 229:
 select (select count(*) filter (where outer_c <> 0) from agg_t3)
 from agg_t4; -- outer query is aggregation query
+--Testcase 230:
 select (select count(inner_c) filter (where outer_c <> 0) from agg_t3)
 from agg_t4; -- inner query is aggregation query
+--Testcase 231:
 select
   (select max((select i.unique2 from tenk1 i where i.unique1 = o.unique1))
      filter (where o.unique1 < 10))
 from tenk1 o;					-- outer query is aggregation query
 
 -- subquery in FILTER clause (PostgreSQL extension)
+--Testcase 232:
 select sum(unique1) FILTER (WHERE
   unique1 IN (SELECT unique1 FROM onek where unique1 < 100)) FROM tenk1;
 
 -- exercise lots of aggregate parts with FILTER
 begin;
+--Testcase 233:
 delete from multi_arg_agg;
+--Testcase 234:
 insert into multi_arg_agg values (1,3,'foo'),(0,null,null),(2,2,'bar'),(3,1,'baz');
+--Testcase 235:
 select aggfns(distinct a,b,c order by a,c using ~<~,b) filter (where a > 1) from multi_arg_agg, generate_series(1,2) i;
 rollback;
 
 -- ordered-set aggregates
 
 begin;
+--Testcase 236:
 delete from FLOAT8_TBL;
+--Testcase 237:
 insert into FLOAT8_TBL(f1) values (0::float8),(0.1),(0.25),(0.4),(0.5),(0.6),(0.75),(0.9),(1);
+--Testcase 238:
 select f1, percentile_cont(f1) within group (order by x::float8)
 from generate_series(1,5) x,
      FLOAT8_TBL
@@ -842,8 +1080,11 @@ group by f1 order by f1;
 rollback;
 
 begin;
+--Testcase 239:
 delete from FLOAT8_TBL;
+--Testcase 240:
 insert into FLOAT8_TBL(f1) values (0::float8),(0.1),(0.25),(0.4),(0.5),(0.6),(0.75),(0.9),(1);
+--Testcase 241:
 select f1, percentile_cont(f1 order by f1) within group (order by x)  -- error
 from generate_series(1,5) x,
      FLOAT8_TBL
@@ -851,8 +1092,11 @@ group by f1 order by f1;
 rollback;
 
 begin;
+--Testcase 242:
 delete from FLOAT8_TBL;
+--Testcase 243:
 insert into FLOAT8_TBL(f1) values (0::float8),(0.1),(0.25),(0.4),(0.5),(0.6),(0.75),(0.9),(1);
+--Testcase 244:
 select f1, sum() within group (order by x::float8)  -- error
 from generate_series(1,5) x,
      FLOAT8_TBL
@@ -860,62 +1104,89 @@ group by f1 order by f1;
 rollback;
 
 begin;
+--Testcase 245:
 delete from FLOAT8_TBL;
+--Testcase 246:
 insert into FLOAT8_TBL(f1) values (0::float8),(0.1),(0.25),(0.4),(0.5),(0.6),(0.75),(0.9),(1);
+--Testcase 247:
 select f1, percentile_cont(f1,f1)  -- error
 from generate_series(1,5) x,
      FLOAT8_TBL
 group by f1 order by f1;
 rollback;
 
+--Testcase 248:
 select percentile_cont(0.5) within group (order by b) from aggtest;
+--Testcase 249:
 select percentile_cont(0.5) within group (order by b), sum(b) from aggtest;
+--Testcase 250:
 select percentile_cont(0.5) within group (order by thousand) from tenk1;
+--Testcase 251:
 select percentile_disc(0.5) within group (order by thousand) from tenk1;
 
 begin;
+--Testcase 252:
 delete from INT8_TBL;
+--Testcase 253:
 insert into INT8_TBL(q1) values (1),(1),(2),(2),(3),(3),(4);
+--Testcase 254:
 select rank(3) within group (order by q1) from INT8_TBL;
+--Testcase 255:
 select cume_dist(3) within group (order by q1) from INT8_TBL;
 rollback;
 begin;
+--Testcase 256:
 delete from INT8_TBL;
+--Testcase 257:
 insert into INT8_TBL(q1) values (1),(1),(2),(2),(3),(3),(4),(5);
+--Testcase 258:
 select percent_rank(3) within group (order by q1) from INT8_TBL;
 rollback;
 begin;
+--Testcase 259:
 delete from INT8_TBL;
+--Testcase 260:
 insert into INT8_TBL(q1) values (1),(1),(2),(2),(3),(3),(4);
+--Testcase 261:
 select dense_rank(3) within group (order by q1) from INT8_TBL;
 rollback;
 
+--Testcase 262:
 select percentile_disc(array[0,0.1,0.25,0.5,0.75,0.9,1]) within group (order by thousand)
 from tenk1;
+--Testcase 263:
 select percentile_cont(array[0,0.25,0.5,0.75,1]) within group (order by thousand)
 from tenk1;
+--Testcase 264:
 select percentile_disc(array[[null,1,0.5],[0.75,0.25,null]]) within group (order by thousand)
 from tenk1;
 
 create foreign table agg_t5 (x int) server griddb_svr;
 begin;
+--Testcase 265:
 insert into agg_t5 select * from generate_series(1,6);
+--Testcase 266:
 select percentile_cont(array[0,1,0.25,0.75,0.5,1,0.3,0.32,0.35,0.38,0.4]) within group (order by x)
 from agg_t5;
 rollback;
 
+--Testcase 267:
 select ten, mode() within group (order by string4) from tenk1 group by ten;
 
 create foreign table agg_t6 (id serial OPTIONS (rowkey 'true'), x text) server griddb_svr;
 begin;
+--Testcase 268:
 insert into agg_t6(x) values (unnest('{fred,jim,fred,jack,jill,fred,jill,jim,jim,sheila,jim,sheila}'::text[]));
+--Testcase 269:
 select percentile_disc(array[0.25,0.5,0.75]) within group (order by x)
 from agg_t6;
 rollback;
 
 -- check collation propagates up in suitable cases:
 begin;
+--Testcase 270:
 insert into agg_t6(x) values ('fred'), ('jim');
+--Testcase 271:
 select pg_collation_for(percentile_disc(1) within group (order by x collate "POSIX"))
   from agg_t6;
 rollback;
@@ -940,23 +1211,31 @@ alter aggregate my_rank(VARIADIC "any" ORDER BY VARIADIC "any")
   rename to test_rank;
 
 begin;
+--Testcase 272:
 delete from INT8_TBL;
+--Testcase 273:
 insert into INT8_TBL(q1) values (1),(1),(2),(2),(3),(3),(4);
+--Testcase 274:
 select test_rank(3) within group (order by q1) from INT8_TBL;
 rollback;
 
+--Testcase 275:
 select test_percentile_disc(0.5) within group (order by thousand) from tenk1;
 
 -- ordered-set aggs can't use ungrouped vars in direct args:
 begin;
+--Testcase 276:
 insert into agg_t5(x) select * from generate_series(1,5);
+--Testcase 277:
 select rank(x) within group (order by x) from agg_t5;
 rollback;
 
 -- outer-level agg can't use a grouped arg of a lower level, either:
 
 begin;
+--Testcase 278:
 insert into agg_t5(x) select * from generate_series(1,5);
+--Testcase 279:
 select array(select percentile_disc(a) within group (order by x)
                from (values (0.3),(0.7)) v(a) group by a)
   from agg_t5;
@@ -964,49 +1243,65 @@ rollback;
 
 -- agg in the direct args is a grouping violation, too:
 begin;
+--Testcase 280:
 insert into agg_t5(x) select * from generate_series(1,5);
+--Testcase 281:
 select rank(sum(x)) within group (order by x) from agg_t5;
 rollback;
 
 -- hypothetical-set type unification and argument-count failures:
 begin;
+--Testcase 282:
 insert into agg_t6(x) values ('fred'), ('jim');
+--Testcase 283:
 select rank(3) within group (order by x) from agg_t6;
 rollback;
 
+--Testcase 284:
 select rank(3) within group (order by stringu1,stringu2) from tenk1;
 
 begin;
+--Testcase 285:
 insert into agg_t5 select * from generate_series(1,5);
+--Testcase 286:
 select rank('fred') within group (order by x) from agg_t5;
 rollback;
 
 begin;
+--Testcase 287:
 insert into agg_t6(x) values ('fred'), ('jim');
+--Testcase 288:
 select rank('adam'::text collate "C") within group (order by x collate "POSIX")
   from agg_t6;
 rollback;
 
 -- hypothetical-set type unification successes:
 begin;
+--Testcase 289:
 insert into agg_t6(x) values ('fred'), ('jim');
+--Testcase 290:
 select rank('adam'::varchar) within group (order by x) from agg_t6;
 rollback;
 
 begin;
+--Testcase 291:
 insert into agg_t5 select * from generate_series(1,5);
+--Testcase 292:
 select rank('3') within group (order by x) from agg_t5;
 rollback;
 
 -- divide by zero check
 begin;
+--Testcase 293:
 insert into agg_t5 select * from generate_series(1,5);
+--Testcase 294:
 select percent_rank(0) within group (order by x) from agg_t5;
 rollback;
 
 
 -- deparse and multiple features:
 create view aggordview1 as
+--Testcase 295:
 select ten,
        percentile_disc(0.5) within group (order by thousand) as p50,
        percentile_disc(0.5) within group (order by thousand) filter (where hundred=1) as px,
@@ -1014,7 +1309,9 @@ select ten,
   from tenk1
  group by ten order by ten;
 
+--Testcase 296:
 select pg_get_viewdef('aggordview1');
+--Testcase 297:
 select * from aggordview1 order by ten;
 drop view aggordview1;
 
@@ -1026,7 +1323,9 @@ returns anyelement language sql as
 create aggregate least_agg(variadic items anyarray) (
   stype = anyelement, sfunc = least_accum
 );
+--Testcase 298:
 select least_agg(q1,q2) from int8_tbl;
+--Testcase 299:
 select least_agg(variadic array[q1,q2]) from int8_tbl;
 
 drop aggregate least_agg(variadic items anyarray);
@@ -1096,49 +1395,72 @@ create aggregate my_sum(bigint)
 );
 
 -- aggregate state should be shared as aggs are the same.
+--Testcase 300:
 delete from int8_tbl;
+--Testcase 301:
 insert into int8_tbl(q1) values (1),(3);
+--Testcase 302:
 select my_avg(q1),my_avg(q1) from int8_tbl;
 
 -- aggregate state should be shared as transfn is the same for both aggs.
+--Testcase 303:
 delete from int8_tbl;
+--Testcase 304:
 insert into int8_tbl(q1) values (1),(3);
+--Testcase 305:
 select my_avg(q1),my_sum(q1) from int8_tbl;
 
 -- same as previous one, but with DISTINCT, which requires sorting the input.
+--Testcase 306:
 delete from int8_tbl;
+--Testcase 307:
 insert into int8_tbl(q1) values (1),(3),(1);
+--Testcase 308:
 select my_avg(distinct q1),my_sum(distinct q1) from int8_tbl;
 
 -- shouldn't share states due to the distinctness not matching.
+--Testcase 309:
 delete from int8_tbl;
+--Testcase 310:
 insert into int8_tbl(q1) values (1),(3);
+--Testcase 311:
 select my_avg(distinct q1),my_sum(q1) from int8_tbl;
 
 -- shouldn't share states due to the filter clause not matching.
+--Testcase 312:
 delete from int8_tbl;
+--Testcase 313:
 insert into int8_tbl(q1) values (1),(3);
+--Testcase 314:
 select my_avg(q1) filter (where q1 > 1),my_sum(q1) from int8_tbl;
 
 -- this should not share the state due to different input columns.
+--Testcase 315:
 delete from int8_tbl;
+--Testcase 316:
 insert into int8_tbl(q1,q2) values (1,2),(3,4);
+--Testcase 317:
 select my_avg(q1),my_sum(q2) from int8_tbl;
 
 -- exercise cases where OSAs share state
+--Testcase 318:
 delete from int8_tbl;
+--Testcase 319:
 insert into int8_tbl(q1) values (1::float8),(3),(5),(7);
+--Testcase 320:
 select
   percentile_cont(0.5) within group (order by q1),
   percentile_disc(0.5) within group (order by q1)
 from int8_tbl;
 
+--Testcase 321:
 select
   percentile_cont(0.25) within group (order by q1),
   percentile_disc(0.5) within group (order by q1)
 from int8_tbl;
 
 -- these can't share state currently
+--Testcase 322:
 select
   rank(4) within group (order by q1),
   dense_rank(4) within group (order by q1)
@@ -1170,11 +1492,15 @@ create aggregate my_avg_init2(int8)
 );
 
 -- state should be shared if INITCONDs are matching
+--Testcase 323:
 delete from int8_tbl;
+--Testcase 324:
 insert into int8_tbl(q1) values (1),(3);
+--Testcase 325:
 select my_sum_init(q1),my_avg_init(q1) from int8_tbl;
 
 -- Varying INITCONDs should cause the states not to be shared.
+--Testcase 326:
 select my_sum_init(q1),my_avg_init2(q1) from int8_tbl;
 
 rollback;
@@ -1228,8 +1554,11 @@ create aggregate my_half_sum(int8)
 );
 
 -- Agg state should be shared even though my_sum has no finalfn
+--Testcase 327:
 delete from int8_tbl;
+--Testcase 328:
 insert into int8_tbl(q1) values (1),(2),(3),(4);
+--Testcase 329:
 select my_sum(q1),my_half_sum(q1) from int8_tbl;
 
 rollback;
@@ -1259,6 +1588,7 @@ CREATE AGGREGATE balk(int4)
     INITCOND = '0'
 );
 
+--Testcase 330:
 SELECT balk(hundred) FROM tenk1;
 
 ROLLBACK;
@@ -1311,17 +1641,22 @@ SET enable_indexonlyscan = off;
 -- variance(int4) covers numeric_poly_combine
 -- sum(int8) covers int8_avg_combine
 -- regr_count(float8, float8) covers int8inc_float8_float8 and aggregates with > 1 arg
+--Testcase 331:
 EXPLAIN (COSTS OFF, VERBOSE)
   SELECT variance(unique1::int4), sum(unique1::int8), regr_count(unique1::float8, unique1::float8) FROM tenk1;
 
+--Testcase 332:
 SELECT variance(unique1::int4), sum(unique1::int8), regr_count(unique1::float8, unique1::float8) FROM tenk1;
 
 ROLLBACK;
 
 -- test coverage for dense_rank
 BEGIN;
+--Testcase 333:
 DELETE FROM INT8_TBL;
+--Testcase 334:
 INSERT INTO INT8_TBL(q1) VALUES (1),(1),(2),(2),(3),(3);
+--Testcase 335:
 SELECT dense_rank(q1) WITHIN GROUP (ORDER BY q1) FROM INT8_TBL GROUP BY (q1) ORDER BY 1;
 ROLLBACK;
 
@@ -1329,24 +1664,32 @@ ROLLBACK;
 -- of ORDER BY columns into account. See bug report around
 -- 2a505161-2727-2473-7c46-591ed108ac52@email.cz
 begin;
+--Testcase 336:
 insert into INT8_TBL(q1, q2) values (1, NULL);
+--Testcase 337:
 SELECT min(x ORDER BY y) FROM INT8_TBL AS d(x,y);
 rollback;
 
 begin;
+--Testcase 338:
 insert into INT8_TBL(q1, q2) values (1, 2);
+--Testcase 339:
 SELECT min(x ORDER BY y) FROM INT8_TBL AS d(x,y);
 rollback;
 
 -- check collation-sensitive matching between grouping expressions
 begin;
+--Testcase 340:
 insert into agg_t6(x) values (unnest(array['a','b']));
+--Testcase 341:
 select x||'a', case x||'a' when 'aa' then 1 else 0 end, count(*)
   from agg_t6 group by x||'a' order by 1;
 rollback;
 
 begin;
+--Testcase 342:
 insert into agg_t6(x) values (unnest(array['a','b']));
+--Testcase 343:
 select x||'a', case when x||'a' = 'aa' then 1 else 0 end, count(*)
   from agg_t6 group by x||'a' order by 1;
 rollback;
@@ -1354,6 +1697,7 @@ rollback;
 -- Make sure that generation of HashAggregate for uniqification purposes
 -- does not lead to array overflow due to unexpected duplicate hash keys
 -- see CAFeeJoKKu0u+A_A9R9316djW-YW3-+Gtgvy3ju655qRHR3jtdA@mail.gmail.com
+--Testcase 344:
 explain (costs off)
   select 1 from tenk1
    where (hundred, thousand) in (select twothousand, twothousand from onek);
