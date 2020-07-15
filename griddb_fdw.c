@@ -2133,7 +2133,7 @@ griddb_pgtyp_from_gstyp(GSType gs_type, const char **pg_name)
 			break;
 
 		case GS_TYPE_BOOL_ARRAY:
-			pg_type = GSFDW_BOOLARRAYOID;
+			pg_type = BOOLARRAYOID;
 			name = "boolean[]";
 			break;
 
@@ -2149,7 +2149,7 @@ griddb_pgtyp_from_gstyp(GSType gs_type, const char **pg_name)
 			break;
 
 		case GS_TYPE_LONG_ARRAY:
-			pg_type = GSFDW_INT8ARRAYOID;
+			pg_type = INT8ARRAYOID;
 			name = "bigint[]";
 			break;
 
@@ -2159,12 +2159,12 @@ griddb_pgtyp_from_gstyp(GSType gs_type, const char **pg_name)
 			break;
 
 		case GS_TYPE_DOUBLE_ARRAY:
-			pg_type = GSFDW_FLOAT8ARRAYOID;
+			pg_type = FLOAT8ARRAYOID;
 			name = "double precision[]";
 			break;
 
 		case GS_TYPE_TIMESTAMP_ARRAY:
-			pg_type = GSFDW_TIMESTAMPARRAYOID;
+			pg_type = TIMESTAMPARRAYOID;
 			name = "timestamp[]";
 			break;
 
