@@ -32,6 +32,7 @@
 #include "utils/rel.h"
 #include "utils/relcache.h"
 #include "utils/syscache.h"
+#include "time.h"
 
 /*
  * Global context for foreign_expr_walker's search of an expression tree.
@@ -754,9 +755,23 @@ griddb_deparse_scalar_array_op_expr(ScalarArrayOpExpr *node, deparse_expr_cxt *c
 	getTypeOutputInfo(c->consttype,
 					  &typoutput, &typIsVarlena);
 	extval = OidOutputFunctionCall(typoutput, c->constvalue);
-	isstr = true;
-	if (c->consttype == INT4ARRAYOID || c->consttype == OIDARRAYOID)
-		isstr = false;
+	switch (c->consttype)
+	{
+		case BOOLARRAYOID:
+		case INT8ARRAYOID:
+		case INT2ARRAYOID:
+		case INT4ARRAYOID:
+		case OIDARRAYOID:
+		case FLOAT4ARRAYOID:
+		case FLOAT8ARRAYOID:
+		case TIMESTAMPARRAYOID:
+		case TIMESTAMPTZARRAYOID:
+			isstr = false;
+			break;
+		default:
+			isstr = true;
+			break;
+	}
 
 	/* Deparse right operand. */
 	deparseLeft = true;
@@ -773,6 +788,12 @@ griddb_deparse_scalar_array_op_expr(ScalarArrayOpExpr *node, deparse_expr_cxt *c
 		if (deparseLeft)
 		{
 			arg1 = linitial(node->args);
+			/* No need deparse bool column */
+			if (c->consttype == BOOLARRAYOID)
+			{
+				deparseLeft = false;
+				continue;
+			}
 			deparseExpr(arg1, context);
 			if (notIn)
 				appendStringInfo(buf, " <> ");
@@ -812,9 +833,62 @@ griddb_deparse_scalar_array_op_expr(ScalarArrayOpExpr *node, deparse_expr_cxt *c
 				appendStringInfo(buf, "  AND ");
 			else
 				appendStringInfo(buf, "  OR ");
+
+			/* No need deparse bool column */
+			if (c->consttype == BOOLARRAYOID)
+			{
+				deparseLeft = false;
+				continue;
+			}
+
 			deparseLeft = true;
 			continue;
 		}
+
+		/* When compare with timestamp column, need to convert and cast to TIMESTAMP */
+		if (c->consttype == TIMESTAMPARRAYOID || c->consttype == TIMESTAMPTZARRAYOID)
+		{
+			char		timestamp[MAXDATELEN + 1];
+			char		chtime[MAXDATELEN + 1] = {0};
+			struct tm	tm;
+			int 		j = 0;
+
+			for (;; valptr++)
+			{
+				if (*valptr == '\"' && !isEscape)
+				{
+					inString = !inString;
+					break;
+				}
+				chtime[j] = *valptr;
+				j++;
+			}
+			i += j;
+
+			/* Format of chtime is YYYY-MM-DD HH:MM:SS */
+			strptime(chtime, "%Y-%m-%d %H:%M:%S", &tm);
+			griddb_convert_pg2gs_timestamp_string(time_t_to_timestamptz(timegm(&tm)), timestamp);
+			appendStringInfoString(buf, "TIMESTAMP(");
+			griddb_deparse_string_literal(buf, timestamp);
+			appendStringInfoString(buf, ")");
+			continue;
+		}
+
+		/*
+		 * GridDB not support compare bool column with true, false.
+		 * Only support column or NOT column
+		 */
+		if (c->consttype == BOOLARRAYOID)
+		{
+			appendStringInfoChar(buf, '(');
+			if (ch == 'f')
+				appendStringInfoString(buf, "NOT ");
+
+			deparseExpr(arg1, context);
+			appendStringInfoChar(buf, ')');
+			continue;
+		}
+
 		appendStringInfoChar(buf, ch);
 	}
 	if (isstr)
