@@ -3240,6 +3240,7 @@ select t1.* from
                                                    ->  Nested Loop
                                                          Output: i8b2.q1, NULL::integer
                                                          ->  Foreign Scan on public.int4_tbl i4b2
+                                                               Output: i4b2.id, i4b2.f1
                                                                Remote SQL: SELECT  *  FROM int4_tbl
                                                          ->  Materialize
                                                                Output: i8b2.q1
@@ -3251,7 +3252,7 @@ select t1.* from
          ->  Foreign Scan on public.int4_tbl i4
                Output: i4.f1
                Remote SQL: SELECT  *  FROM int4_tbl
-(53 rows)
+(54 rows)
 
 --Testcase 224:
 select t1.* from
@@ -3538,6 +3539,7 @@ where tt1.f1 = ss1.c0;
                ->  Nested Loop
                      Output: tt1.f1
                      ->  Foreign Scan on public.text_tbl tt2
+                           Output: tt2.f1
                            Remote SQL: SELECT  *  FROM text_tbl
                      ->  Materialize
                            Output: tt1.f1
@@ -3562,7 +3564,7 @@ where tt1.f1 = ss1.c0;
                ->  Foreign Scan on public.text_tbl tt5
                      Output: tt4.f1
                      Remote SQL: SELECT  *  FROM text_tbl
-(34 rows)
+(35 rows)
 
 --Testcase 234:
 select 1 from
@@ -5020,7 +5022,7 @@ select * from
    ->  Nested Loop
          Output: b.q1, c.q1, LEAST(a.q1, b.q1, c.q1)
          ->  Foreign Scan on public.int8_tbl b
-               Output: b.q1
+               Output: b.id, b.q1, b.q2
                Filter: (a.q2 = b.q1)
                Remote SQL: SELECT  *  FROM int8_tbl
          ->  Materialize
@@ -5170,7 +5172,7 @@ select c.*,a.*,ss1.q1,ss2.q1,ss3.* from
                                        Output: b.q1, COALESCE(b.q2, (b2.f1)::bigint)
                                        Join Filter: (b.q1 < b2.f1)
                                        ->  Foreign Scan on public.int4_tbl b2
-                                             Output: b2.f1
+                                             Output: b2.id, b2.f1
                                              Remote SQL: SELECT  *  FROM int4_tbl
                                        ->  Materialize
                                              Output: b.q1, b.q2
@@ -5286,7 +5288,7 @@ select * from
          Output: int4_tbl.f1
          Hash Cond: (int4_tbl.f1 = tenk1.unique1)
          ->  Foreign Scan on public.int4_tbl
-               Output: int4_tbl.f1
+               Output: int4_tbl.id, int4_tbl.f1
                Remote SQL: SELECT  *  FROM int4_tbl
          ->  Hash
                Output: tenk1.unique1
@@ -5348,7 +5350,7 @@ lateral (select * from int8_tbl t1,
                                ->  Result
                                      Output: ($3 = 0)
                              ->  Foreign Scan on public.int8_tbl t3
-                                   Output: t3.q2
+                                   Output: t3.id, t3.q1, t3.q2
                                    Filter: (t3.q2 = $2)
                                    Remote SQL: SELECT  *  FROM int8_tbl
 (30 rows)
@@ -5771,7 +5773,7 @@ inner join (select distinct id from j31) j31 on j11.id = j31.id;
                Output: j31.id
                Group Key: j31.id
                ->  Foreign Scan on public.j31
-                     Output: j31.id
+                     Output: j31.idx, j31.id
                      Remote SQL: SELECT  *  FROM j31
 (15 rows)
 
@@ -5795,7 +5797,7 @@ inner join (select id from j31 group by id) j31 on j11.id = j31.id;
                Output: j31.id
                Group Key: j31.id
                ->  Foreign Scan on public.j31
-                     Output: j31.id
+                     Output: j31.idx, j31.id
                      Remote SQL: SELECT  *  FROM j31
 (15 rows)
 
@@ -5958,13 +5960,13 @@ from onek t1, tenk1 t2
 where exists (select 1 from tenk1 t3
               where t3.thousand = t1.unique1 and t3.tenthous = t2.hundred)
       and t1.unique1 < 1;
-                                 QUERY PLAN                                 
-----------------------------------------------------------------------------
+                                                                                                    QUERY PLAN                                                                                                     
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Hash Join
    Output: t1.unique1, t2.hundred
    Hash Cond: (t2.hundred = t3.tenthous)
    ->  Foreign Scan on public.tenk1 t2
-         Output: t2.hundred
+         Output: t2.unique1, t2.unique2, t2.two, t2.four, t2.ten, t2.twenty, t2.hundred, t2.thousand, t2.twothousand, t2.fivethous, t2.tenthous, t2.odd, t2.even, t2.stringu1, t2.stringu2, t2.string4
          Remote SQL: SELECT  *  FROM tenk1
    ->  Hash
          Output: t1.unique1, t3.tenthous
@@ -5972,7 +5974,7 @@ where exists (select 1 from tenk1 t3
                Output: t1.unique1, t3.tenthous
                Hash Cond: (t1.unique1 = t3.thousand)
                ->  Foreign Scan on public.onek t1
-                     Output: t1.unique1
+                     Output: t1.unique1, t1.unique2, t1.two, t1.four, t1.ten, t1.twenty, t1.hundred, t1.thousand, t1.twothousand, t1.fivethous, t1.tenthous, t1.odd, t1.even, t1.stringu1, t1.stringu2, t1.string4
                      Remote SQL: SELECT  *  FROM onek WHERE ((unique1 < 1))
                ->  Hash
                      Output: t3.thousand, t3.tenthous
@@ -5995,13 +5997,13 @@ from onek t1, tenk1 t2
 where exists (select 1 from j3
               where j3.unique1 = t1.unique1 and j3.tenthous = t2.hundred)
       and t1.unique1 < 1;
-                                 QUERY PLAN                                 
-----------------------------------------------------------------------------
+                                                                                                    QUERY PLAN                                                                                                     
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Hash Join
    Output: t1.unique1, t2.hundred
    Hash Cond: (t2.hundred = j3.tenthous)
    ->  Foreign Scan on public.tenk1 t2
-         Output: t2.hundred
+         Output: t2.unique1, t2.unique2, t2.two, t2.four, t2.ten, t2.twenty, t2.hundred, t2.thousand, t2.twothousand, t2.fivethous, t2.tenthous, t2.odd, t2.even, t2.stringu1, t2.stringu2, t2.string4
          Remote SQL: SELECT  *  FROM tenk1
    ->  Hash
          Output: t1.unique1, j3.tenthous
@@ -6009,7 +6011,7 @@ where exists (select 1 from j3
                Output: t1.unique1, j3.tenthous
                Hash Cond: (t1.unique1 = j3.unique1)
                ->  Foreign Scan on public.onek t1
-                     Output: t1.unique1
+                     Output: t1.unique1, t1.unique2, t1.two, t1.four, t1.ten, t1.twenty, t1.hundred, t1.thousand, t1.twothousand, t1.fivethous, t1.tenthous, t1.odd, t1.even, t1.stringu1, t1.stringu2, t1.string4
                      Remote SQL: SELECT  *  FROM onek WHERE ((unique1 < 1))
                ->  Hash
                      Output: j3.unique1, j3.tenthous

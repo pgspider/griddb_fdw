@@ -734,13 +734,13 @@ order by 1, 2;
    ->  Nested Loop
          Output: s1.f1, s2.f1, (sum((s1.f1 + s2.f1)))
          ->  Foreign Scan on public.int4_tbl s1
-               Output: s1.f1
+               Output: s1.id, s1.f1
                Remote SQL: SELECT  *  FROM int4_tbl
          ->  HashAggregate
                Output: s2.f1, sum((s1.f1 + s2.f1))
                Group Key: s2.f1
                ->  Foreign Scan on public.int4_tbl s2
-                     Output: s2.f1
+                     Output: s2.id, s2.f1
                      Remote SQL: SELECT  *  FROM int4_tbl
 (14 rows)
 
@@ -781,7 +781,7 @@ select array(select sum(x.f1+y.f1) s
                  Output: sum((x.f1 + y.f1)), y.f1
                  Group Key: y.f1
                  ->  Foreign Scan on public.int4_tbl y
-                       Output: y.f1
+                       Output: y.id, y.f1
                        Remote SQL: SELECT  *  FROM int4_tbl
 (13 rows)
 
@@ -2752,12 +2752,12 @@ SET enable_indexonlyscan = off;
 --Testcase 331:
 EXPLAIN (COSTS OFF, VERBOSE)
   SELECT variance(unique1::int4), sum(unique1::int8), regr_count(unique1::float8, unique1::float8) FROM tenk1;
-                                                        QUERY PLAN                                                         
----------------------------------------------------------------------------------------------------------------------------
+                                                                      QUERY PLAN                                                                       
+-------------------------------------------------------------------------------------------------------------------------------------------------------
  Aggregate
    Output: variance(unique1), sum((unique1)::bigint), regr_count((unique1)::double precision, (unique1)::double precision)
    ->  Foreign Scan on public.tenk1
-         Output: unique1
+         Output: unique1, unique2, two, four, ten, twenty, hundred, thousand, twothousand, fivethous, tenthous, odd, even, stringu1, stringu2, string4
          Remote SQL: SELECT  *  FROM tenk1
 (5 rows)
 

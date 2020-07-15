@@ -7,7 +7,7 @@ CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS(username 'admin', passw
 CREATE FOREIGN TABLE inserttest01 (id serial OPTIONS (rowkey 'true'), col1 int4, col2 int4 NOT NULL, col3 text default 'testing') SERVER griddb_svr;
 --Testcase 1:
 insert into inserttest01 (col1, col2, col3) values (DEFAULT, DEFAULT, DEFAULT);
-ERROR:  GridDB-API is failed by 140002 at griddb_fdw.c: 3104
+ERROR:  GridDB-API is failed by 140002 at griddb_fdw.c: 3125
 
 --Testcase 2:
 insert into inserttest01 (col2, col3) values (3, DEFAULT);
