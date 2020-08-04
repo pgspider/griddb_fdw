@@ -1429,7 +1429,7 @@ foreign_expr_walker(Node *node,
  * Returns true if given expr is safe to evaluate on the foreign server.
  */
 bool
-is_foreign_expr(PlannerInfo *root,
+griddb_is_foreign_expr(PlannerInfo *root,
 				RelOptInfo *baserel,
 				Expr *expr)
 {
@@ -1488,7 +1488,7 @@ griddb_append_order_by_clause(List *pathkeys, deparse_expr_cxt *context)
 		PathKey    *pathkey = (PathKey *) lfirst(lcell);
 		Expr	   *em_expr;
 
-		em_expr = find_em_expr_for_rel(pathkey->pk_eclass, baserel);
+		em_expr = griddb_find_em_expr_for_rel(pathkey->pk_eclass, baserel);
 		Assert(em_expr != NULL);
 
 		appendStringInfoString(buf, delim);
@@ -1592,7 +1592,7 @@ griddb_classify_conditions(PlannerInfo *root,
 	{
 		RestrictInfo *ri = (RestrictInfo *) lfirst(lc);
 
-		if (is_foreign_expr(root, baserel, ri->clause))
+		if (griddb_is_foreign_expr(root, baserel, ri->clause))
 			*remote_conds = lappend(*remote_conds, ri);
 		else
 			*local_conds = lappend(*local_conds, ri);

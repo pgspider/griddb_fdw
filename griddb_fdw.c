@@ -729,7 +729,7 @@ griddbGetForeignPlan(PlannerInfo *root,
 		}
 		else if (list_member_ptr(fpinfo->local_conds, rinfo))
 			local_exprs = lappend(local_exprs, rinfo->clause);
-		else if (is_foreign_expr(root, foreignrel, rinfo->clause))
+		else if (griddb_is_foreign_expr(root, foreignrel, rinfo->clause))
 		{
 			remote_conds = lappend(remote_conds, rinfo);
 			remote_exprs = lappend(remote_exprs, rinfo->clause);
@@ -2001,7 +2001,7 @@ estimate_path_cost_size(PlannerInfo *root,
  * the indicated relation.
  */
 extern Expr *
-find_em_expr_for_rel(EquivalenceClass *ec, RelOptInfo *rel)
+griddb_find_em_expr_for_rel(EquivalenceClass *ec, RelOptInfo *rel)
 {
 	ListCell   *lc_em;
 
