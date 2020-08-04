@@ -229,10 +229,10 @@ extern void griddb_classify_conditions(PlannerInfo *root,
 						   List *input_conds,
 						   List **remote_conds,
 						   List **local_conds);
-extern bool is_foreign_expr(PlannerInfo *root,
+extern bool griddb_is_foreign_expr(PlannerInfo *root,
 				RelOptInfo *baserel,
 				Expr *expr);
-extern Expr *find_em_expr_for_rel(EquivalenceClass *ec, RelOptInfo *rel);
+extern Expr *griddb_find_em_expr_for_rel(EquivalenceClass *ec, RelOptInfo *rel);
 extern void griddb_deparse_select(StringInfo buf, PlannerInfo *root,
 					  RelOptInfo *foreignrel, List *remote_conds,
 					  List *pathkeys, List **retrieved_attrs,
