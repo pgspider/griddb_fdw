@@ -1,5 +1,8 @@
+--Testcase 83:
 CREATE EXTENSION griddb_fdw;
+--Testcase 84:
 CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS(host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster');
+--Testcase 85:
 CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS(username 'admin', password 'testadmin');
 
 IMPORT FOREIGN SCHEMA griddb_schema FROM SERVER griddb_svr INTO public;
@@ -23,6 +26,8 @@ DELETE FROM empdata;
 DELETE FROM numbers;
 --Testcase 5:
 DELETE FROM evennumbers;
+
+DELETE FROM rowkey_tbl;
 
 --Testcase 6:
 SELECT * FROM department LIMIT 10;
@@ -123,11 +128,13 @@ SELECT * FROM employee WHERE emp_name NOT IN ('emp - 1', 'emp - 2') LIMIT 5;
 --Testcase 47:
 SELECT * FROM employee WHERE emp_name NOT IN ('emp - 10') LIMIT 5;
 
+--Testcase 86:
 CREATE OR REPLACE FUNCTION test_param_where() RETURNS void AS $$
 DECLARE
   n varchar;
 BEGIN
   FOR x IN 1..9 LOOP
+--Testcase 87:
     SELECT b INTO n FROM numbers WHERE a=x;
     RAISE NOTICE 'Found number %', n;
   END LOOP;
@@ -158,10 +165,15 @@ DELETE FROM empdata;
 --Testcase 55:
 DELETE FROM numbers;
 
+--Testcase 88:
 DROP FUNCTION test_param_where();
+--Testcase 89:
 DROP FOREIGN TABLE numbers;
+--Testcase 90:
 DROP FOREIGN TABLE department;
+--Testcase 91:
 DROP FOREIGN TABLE employee;
+--Testcase 92:
 DROP FOREIGN TABLE empdata;
 
 -- -----------------------------------------------------------------------------
@@ -252,8 +264,55 @@ SELECT tableoid::regclass, * from shorty WHERE id = 1;
 SELECT * from shorty WHERE id = 1 AND tableoid = 'shorty'::regclass;
 
 -- Clean up
+--Testcase 93:
 DROP FOREIGN TABLE shorty;
 
+-- Test rowkey columni with trigger and without trigger
+-- Prepare data
+--Testcase 100:
+INSERT INTO rowkey_tbl VALUES (0, 5);
+
+-- Test with trigger
+--Testcase 101:
+CREATE FUNCTION row_before_insupd_trigfunc() RETURNS trigger AS $$BEGIN NEW.a := NEW.a + 10; RETURN NEW; END$$ LANGUAGE plpgsql;
+--Testcase 102:
+CREATE TRIGGER row_before_insupd_trigger BEFORE INSERT OR UPDATE ON rowkey_tbl FOR EACH ROW EXECUTE PROCEDURE row_before_insupd_trigfunc();
+
+--Testcase 103:
+INSERT INTO rowkey_tbl VALUES (0, 5);
+--Testcase 104:
+SELECT * FROM rowkey_tbl;
+
+-- This test failed because new rowkey value will be updated to old rowkey value
+--Testcase 105:
+UPDATE rowkey_tbl SET b = b + 10; -- failed
+
+-- Test without trigger
+--Testcase 106:
+DROP TRIGGER row_before_insupd_trigger ON rowkey_tbl;
+
+-- This test OK because rowkey value is not changed
+--Testcase 107:
+UPDATE rowkey_tbl SET b = b + 10; -- ok
+--Testcase 108:
+SELECT * FROM rowkey_tbl;
+
+-- This test failed  because rowkey is updated directly even its value not changed
+--Testcase 109:
+UPDATE rowkey_tbl SET a = 10, b = b + 15 WHERE a = 10; --failed
+--Testcase 110:
+SELECT * FROM rowkey_tbl;
+
+-- This test failed because new rowkey is updated directly
+--Testcase 111:
+UPDATE rowkey_tbl SET a = 15, b = b + 15 WHERE a = 10; --failed
+
+--Testcase 112:
+DROP FUNCTION row_before_insupd_trigfunc;
+--Testcase 113:
+DROP FOREIGN TABLE rowkey_tbl;
+
+--Testcase 94:
 CREATE OR REPLACE FUNCTION drop_all_foreign_tables() RETURNS void AS $$
 DECLARE
   tbl_name varchar;
@@ -261,6 +320,7 @@ DECLARE
 BEGIN
   FOR tbl_name IN SELECT foreign_table_name FROM information_schema._pg_foreign_tables LOOP
     cmd := 'DROP FOREIGN TABLE ' || quote_ident(tbl_name);
+--Testcase 95:
     EXECUTE cmd;
   END LOOP;
   RETURN;
@@ -269,6 +329,9 @@ $$ LANGUAGE plpgsql;
 --Testcase 82:
 SELECT drop_all_foreign_tables();
 
+--Testcase 96:
 DROP USER MAPPING FOR public SERVER griddb_svr;
+--Testcase 97:
 DROP SERVER griddb_svr CASCADE;
+--Testcase 98:
 DROP EXTENSION griddb_fdw CASCADE;

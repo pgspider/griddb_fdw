@@ -1,7 +1,7 @@
 /*
  * GridDB Foreign Data Wrapper
  *
- * Portions Copyright (c) 2018, TOSHIBA CORPORATION
+ * Portions Copyright (c) 2020, TOSHIBA CORPORATION
  *
  * IDENTIFICATION
  *		  griddb_fdw.c
@@ -285,6 +285,8 @@ static void griddb_execute_commands(List *cmd_list);
 
 static int set_transmission_modes();
 static void reset_transmission_modes(int nestlevel);
+
+static void griddb_check_rowkey_update(GridDBFdwModifyState * fmstate, TupleTableSlot *new_slot);
 
 void
 _PG_init()
@@ -1076,7 +1078,7 @@ griddbPlanForeignModify(PlannerInfo *root,
 	 * Core code already has some lock on each rel being planned, so we can
 	 * use NoLock here.
 	 */
-	rel = heap_open(rte->relid, NoLock);
+	rel = table_open(rte->relid, NoLock);
 
 	/*
 	 * In an INSERT, we transmit all columns that are defined in the foreign
@@ -1163,7 +1165,7 @@ griddbPlanForeignModify(PlannerInfo *root,
 	if (plan->onConflictAction != ONCONFLICT_NONE)
 		elog(ERROR, "ON CONFLICT is not supported");
 
-	heap_close(rel, NoLock);
+	table_close(rel, NoLock);
 
 	/*
 	 * Build the fdw_private list that will be available to the executor.
@@ -1330,16 +1332,18 @@ griddbExecForeignUpdate(EState *estate,
 	Datum		rowkey;
 	bool		isnull;
 	bool		found;
-	GridDBFdwRowKeyHashEntry *rowket_hash_entry;
+	GridDBFdwRowKeyHashEntry *rowkey_hash_entry;
 
 	elog(DEBUG1, "griddb_fdw: %s", __func__);
 
 	/* Check if it is already modified or not. */
 	rowkey = ExecGetJunkAttribute(planSlot, fmstate->junk_att_no, &isnull);
 	Assert(isnull == false);
-	rowket_hash_entry = griddb_rowkey_hash_search(fmstate->modified_rowkeys, rowkey, &found);
+	rowkey_hash_entry = griddb_rowkey_hash_search(fmstate->modified_rowkeys, rowkey, &found);
 	if (found)
 		return NULL;
+
+	griddb_check_rowkey_update(fmstate, slot);
 
 	if (!fmstate->bulk_mode)
 		griddb_judge_bulk_mode(fmstate, planSlot);
@@ -1352,7 +1356,7 @@ griddbExecForeignUpdate(EState *estate,
 		 */
 		Datum		rowkey_datum = griddb_modify_target_insert(&fmstate->modified_rows, slot, planSlot, fmstate->junk_att_no, fmstate->target_attrs, &smrelay->field_info);
 
-		griddb_rowkey_hash_set(rowket_hash_entry, rowkey_datum, NULL);
+		griddb_rowkey_hash_set(rowkey_hash_entry, rowkey_datum, NULL);
 	}
 	else
 	{
@@ -1369,7 +1373,7 @@ griddbExecForeignUpdate(EState *estate,
 			griddb_REPORT_ERROR(ERROR, ret, fmstate->cont);
 
 		attr = TupleDescAttr(planSlot->tts_tupleDescriptor, fmstate->junk_att_no - 1);
-		griddb_rowkey_hash_set(rowket_hash_entry, rowkey, attr);
+		griddb_rowkey_hash_set(rowkey_hash_entry, rowkey, attr);
 	}
 
 	/* Return NULL if nothing was updated on the remote end */
@@ -1393,14 +1397,14 @@ griddbExecForeignDelete(EState *estate,
 	Datum		rowkey;
 	bool		isnull;
 	bool		found;
-	GridDBFdwRowKeyHashEntry *rowket_hash_entry;
+	GridDBFdwRowKeyHashEntry *rowkey_hash_entry;
 
 	elog(DEBUG1, "griddb_fdw: %s", __func__);
 
 	/* Check if it is already modified or not. */
 	rowkey = ExecGetJunkAttribute(planSlot, fmstate->junk_att_no, &isnull);
 	Assert(isnull == false);
-	rowket_hash_entry = griddb_rowkey_hash_search(fmstate->modified_rowkeys, rowkey, &found);
+	rowkey_hash_entry = griddb_rowkey_hash_search(fmstate->modified_rowkeys, rowkey, &found);
 	if (found)
 		return NULL;
 
@@ -1415,7 +1419,7 @@ griddbExecForeignDelete(EState *estate,
 		 */
 		Datum		rowkey_datum = griddb_modify_target_insert(&fmstate->modified_rows, slot, planSlot, fmstate->junk_att_no, fmstate->target_attrs, &smrelay->field_info);
 
-		griddb_rowkey_hash_set(rowket_hash_entry, rowkey_datum, NULL);
+		griddb_rowkey_hash_set(rowkey_hash_entry, rowkey_datum, NULL);
 	}
 	else
 	{
@@ -1427,7 +1431,7 @@ griddbExecForeignDelete(EState *estate,
 			griddb_REPORT_ERROR(ERROR, ret, fmstate->cont);
 
 		attr = TupleDescAttr(planSlot->tts_tupleDescriptor, fmstate->junk_att_no - 1);
-		griddb_rowkey_hash_set(rowket_hash_entry, rowkey, attr);
+		griddb_rowkey_hash_set(rowkey_hash_entry, rowkey, attr);
 	}
 
 	/* Return NULL if nothing was deleted on the remote end */
@@ -3240,4 +3244,44 @@ griddb_execute_commands(List *cmd_list)
 
 	if (SPI_finish() != SPI_OK_FINISH)
 		elog(WARNING, "SPI_finish failed");
+}
+
+/*
+ * Check whether new row-key is updated or not.
+ */
+static void
+griddb_check_rowkey_update(GridDBFdwModifyState * fmstate, TupleTableSlot *new_slot)
+{
+	GridDBFdwSMRelay *smrelay = fmstate->smrelay;
+	int			(*comparator) (const void *, const void *);
+	ListCell	*lc;
+
+	foreach (lc, fmstate->target_attrs)
+	{
+		int	attnum = lfirst_int(lc);
+		bool		isnull;
+		Datum		value;
+		GSType		type;
+		Datum	   *value1[1];
+		Datum	   *value2[1];
+
+		if ((attnum < 0) || (attnum != ROWKEY_ATTNO))
+			continue;
+
+		griddb_check_slot_type(new_slot, attnum, &smrelay->field_info);
+		value = slot_getattr(new_slot, attnum, &isnull);
+		if (isnull)
+			type = GS_TYPE_NULL;
+		else
+			type = smrelay->field_info.column_types[attnum - 1];
+
+		value1[0] = &value;
+		value2[0] = &smrelay->rowkey_val;
+		comparator = griddb_get_comparator_tuplekey(type);
+		if (comparator((const void *) &value1, (const void *) &value2) != 0)
+			elog(ERROR, "new rowkey column update is not supported");
+
+	}
+
+
 }

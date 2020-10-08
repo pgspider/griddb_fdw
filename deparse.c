@@ -1,7 +1,7 @@
 /*
  * GridDB Foreign Data Wrapper
  *
- * Portions Copyright (c) 2018, TOSHIBA CORPORATION
+ * Portions Copyright (c) 2020, TOSHIBA CORPORATION
  *
  * IDENTIFICATION
  *		  deparse.c
@@ -181,7 +181,7 @@ griddb_deparse_select(StringInfo buf,
 	 * Core code already has some lock on each rel being planned, so we can
 	 * use NoLock here.
 	 */
-	rel = heap_open(rte->relid, NoLock);
+	rel = table_open(rte->relid, NoLock);
 
 	appendStringInfoString(buf, "SELECT ");
 	griddb_deparse_target_list(buf, root, baserel->relid, rel,
@@ -203,7 +203,7 @@ griddb_deparse_select(StringInfo buf,
 	if (pathkeys)
 		griddb_append_order_by_clause(pathkeys, &context);
 
-	heap_close(rel, NoLock);
+	table_close(rel, NoLock);
 }
 
 /*
@@ -583,7 +583,11 @@ griddb_deparse_func_expr(FuncExpr *node, deparse_expr_cxt *context)
 	{
 		if (!first)
 			appendStringInfoString(buf, ", ");
+#if (PG_VERSION_NUM >= 130000)
+		if (use_variadic && lnext(node->args, arg) == NULL)
+#else
 		if (use_variadic && lnext(arg) == NULL)
+#endif
 			elog(ERROR, "VARIADIC is not supported");
 		deparseExpr((Expr *) lfirst(arg), context);
 		first = false;
@@ -748,6 +752,7 @@ griddb_deparse_scalar_array_op_expr(ScalarArrayOpExpr *node, deparse_expr_cxt *c
 	if (strcmp(opname, "<>") == 0)
 		notIn = true;
 
+	arg1 = linitial(node->args);
 	arg2 = lsecond(node->args);
 	c = (Const *) arg2;
 	Assert(nodeTag((Node *) arg2) == T_Const || c->constisnull);
@@ -787,7 +792,6 @@ griddb_deparse_scalar_array_op_expr(ScalarArrayOpExpr *node, deparse_expr_cxt *c
 		/* Deparse left operand. */
 		if (deparseLeft)
 		{
-			arg1 = linitial(node->args);
 			/* No need deparse bool column */
 			if (c->consttype == BOOLARRAYOID)
 			{

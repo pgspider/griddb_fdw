@@ -1,10 +1,14 @@
 --
 -- UPDATE syntax tests
 --
+--Testcase 97:
 CREATE EXTENSION griddb_fdw;
+--Testcase 98:
 CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS(host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster');
+--Testcase 99:
 CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS(username 'admin', password 'testadmin');
 
+--Testcase 100:
 CREATE FOREIGN TABLE update_test (
     id  serial options (rowkey 'true'),
     a   INT DEFAULT 10,
@@ -12,6 +16,7 @@ CREATE FOREIGN TABLE update_test (
     c   TEXT
 ) SERVER griddb_svr;
 
+--Testcase 101:
 CREATE FOREIGN TABLE upsert_test (
     a   INT OPTIONS (rowkey 'true'),
     b   TEXT
@@ -27,26 +32,26 @@ INSERT INTO update_test(a, b, c) VALUES (5, 10, 'foo');
 INSERT INTO update_test(b, a) VALUES (15, 10);
 
 --Testcase 5:
-SELECT * FROM update_test;
+SELECT a, b, c FROM update_test;
 
 --Testcase 6:
 UPDATE update_test SET a = DEFAULT, b = DEFAULT;
 
 --Testcase 7:
-SELECT * FROM update_test;
+SELECT a, b, c FROM update_test;
 
 -- aliases for the UPDATE target table
 --Testcase 8:
 UPDATE update_test AS t SET b = 10 WHERE t.a = 10;
 
 --Testcase 9:
-SELECT * FROM update_test;
+SELECT a, b, c FROM update_test;
 
 --Testcase 10:
 UPDATE update_test t SET b = t.b + 10 WHERE t.a = 10;
 
 --Testcase 11:
-SELECT * FROM update_test;
+SELECT a, b, c FROM update_test;
 
 --
 -- Test VALUES in FROM
@@ -57,7 +62,7 @@ UPDATE update_test SET a=v.i FROM (VALUES(100, 20)) AS v(i, j)
   WHERE update_test.b = v.j;
 
 --Testcase 13:
-SELECT * FROM update_test;
+SELECT a, b, c FROM update_test;
 
 -- fail, wrong data type:
 --Testcase 14:
@@ -71,16 +76,16 @@ UPDATE update_test SET a = v.* FROM (VALUES(100, 20)) AS v(i, j)
 --Testcase 15:
 INSERT INTO update_test(a,b,c) SELECT a,b+1,c FROM update_test;
 --Testcase 16:
-SELECT * FROM update_test;
+SELECT a, b, c FROM update_test;
 
 --Testcase 17:
 UPDATE update_test SET (c,b,a) = ('bugle', b+11, DEFAULT) WHERE c = 'foo';
 --Testcase 18:
-SELECT * FROM update_test;
+SELECT a, b, c FROM update_test;
 --Testcase 19:
 UPDATE update_test SET (c,b) = ('car', a+b), a = a + 1 WHERE a = 10;
 --Testcase 20:
-SELECT * FROM update_test;
+SELECT a, b, c FROM update_test;
 -- fail, multi assignment to same column:
 --Testcase 21:
 UPDATE update_test SET (c,b) = ('car', a+b), b = a + 1 WHERE a = 10;
@@ -91,14 +96,14 @@ UPDATE update_test
   SET (b,a) = (select a,b from update_test where b = 41 and c = 'car')
   WHERE a = 100 AND b = 20;
 --Testcase 23:
-SELECT * FROM update_test;
+SELECT a, b, c FROM update_test;
 -- correlated sub-select:
 --Testcase 24:
 UPDATE update_test o
   SET (b,a) = (select a+1,b from update_test i
                where i.a=o.a and i.b=o.b and i.c is not distinct from o.c);
 --Testcase 25:
-SELECT * FROM update_test;
+SELECT a, b, c FROM update_test;
 -- fail, multiple rows supplied:
 --Testcase 26:
 UPDATE update_test SET (b,a) = (select a+1,b from update_test);
@@ -107,7 +112,7 @@ UPDATE update_test SET (b,a) = (select a+1,b from update_test);
 UPDATE update_test SET (b,a) = (select a+1,b from update_test where a = 1000)
   WHERE a = 11;
 --Testcase 28:
-SELECT * FROM update_test;
+SELECT a, b, c FROM update_test;
 -- *-expansion should work in this context:
 --Testcase 29:
 UPDATE update_test SET (a,b) = ROW(v.*) FROM (VALUES(21, 100)) AS v(i, j)
@@ -143,7 +148,7 @@ SELECT a, b, char_length(c) FROM update_test;
 
 -- ON CONFLICT is not supported.
 -- Test ON CONFLICT DO UPDATE
---Testcase 37:
+/*
 INSERT INTO upsert_test VALUES(1, 'Boo');
 -- uncorrelated  sub-select:
 --Testcase 38:
@@ -179,7 +184,7 @@ INSERT INTO upsert_test VALUES (2, 'Brox') ON CONFLICT(a)
 DROP FUNCTION xid_current();
 DROP FOREIGN TABLE update_test;
 DROP FOREIGN TABLE upsert_test;
-
+*/
 
 ---------------------------
 -- UPDATE with row movement
@@ -194,6 +199,7 @@ DROP FOREIGN TABLE upsert_test;
 -- movement convert UPDATEs into DELETE+INSERT.
 
 -- TODO: Does not support bigint, numeric, varchar
+--Testcase 102:
 CREATE TABLE range_parted (
 	id serial,
 	a text,
@@ -205,14 +211,19 @@ CREATE TABLE range_parted (
 
 -- Create partitions intentionally in descending bound order, so as to test
 -- that update-row-movement works with the leaf partitions not in bound order.
+--Testcase 103:
 CREATE TABLE part_b_20_b_30 (id serial NOT NULL, a text, b int, c float8, d int, e text);
 ALTER TABLE range_parted ATTACH PARTITION part_b_20_b_30 FOR VALUES FROM ('b', 20) TO ('b', 30);
+--Testcase 104:
 CREATE TABLE part_b_10_b_20 (id serial NOT NULL, a text, b int, c float8, d int, e text) PARTITION BY RANGE (c);
+--Testcase 105:
 CREATE FOREIGN TABLE part_b_1_b_10 PARTITION OF range_parted FOR VALUES FROM ('b', 1) TO ('b', 10) server griddb_svr;
 alter foreign table part_b_1_b_10 alter column id options (rowkey 'true');
 
 ALTER TABLE range_parted ATTACH PARTITION part_b_10_b_20 FOR VALUES FROM ('b', 10) TO ('b', 20);
+--Testcase 106:
 CREATE FOREIGN TABLE part_a_10_a_20 PARTITION OF range_parted FOR VALUES FROM ('a', 10) TO ('a', 20) server griddb_svr;
+--Testcase 107:
 CREATE FOREIGN TABLE part_a_1_a_10 PARTITION OF range_parted FOR VALUES FROM ('a', 1) TO ('a', 10) server griddb_svr;
 alter foreign table part_a_10_a_20 alter column id options (rowkey 'true');
 alter foreign table part_a_1_a_10 alter column id options (rowkey 'true');
@@ -225,24 +236,29 @@ UPDATE part_b_10_b_20 set b = b - 6;
 -- Create some more partitions following the above pattern of descending bound
 -- order, but let's make the situation a bit more complex by having the
 -- attribute numbers of the columns vary from their parent partition.
+--Testcase 108:
 CREATE TABLE part_c_100_200 (id serial NOT NULL, a text, b int, c float8, d int, e text) PARTITION BY range (abs(d));
 --ALTER TABLE part_c_100_200 DROP COLUMN e, DROP COLUMN c, DROP COLUMN a;
 --ALTER TABLE part_c_100_200 ADD COLUMN c numeric, ADD COLUMN e varchar, ADD COLUMN a text;
 --ALTER TABLE part_c_100_200 DROP COLUMN b;
 --ALTER TABLE part_c_100_200 ADD COLUMN b bigint;
+--Testcase 109:
 CREATE TABLE part_d_1_15 PARTITION OF part_c_100_200 FOR VALUES FROM (1) TO (15);
+--Testcase 110:
 CREATE TABLE part_d_15_20 PARTITION OF part_c_100_200 FOR VALUES FROM (15) TO (20);
 ALTER TABLE part_b_10_b_20 ATTACH PARTITION part_c_100_200 FOR VALUES FROM (100) TO (200);
 
+--Testcase 111:
 CREATE TABLE part_c_1_100 (id serial NOT NULL, a text, b int, c float8, d int, e text);
 ALTER TABLE part_b_10_b_20 ATTACH PARTITION part_c_1_100 FOR VALUES FROM (1) TO (100);
 
 \set init_range_parted 'delete from range_parted; insert into range_parted(a, b, c, d) VALUES (''a'', 1, 1, 1), (''a'', 10, 200, 1), (''b'', 12, 96, 1), (''b'', 13, 97, 2), (''b'', 15, 105, 16), (''b'', 17, 105, 19)'
-\set show_data 'select tableoid::regclass::text COLLATE "C" partname, * from range_parted ORDER BY 1, 2, 3, 4, 5, 6'
+\set show_data 'select tableoid::regclass::text COLLATE "C" partname, a, b, c, d, e from range_parted ORDER BY 1, 2, 3, 4, 5, 6'
 :init_range_parted;
 :show_data;
 
 -- The order of subplans should be in bound order
+--Testcase 112:
 EXPLAIN (costs off) UPDATE range_parted set c = c - 50 WHERE c > 97;
 
 -- fail, row movement happens only within the partition subtree.
@@ -276,11 +292,13 @@ UPDATE range_parted set b = b - 6 WHERE c > 116;
 :show_data;
 
 -- Common table needed for multiple test scenarios.
+--Testcase 113:
 CREATE TABLE mintab(c1 int);
 --Testcase 50:
 INSERT into mintab VALUES (120);
 
 -- update partition key using updatable view.
+--Testcase 114:
 CREATE VIEW upview AS SELECT * FROM range_parted WHERE (select c > c1 FROM mintab) WITH CHECK OPTION;
 -- ok
 --Testcase 51:
@@ -296,6 +314,7 @@ UPDATE upview set a = 'b', b = 15 WHERE b = 4;
 :show_data;
 
 -- cleanup
+--Testcase 115:
 DROP VIEW upview;
 
 -- RETURNING having whole-row vars.
@@ -308,6 +327,7 @@ UPDATE range_parted set c = 95 WHERE a = 'b' and b > 10 and c > 100;
 -- Transition tables with update row movement
 :init_range_parted;
 
+--Testcase 116:
 CREATE FUNCTION trans_updatetrigfunc() RETURNS trigger LANGUAGE plpgsql AS
 $$
   begin
@@ -319,6 +339,7 @@ $$
   end;
 $$;
 
+--Testcase 117:
 CREATE TRIGGER trans_updatetrig
   AFTER UPDATE ON range_parted REFERENCING OLD TABLE AS old_table NEW TABLE AS new_table
   FOR EACH STATEMENT EXECUTE PROCEDURE trans_updatetrigfunc();
@@ -331,16 +352,20 @@ UPDATE range_parted set c = (case when c = 96 then 110 else c + 1 end ) WHERE a 
 -- Enabling OLD TABLE capture for both DELETE as well as UPDATE stmt triggers
 -- should not cause DELETEd rows to be captured twice. Similar thing for
 -- INSERT triggers and inserted rows.
+--Testcase 118:
 CREATE TRIGGER trans_deletetrig
   AFTER DELETE ON range_parted REFERENCING OLD TABLE AS old_table
   FOR EACH STATEMENT EXECUTE PROCEDURE trans_updatetrigfunc();
+--Testcase 119:
 CREATE TRIGGER trans_inserttrig
   AFTER INSERT ON range_parted REFERENCING NEW TABLE AS new_table
   FOR EACH STATEMENT EXECUTE PROCEDURE trans_updatetrigfunc();
 --Testcase 55:
 UPDATE range_parted set c = c + 50 WHERE a = 'b' and b > 10 and c >= 96;
 :show_data;
+--Testcase 120:
 DROP TRIGGER trans_deletetrig ON range_parted;
+--Testcase 121:
 DROP TRIGGER trans_inserttrig ON range_parted;
 -- Don't drop trans_updatetrig yet. It is required below.
 
@@ -351,15 +376,19 @@ DROP TRIGGER trans_inserttrig ON range_parted;
 -- the desired transition tuple format. But conversion happens when there is a
 -- BR trigger because the trigger can change the inserted row. So install a
 -- BR triggers on those child partitions where the rows will be moved.
+--Testcase 122:
 CREATE FUNCTION func_parted_mod_b() RETURNS trigger AS $$
 BEGIN
    NEW.b = NEW.b + 1;
    return NEW;
 END $$ language plpgsql;
+--Testcase 123:
 CREATE TRIGGER trig_c1_100 BEFORE UPDATE OR INSERT ON part_c_1_100
    FOR EACH ROW EXECUTE PROCEDURE func_parted_mod_b();
+--Testcase 124:
 CREATE TRIGGER trig_d1_15 BEFORE UPDATE OR INSERT ON part_d_1_15
    FOR EACH ROW EXECUTE PROCEDURE func_parted_mod_b();
+--Testcase 125:
 CREATE TRIGGER trig_d15_20 BEFORE UPDATE OR INSERT ON part_d_15_20
    FOR EACH ROW EXECUTE PROCEDURE func_parted_mod_b();
 :init_range_parted;
@@ -379,19 +408,27 @@ UPDATE range_parted set c = c + 50 WHERE a = 'b' and b > 10 and c >= 96;
 UPDATE range_parted set b = 15 WHERE b = 1;
 :show_data;
 
+--Testcase 126:
 DROP TRIGGER trans_updatetrig ON range_parted;
+--Testcase 127:
 DROP TRIGGER trig_c1_100 ON part_c_1_100;
+--Testcase 128:
 DROP TRIGGER trig_d1_15 ON part_d_1_15;
+--Testcase 129:
 DROP TRIGGER trig_d15_20 ON part_d_15_20;
+--Testcase 130:
 DROP FUNCTION func_parted_mod_b();
 
 -- RLS policies with update-row-movement
 -----------------------------------------
 
 ALTER TABLE range_parted ENABLE ROW LEVEL SECURITY;
+--Testcase 131:
 CREATE USER regress_range_parted_user;
 GRANT ALL ON range_parted, mintab TO regress_range_parted_user;
+--Testcase 132:
 CREATE POLICY seeall ON range_parted AS PERMISSIVE FOR SELECT USING (true);
+--Testcase 133:
 CREATE POLICY policy_range_parted ON range_parted for UPDATE USING (true) WITH CHECK (c::numeric % 2 = 0);
 
 :init_range_parted;
@@ -402,11 +439,13 @@ SET SESSION AUTHORIZATION regress_range_parted_user;
 
 RESET SESSION AUTHORIZATION;
 -- Create a trigger on part_d_1_15
+--Testcase 134:
 CREATE FUNCTION func_d_1_15() RETURNS trigger AS $$
 BEGIN
    NEW.c = NEW.c + 1; -- Make even numbers odd, or vice versa
    return NEW;
 END $$ LANGUAGE plpgsql;
+--Testcase 135:
 CREATE TRIGGER trig_d_1_15 BEFORE INSERT ON part_d_1_15
    FOR EACH ROW EXECUTE PROCEDURE func_d_1_15();
 
@@ -429,12 +468,15 @@ SET SESSION AUTHORIZATION regress_range_parted_user;
 
 -- Cleanup
 RESET SESSION AUTHORIZATION;
+--Testcase 136:
 DROP TRIGGER trig_d_1_15 ON part_d_1_15;
+--Testcase 137:
 DROP FUNCTION func_d_1_15();
 
 -- Policy expression contains SubPlan
 RESET SESSION AUTHORIZATION;
 :init_range_parted;
+--Testcase 138:
 CREATE POLICY policy_range_parted_subplan on range_parted
     AS RESTRICTIVE for UPDATE USING (true)
     WITH CHECK ((SELECT range_parted.c <= c1 FROM mintab));
@@ -449,8 +491,9 @@ UPDATE range_parted set a = 'b', c = 120 WHERE a = 'a' and c = 200;
 
 RESET SESSION AUTHORIZATION;
 :init_range_parted;
+--Testcase 139:
 CREATE POLICY policy_range_parted_wholerow on range_parted AS RESTRICTIVE for UPDATE USING (true)
-   WITH CHECK (range_parted= row(1000, 'b', 10, 112, 1, NULL)::range_parted);
+   WITH CHECK (range_parted = row(1000, 'b', 10, 112, 1, NULL)::range_parted);
 SET SESSION AUTHORIZATION regress_range_parted_user;
 -- ok, should pass the RLS check
 --Testcase 61:
@@ -463,11 +506,16 @@ SET SESSION AUTHORIZATION regress_range_parted_user;
 
 -- Cleanup
 RESET SESSION AUTHORIZATION;
+--Testcase 140:
 DROP POLICY policy_range_parted ON range_parted;
+--Testcase 141:
 DROP POLICY policy_range_parted_subplan ON range_parted;
+--Testcase 142:
 DROP POLICY policy_range_parted_wholerow ON range_parted;
 REVOKE ALL ON range_parted, mintab FROM regress_range_parted_user;
+--Testcase 143:
 DROP USER regress_range_parted_user;
+--Testcase 144:
 DROP TABLE mintab;
 
 
@@ -476,6 +524,7 @@ DROP TABLE mintab;
 
 :init_range_parted;
 
+--Testcase 145:
 CREATE FUNCTION trigfunc() returns trigger language plpgsql as
 $$
   begin
@@ -485,33 +534,45 @@ $$
   end;
 $$;
 -- Triggers on root partition
+--Testcase 146:
 CREATE TRIGGER parent_delete_trig
   AFTER DELETE ON range_parted for each statement execute procedure trigfunc();
+--Testcase 147:
 CREATE TRIGGER parent_update_trig
   AFTER UPDATE ON range_parted for each statement execute procedure trigfunc();
+--Testcase 148:
 CREATE TRIGGER parent_insert_trig
   AFTER INSERT ON range_parted for each statement execute procedure trigfunc();
 
 -- Triggers on leaf partition part_c_1_100
+--Testcase 149:
 CREATE TRIGGER c1_delete_trig
   AFTER DELETE ON part_c_1_100 for each statement execute procedure trigfunc();
+--Testcase 150:
 CREATE TRIGGER c1_update_trig
   AFTER UPDATE ON part_c_1_100 for each statement execute procedure trigfunc();
+--Testcase 151:
 CREATE TRIGGER c1_insert_trig
   AFTER INSERT ON part_c_1_100 for each statement execute procedure trigfunc();
 
 -- Triggers on leaf partition part_d_1_15
+--Testcase 152:
 CREATE TRIGGER d1_delete_trig
   AFTER DELETE ON part_d_1_15 for each statement execute procedure trigfunc();
+--Testcase 153:
 CREATE TRIGGER d1_update_trig
   AFTER UPDATE ON part_d_1_15 for each statement execute procedure trigfunc();
+--Testcase 154:
 CREATE TRIGGER d1_insert_trig
   AFTER INSERT ON part_d_1_15 for each statement execute procedure trigfunc();
 -- Triggers on leaf partition part_d_15_20
+--Testcase 155:
 CREATE TRIGGER d15_delete_trig
   AFTER DELETE ON part_d_15_20 for each statement execute procedure trigfunc();
+--Testcase 156:
 CREATE TRIGGER d15_update_trig
   AFTER UPDATE ON part_d_15_20 for each statement execute procedure trigfunc();
+--Testcase 157:
 CREATE TRIGGER d15_insert_trig
   AFTER INSERT ON part_d_15_20 for each statement execute procedure trigfunc();
 
@@ -521,24 +582,38 @@ CREATE TRIGGER d15_insert_trig
 UPDATE range_parted set c = c - 50 WHERE c > 97;
 :show_data;
 
+--Testcase 158:
 DROP TRIGGER parent_delete_trig ON range_parted;
+--Testcase 159:
 DROP TRIGGER parent_update_trig ON range_parted;
+--Testcase 160:
 DROP TRIGGER parent_insert_trig ON range_parted;
+--Testcase 161:
 DROP TRIGGER c1_delete_trig ON part_c_1_100;
+--Testcase 162:
 DROP TRIGGER c1_update_trig ON part_c_1_100;
+--Testcase 163:
 DROP TRIGGER c1_insert_trig ON part_c_1_100;
+--Testcase 164:
 DROP TRIGGER d1_delete_trig ON part_d_1_15;
+--Testcase 165:
 DROP TRIGGER d1_update_trig ON part_d_1_15;
+--Testcase 166:
 DROP TRIGGER d1_insert_trig ON part_d_1_15;
+--Testcase 167:
 DROP TRIGGER d15_delete_trig ON part_d_15_20;
+--Testcase 168:
 DROP TRIGGER d15_update_trig ON part_d_15_20;
+--Testcase 169:
 DROP TRIGGER d15_insert_trig ON part_d_15_20;
 
 
 -- Creating default partition for range
 :init_range_parted;
+--Testcase 170:
 create foreign table part_def1 partition of range_parted default server griddb_svr;
 alter foreign table part_def1 alter column id options (rowkey 'true');
+--Testcase 171:
 \d+ part_def1
 --Testcase 63:
 insert into range_parted(a, b) values ('c', 9);
@@ -568,14 +643,18 @@ UPDATE range_parted set a = 'b' WHERE a = 'bd';
 :show_data;
 
 -- Cleanup: range_parted no longer needed.
+--Testcase 172:
 DROP TABLE range_parted;
 
+--Testcase 173:
 CREATE TABLE list_parted (
 	id serial NOT NULL,
 	a text,
 	b int
 ) PARTITION BY list (a);
+--Testcase 174:
 CREATE FOREIGN TABLE list_part1  PARTITION OF list_parted for VALUES in ('a', 'b') server griddb_svr;
+--Testcase 175:
 CREATE FOREIGN TABLE list_default PARTITION OF list_parted default server griddb_svr;
 alter foreign table list_part1 alter column id options (rowkey 'true');
 alter foreign table list_default alter column id options (rowkey 'true');
@@ -592,6 +671,7 @@ INSERT into list_default(a, b) VALUES ('d', 10);
 --Testcase 72:
 UPDATE list_default set a = 'x' WHERE a = 'd';
 
+--Testcase 176:
 DROP TABLE list_parted;
 
 --------------
@@ -600,14 +680,19 @@ DROP TABLE list_parted;
 --------------
 
 -- Setup for list partitions
+--Testcase 177:
 CREATE TABLE list_parted (a numeric, b int, c int8) PARTITION BY list (a);
+--Testcase 178:
 CREATE TABLE sub_parted PARTITION OF list_parted for VALUES in (1) PARTITION BY list (b);
 
+--Testcase 179:
 CREATE TABLE sub_part1(b int, c int8, a numeric);
 ALTER TABLE sub_parted ATTACH PARTITION sub_part1 for VALUES in (1);
+--Testcase 180:
 CREATE TABLE sub_part2(b int, c int8, a numeric);
 ALTER TABLE sub_parted ATTACH PARTITION sub_part2 for VALUES in (2);
 
+--Testcase 181:
 CREATE TABLE list_part1(a numeric, b int, c int8);
 ALTER TABLE list_parted ATTACH PARTITION list_part1 for VALUES in (2,3);
 
@@ -636,11 +721,13 @@ SELECT tableoid::regclass::text, * FROM list_parted WHERE a = 2 ORDER BY 1;
 
 
 -- Test the case where BR UPDATE triggers change the partition key.
+--Testcase 182:
 CREATE FUNCTION func_parted_mod_b() returns trigger as $$
 BEGIN
    NEW.b = 2; -- This is changing partition key column.
    return NEW;
 END $$ LANGUAGE plpgsql;
+--Testcase 183:
 CREATE TRIGGER parted_mod_b before update on sub_part1
    for each row execute procedure func_parted_mod_b();
 
@@ -654,15 +741,18 @@ UPDATE list_parted set c = 70 WHERE b  = 1;
 --Testcase 83:
 SELECT tableoid::regclass::text, * FROM list_parted ORDER BY 1, 2, 3, 4;
 
+--Testcase 184:
 DROP TRIGGER parted_mod_b ON sub_part1;
 
 -- If BR DELETE trigger prevented DELETE from happening, we should also skip
 -- the INSERT if that delete is part of UPDATE=>DELETE+INSERT.
+--Testcase 185:
 CREATE OR REPLACE FUNCTION func_parted_mod_b() returns trigger as $$
 BEGIN
    raise notice 'Trigger: Got OLD row %, but returning NULL', OLD;
    return NULL;
 END $$ LANGUAGE plpgsql;
+--Testcase 186:
 CREATE TRIGGER trig_skip_delete before delete on sub_part2
    for each row execute procedure func_parted_mod_b();
 --Testcase 84:
@@ -670,16 +760,19 @@ UPDATE list_parted set b = 1 WHERE c = 70;
 --Testcase 85:
 SELECT tableoid::regclass::text, * FROM list_parted ORDER BY 1, 2, 3, 4;
 -- Drop the trigger. Now the row should be moved.
+--Testcase 187:
 DROP TRIGGER trig_skip_delete ON sub_part2;
 --Testcase 86:
 UPDATE list_parted set b = 1 WHERE c = 70;
 --Testcase 87:
 SELECT tableoid::regclass::text, * FROM list_parted ORDER BY 1, 2, 3, 4;
+--Testcase 188:
 DROP FUNCTION func_parted_mod_b();
 
 -- UPDATE partition-key with FROM clause. If join produces multiple output
 -- rows for the same row to be modified, we should tuple-route the row only
 -- once. There should not be any rows inserted.
+--Testcase 189:
 CREATE TABLE non_parted (id int);
 --Testcase 88:
 INSERT into non_parted VALUES (1), (1), (1), (2), (2), (2), (3), (3), (3);
@@ -687,27 +780,36 @@ INSERT into non_parted VALUES (1), (1), (1), (2), (2), (2), (3), (3), (3);
 UPDATE list_parted t1 set a = 2 FROM non_parted t2 WHERE t1.a = t2.id and a = 1;
 --Testcase 90:
 SELECT tableoid::regclass::text, * FROM list_parted ORDER BY 1, 2, 3, 4;
+--Testcase 190:
 DROP TABLE non_parted;
 
 -- Cleanup: list_parted no longer needed.
+--Testcase 191:
 DROP TABLE list_parted;
 
 
 -- create custom operator class and hash function, for the same reason
 -- explained in alter_table.sql
+--Testcase 192:
 create or replace function dummy_hashint4(a int4, seed int8) returns int8 as
 $$ begin return (a + seed); end; $$ language 'plpgsql' immutable;
+--Testcase 193:
 create operator class custom_opclass for type int4 using hash as
 operator 1 = , function 2 dummy_hashint4(int4, int8);
 
+--Testcase 194:
 create table hash_parted (
 	id serial,
 	a int,
 	b int
 ) partition by hash (a custom_opclass, b custom_opclass);
+--Testcase 195:
 create foreign table hpart1 partition of hash_parted for values with (modulus 2, remainder 1) server griddb_svr;
+--Testcase 196:
 create foreign table hpart2 partition of hash_parted for values with (modulus 4, remainder 2) server griddb_svr;
+--Testcase 197:
 create foreign table hpart3 partition of hash_parted for values with (modulus 8, remainder 0) server griddb_svr;
+--Testcase 198:
 create foreign table hpart4 partition of hash_parted for values with (modulus 8, remainder 4) server griddb_svr;
 alter foreign table hpart1 alter column id options (rowkey 'true');
 alter foreign table hpart2 alter column id options (rowkey 'true');
@@ -743,7 +845,10 @@ begin
   end loop;
 end;
 $d$;
+--Testcase 199:
 DROP USER MAPPING FOR public SERVER griddb_svr;
+--Testcase 200:
 DROP SERVER griddb_svr;
+--Testcase 201:
 DROP EXTENSION griddb_fdw CASCADE;
 

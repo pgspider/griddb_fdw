@@ -1,20 +1,33 @@
 --
 -- NUMERIC
 --
+--Testcase 780:
 CREATE EXTENSION griddb_fdw;
+--Testcase 781:
 CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS(host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster');
+--Testcase 782:
 CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS(username 'admin', password 'testadmin');
 
+--Testcase 783:
 CREATE FOREIGN TABLE num_data (idx serial, id int4, val float8) SERVER griddb_svr;
+--Testcase 784:
 CREATE FOREIGN TABLE num_exp_add (idx serial, id1 int4, id2 int4, expected float8) SERVER griddb_svr;
+--Testcase 785:
 CREATE FOREIGN TABLE num_exp_sub (idx serial, id1 int4, id2 int4, expected float8) SERVER griddb_svr;
+--Testcase 786:
 CREATE FOREIGN TABLE num_exp_div (idx serial, id1 int4, id2 int4, expected float8) SERVER griddb_svr;
+--Testcase 787:
 CREATE FOREIGN TABLE num_exp_mul (idx serial, id1 int4, id2 int4, expected float8) SERVER griddb_svr;
+--Testcase 788:
 CREATE FOREIGN TABLE num_exp_sqrt (idx serial, id int4, expected float8) SERVER griddb_svr;
+--Testcase 789:
 CREATE FOREIGN TABLE num_exp_ln (idx serial, id int4, expected float8) SERVER griddb_svr;
+--Testcase 790:
 CREATE FOREIGN TABLE num_exp_log10 (idx serial, id int4, expected float8) SERVER griddb_svr;
+--Testcase 791:
 CREATE FOREIGN TABLE num_exp_power_10_ln (idx serial, id int4, expected float8) SERVER griddb_svr;
 
+--Testcase 792:
 CREATE FOREIGN TABLE num_result (idx serial OPTIONS (rowkey 'true'), id1 int4, id2 int4, result float8) SERVER griddb_svr;
 
 
@@ -897,7 +910,7 @@ INSERT INTO num_exp_power_10_ln(id, expected) VALUES (0,'NaN');
 --Testcase 432:
 INSERT INTO num_exp_power_10_ln(id, expected) VALUES (1,'NaN');
 --Testcase 433:
-INSERT INTO num_exp_power_10_ln(id, expected) VALUES (2,'224790267919917455.13261618583642653184');
+INSERT INTO num_exp_power_10_ln(id, expected) VALUES (2,'224790267919917955.13261618583642653184');
 --Testcase 434:
 INSERT INTO num_exp_power_10_ln(id, expected) VALUES (3,'28.90266599445155957393');
 --Testcase 435:
@@ -935,6 +948,29 @@ INSERT INTO num_data(id, val) VALUES (8, '74881');
 --Testcase 450:
 INSERT INTO num_data(id, val) VALUES (9, '-24926804.045047420');
 COMMIT TRANSACTION;
+
+-- ******************************
+-- * Create indices for faster checks
+-- ******************************
+-- Skip these setting, creating foreign table with primary key already covered.
+
+--CREATE UNIQUE INDEX num_exp_add_idx ON num_exp_add (id1, id2);
+--CREATE UNIQUE INDEX num_exp_sub_idx ON num_exp_sub (id1, id2);
+--CREATE UNIQUE INDEX num_exp_div_idx ON num_exp_div (id1, id2);
+--CREATE UNIQUE INDEX num_exp_mul_idx ON num_exp_mul (id1, id2);
+--CREATE UNIQUE INDEX num_exp_sqrt_idx ON num_exp_sqrt (id);
+--CREATE UNIQUE INDEX num_exp_ln_idx ON num_exp_ln (id);
+--CREATE UNIQUE INDEX num_exp_log10_idx ON num_exp_log10 (id);
+--CREATE UNIQUE INDEX num_exp_power_10_ln_idx ON num_exp_power_10_ln (id);
+
+--VACUUM ANALYZE num_exp_add;
+--VACUUM ANALYZE num_exp_sub;
+--VACUUM ANALYZE num_exp_div;
+--VACUUM ANALYZE num_exp_mul;
+--VACUUM ANALYZE num_exp_sqrt;
+--VACUUM ANALYZE num_exp_ln;
+--VACUUM ANALYZE num_exp_log10;
+--VACUUM ANALYZE num_exp_power_10_ln;
 
 -- ******************************
 -- * Now check the behaviour of the NUMERIC type
@@ -1113,6 +1149,7 @@ SELECT STDDEV(val) FROM num_data;
 SELECT VARIANCE(val) FROM num_data;
 
 -- Check for appropriate rounding and overflow
+--Testcase 793:
 CREATE FOREIGN TABLE fract_only (id serial OPTIONS (rowkey 'true'), val float8) server griddb_svr;
 --Testcase 490:
 INSERT INTO fract_only VALUES (1, '0.0'::numeric(4,4));
@@ -1139,7 +1176,7 @@ DELETE FROM fract_only;
 --Testcase 500:
 INSERT INTO fract_only(val) VALUES ('NaN'::float8);
 --Testcase 501:
-SELECT val::numeric FROM fract_only;
+SELECT val::numeric AS numeric FROM fract_only;
 --Testcase 502:
 DELETE FROM fract_only;
 --Testcase 503:
@@ -1157,7 +1194,7 @@ DELETE FROM fract_only;
 --Testcase 509:
 INSERT INTO fract_only(val) VALUES ('NaN'::float8);
 --Testcase 510:
-SELECT val::numeric FROM fract_only;
+SELECT val::numeric AS numeric FROM fract_only;
 --Testcase 511:
 DELETE FROM fract_only;
 --Testcase 512:
@@ -1172,9 +1209,11 @@ INSERT INTO fract_only(val) VALUES ('-Infinity'::float4);
 SELECT val::numeric FROM fract_only;
 --Testcase 517:
 DELETE FROM fract_only;
+--Testcase 794:
 DROP FOREIGN TABLE fract_only;
 
 -- Simple check that ceil(), floor(), and round() work correctly
+--Testcase 795:
 CREATE FOREIGN TABLE ceil_floor_round (id serial options (rowkey 'true'), a float8) SERVER griddb_svr;
 --Testcase 518:
 INSERT INTO ceil_floor_round(a) VALUES ('-5.5');
@@ -1210,26 +1249,73 @@ FROM ceil_floor_round;
 
 -- Testing for width_bucket(). For convenience, we test both the
 -- numeric and float8 versions of the function in this file.
-
 -- errors
+
+--Testcase 796:
+CREATE FOREIGN TABLE width_bucket_tbl (
+	id serial OPTIONS (rowkey 'true'),
+	id1 float8,
+	id2 float8,
+	id3 float8,
+	id4 int
+) SERVER griddb_svr;
+
 --Testcase 529:
-SELECT width_bucket(5.0, 3.0, 4.0, 0);
+INSERT INTO width_bucket_tbl(id1, id2, id3, id4) VALUES (5.0, 3.0, 4.0, 0);
+--Testcase 797:
+SELECT width_bucket(id1, id2, id3, id4) FROM width_bucket_tbl;
+
 --Testcase 530:
-SELECT width_bucket(5.0, 3.0, 4.0, -5);
+DELETE FROM width_bucket_tbl;
+--Testcase 798:
+INSERT INTO width_bucket_tbl(id1, id2, id3, id4) VALUES (5.0, 3.0, 4.0, -5);
+--Testcase 799:
+SELECT width_bucket(id1, id2, id3, id4) FROM width_bucket_tbl;
+
 --Testcase 531:
-SELECT width_bucket(3.5, 3.0, 3.0, 888);
+DELETE FROM width_bucket_tbl;
+--Testcase 800:
+INSERT INTO width_bucket_tbl(id1, id2, id3, id4) VALUES (3.5, 3.0, 3.0, 888);
+--Testcase 801:
+SELECT width_bucket(id1, id2, id3, id4) FROM width_bucket_tbl;
+
 --Testcase 532:
-SELECT width_bucket(5.0::float8, 3.0::float8, 4.0::float8, 0);
+DELETE FROM width_bucket_tbl;
+--Testcase 802:
+INSERT INTO width_bucket_tbl(id1, id2, id3, id4) VALUES (5.0, 3.0, 4.0, 0);
+--Testcase 803:
+SELECT width_bucket(id1::float8, id2::float8, id3::float8, id4) FROM width_bucket_tbl;
+
 --Testcase 533:
-SELECT width_bucket(5.0::float8, 3.0::float8, 4.0::float8, -5);
+DELETE FROM width_bucket_tbl;
+--Testcase 804:
+INSERT INTO width_bucket_tbl(id1, id2, id3, id4) VALUES (5.0, 3.0, 4.0, -5);
+--Testcase 805:
+SELECT width_bucket(id1::float8, id2::float8, id3::float8, id4) FROM width_bucket_tbl;
+
 --Testcase 534:
-SELECT width_bucket(3.5::float8, 3.0::float8, 3.0::float8, 888);
+DELETE FROM width_bucket_tbl;
+--Testcase 806:
+INSERT INTO width_bucket_tbl(id1, id2, id3, id4) VALUES (3.5, 3.0, 3.0, 888);
+--Testcase 807:
+SELECT width_bucket(id1::float8, id2::float8, id3::float8, id4) FROM width_bucket_tbl;
+
 --Testcase 535:
-SELECT width_bucket('NaN', 3.0, 4.0, 888);
+DELETE FROM width_bucket_tbl;
+--Testcase 808:
+INSERT INTO width_bucket_tbl(id1, id2, id3, id4) VALUES ('NaN'::numeric, 3.0, 4.0, 888);
+--Testcase 809:
+SELECT width_bucket(id1, id2, id3, id4) FROM width_bucket_tbl;
+
 --Testcase 536:
-SELECT width_bucket(0::float8, 'NaN', 4.0::float8, 888);
+DELETE FROM width_bucket_tbl;
+--Testcase 810:
+INSERT INTO width_bucket_tbl(id1, id2, id3, id4) VALUES (0, 'NaN'::numeric, 4.0, 888);
+--Testcase 811:
+SELECT width_bucket(id1::float8, id2, id3::float8, id4) FROM width_bucket_tbl;
 
 -- normal operation
+--Testcase 812:
 CREATE FOREIGN TABLE width_bucket_test (
 	id serial OPTIONS (rowkey 'true'),
 	operand_num float8,
@@ -1279,13 +1365,32 @@ SELECT
 -- for float8 only, check positive and negative infinity: we require
 -- finite bucket bounds, but allow an infinite operand
 --Testcase 539:
-SELECT width_bucket(0.0::float8, 'Infinity'::float8, 5, 10); -- error
+DELETE FROM width_bucket_tbl;
+--Testcase 813:
+INSERT INTO width_bucket_tbl(id1, id2, id3, id4) VALUES (0.0, 'Infinity', 5, 10);
+--Testcase 814:
+SELECT width_bucket(id1::float8, id2::float8, id3, id4) FROM width_bucket_tbl;  -- error
 --Testcase 540:
-SELECT width_bucket(0.0::float8, 5, '-Infinity'::float8, 20); -- error
+DELETE FROM width_bucket_tbl;
+--Testcase 815:
+INSERT INTO width_bucket_tbl(id1, id2, id3, id4) VALUES (0.0, 5, '-Infinity', 20);
+--Testcase 816:
+SELECT width_bucket(id1::float8, id2, id3::float8, id4) FROM width_bucket_tbl; -- error
 --Testcase 541:
-SELECT width_bucket('Infinity'::float8, 1, 10, 10),
-       width_bucket('-Infinity'::float8, 1, 10, 10);
+DELETE FROM width_bucket_tbl;
+--Testcase 817:
+INSERT INTO width_bucket_tbl(id1, id2, id3, id4) VALUES ('Infinity', 1, 10, 10);
+--Testcase 818:
+SELECT width_bucket(id1::float8, id2, id3, id4) FROM width_bucket_tbl;
 
+--Testcase 819:
+DELETE FROM width_bucket_tbl;
+--Testcase 820:
+INSERT INTO width_bucket_tbl(id1, id2, id3, id4) VALUES ('-Infinity', 1, 10, 10);
+--Testcase 821:
+SELECT width_bucket(id1::float8, id2, id3, id4) FROM width_bucket_tbl;
+
+--Testcase 822:
 DROP FOREIGN TABLE width_bucket_test;
 
 -- TO_CHAR()
@@ -1381,6 +1486,7 @@ SELECT '' AS to_char_36, to_char(a::numeric, 'f"ool\\"999') FROM ceil_floor_roun
 -- TO_NUMBER()
 --
 SET lc_numeric = 'C';
+--Testcase 823:
 CREATE FOREIGN TABLE to_number_test (
 	id serial OPTIONS (rowkey 'true'),
 	val text,
@@ -1414,12 +1520,14 @@ INSERT INTO to_number_test(val, fmt) VALUES
 --Testcase 581:
 SELECT id AS to_number,  to_number(val, fmt) from to_number_test;
 RESET lc_numeric;
+--Testcase 824:
 DROP FOREIGN TABLE to_number_test;
 
 --
 -- Input syntax
 --
 
+--Testcase 825:
 CREATE FOREIGN TABLE num_input_test (id serial options (rowkey 'true'), n1 float8) SERVER griddb_svr;
 
 -- good inputs
@@ -1457,109 +1565,191 @@ INSERT INTO num_input_test(n1) VALUES ('');
 INSERT INTO num_input_test(n1) VALUES (' N aN ');
 
 --Testcase 597:
-SELECT * FROM num_input_test;
+SELECT n1 FROM num_input_test;
 
 --
 -- Test some corner cases for multiplication
 --
+
+--Testcase 826:
+CREATE FOREIGN TABLE num_test_calc (
+    id serial options (rowkey 'true'),
+    n1 float8,
+    n2 float8
+) SERVER griddb_svr;
+
 --Testcase 598:
-DELETE FROM num_input_test;
+DELETE FROM num_test_calc;
 --Testcase 599:
-INSERT INTO num_input_test(n1) VALUES (4790999999999999999999999999999999999999999999999999999999999999999999999999999999999999 * 9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999);
+INSERT INTO num_test_calc(n1, n2) VALUES (4790999999999999999999999999999999999999999999999999999999999999999999999999999999999999, 9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999);
 --Testcase 600:
-INSERT INTO num_input_test(n1) VALUES (4790999999999999999999999999999999999999999999999999999999999999999999999999999999999999 * 9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999);
+INSERT INTO num_test_calc(n1, n2) VALUES (4790999999999999999999999999999999999999999999999999999999999999999999999999999999999999, 9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999);
 --Testcase 601:
-INSERT INTO num_input_test(n1) VALUES (4789999999999999999999999999999999999999999999999999999999999999999999999999999999999999 * 9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999);
+INSERT INTO num_test_calc(n1, n2) VALUES (4789999999999999999999999999999999999999999999999999999999999999999999999999999999999999, 9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999);
 --Testcase 602:
-INSERT INTO num_input_test(n1) VALUES (4770999999999999999999999999999999999999999999999999999999999999999999999999999999999999 * 9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999);
+INSERT INTO num_test_calc(n1, n2) VALUES (4770999999999999999999999999999999999999999999999999999999999999999999999999999999999999, 9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999);
 --Testcase 603:
-INSERT INTO num_input_test(n1) VALUES (4769999999999999999999999999999999999999999999999999999999999999999999999999999999999999 * 9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999);
+INSERT INTO num_test_calc(n1, n2) VALUES (4769999999999999999999999999999999999999999999999999999999999999999999999999999999999999, 9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999);
 --Testcase 604:
-SELECT n1::numeric FROM num_input_test;
+SELECT n1::numeric * n2::numeric FROM num_test_calc;
+
 --
 -- Test some corner cases for division
 --
 --Testcase 605:
-DELETE FROM num_input_test;
+DELETE FROM num_test_calc;
 --Testcase 606:
-INSERT INTO num_input_test(n1) VALUES ('999999999999999999999.00');
+INSERT INTO num_test_calc(n1, n2) VALUES (999999999999999999999, 1000000000000000000000);
 --Testcase 607:
-SELECT n1::numeric/1000000000000000000000 FROM num_input_test;
+SELECT n1::numeric/n2::numeric FROM num_test_calc;
 --Testcase 608:
-SELECT div(n1::numeric,1000000000000000000000) FROM num_input_test;
+SELECT div(n1::numeric,n2::numeric) FROM num_test_calc;
 --Testcase 609:
-SELECT mod(n1::numeric,1000000000000000000000) FROM num_input_test;
+SELECT mod(n1::numeric,n2::numeric) FROM num_test_calc;
 --Testcase 610:
-SELECT div(-n1::numeric,1000000000000000000000) FROM num_input_test;
+SELECT div(-n1::numeric,n2::numeric) FROM num_test_calc;
 --Testcase 611:
-SELECT mod(-n1::numeric,1000000000000000000000) FROM num_input_test;
+SELECT mod(-n1::numeric,n2::numeric) FROM num_test_calc;
 --Testcase 612:
-SELECT div(-n1::numeric,1000000000000000000000)*1000000000000000000000 + 
-	mod(-n1::numeric,1000000000000000000000) FROM num_input_test;
+SELECT div(-n1::numeric,n2::numeric)*n2 + 
+	mod(-n1::numeric,n2::numeric) FROM num_test_calc;
 
 --Testcase 613:
-DELETE FROM num_input_test;
+DELETE FROM num_test_calc;
 --Testcase 614:
-INSERT INTO num_input_test(n1) VALUES ('70.0');
+INSERT INTO num_test_calc(n1, n2) VALUES (70.0, 70);
 --Testcase 615:
-SELECT mod (n1::numeric,70) FROM num_input_test;
+SELECT mod (n1::numeric,n2::numeric) FROM num_test_calc;
 --Testcase 616:
-SELECT div (n1::numeric,70)) FROM num_input_test;
+SELECT div (n1::numeric,n2::numeric) FROM num_test_calc;
 --Testcase 617:
-SELECT n1::numeric / 70 FROM num_input_test;
+SELECT n1::numeric / n2::numeric FROM num_test_calc;
 
 --Testcase 618:
-DELETE FROM num_input_test;
+DELETE FROM num_test_calc;
 --Testcase 619:
-INSERT INTO num_input_test(n1) VALUES ('12345678901234567890');
+INSERT INTO num_test_calc(n1, n2) VALUES (12345678901234567890, 123);
 --Testcase 620:
-SELECT n1::numeric % 123 FROM num_input_test;
+SELECT n1::numeric % n2::numeric FROM num_test_calc;
 --Testcase 621:
-SELECT n1::numeric / 123 FROM num_input_test;
+SELECT n1::numeric / n2::numeric FROM num_test_calc;
 --Testcase 622:
-SELECT div(n1::numeric, 123) FROM num_input_test;
+SELECT div(n1::numeric, n2::numeric) FROM num_test_calc;
 --Testcase 623:
-SELECT div(n1::numeric, 123) * 123 + (n1::numeric % 123) FROM num_input_test;
+SELECT div(n1::numeric, n2::numeric) * n2::numeric + (n1::numeric % n2::numeric) FROM num_test_calc;
+
+--
+-- Test some corner cases for square root
+--
+
+--Testcase 827:
+DELETE FROM num_test_calc;
+--Testcase 828:
+INSERT INTO num_test_calc(n1, n2) VALUES (1.000000000000003, 0);
+--Testcase 829:
+SELECT sqrt(n1::numeric) FROM num_test_calc;
+
+--Testcase 830:
+DELETE FROM num_test_calc;
+--Testcase 831:
+INSERT INTO num_test_calc(n1, n2) VALUES (1.000000000000004, 0);
+--Testcase 832:
+SELECT sqrt(n1::numeric) FROM num_test_calc;
+
+--Testcase 833:
+DELETE FROM num_test_calc;
+--Testcase 834:
+INSERT INTO num_test_calc(n1, n2) VALUES (96627521408608.56340355805, 0);
+--Testcase 835:
+SELECT sqrt(n1::numeric) FROM num_test_calc;
+
+--Testcase 836:
+DELETE FROM num_test_calc;
+--Testcase 837:
+INSERT INTO num_test_calc(n1, n2) VALUES (96627521408608.56340355806, 0);
+--Testcase 838:
+SELECT sqrt(n1::numeric) FROM num_test_calc;
+
+--Testcase 839:
+DELETE FROM num_test_calc;
+--Testcase 840:
+INSERT INTO num_test_calc(n1, n2) VALUES (515549506212297735.073688290367, 0);
+--Testcase 841:
+SELECT sqrt(n1::numeric) FROM num_test_calc;
+
+--Testcase 842:
+DELETE FROM num_test_calc;
+--Testcase 843:
+INSERT INTO num_test_calc(n1, n2) VALUES (515549506212297735.073688290368, 0);
+--Testcase 844:
+SELECT sqrt(n1::numeric) FROM num_test_calc;
+
+--Testcase 845:
+DELETE FROM num_test_calc;
+--Testcase 846:
+INSERT INTO num_test_calc(n1, n2) VALUES (8015491789940783531003294973900306, 0);
+--Testcase 847:
+SELECT sqrt(n1::numeric) FROM num_test_calc;
+
+--Testcase 848:
+DELETE FROM num_test_calc;
+--Testcase 849:
+INSERT INTO num_test_calc(n1, n2) VALUES (8015491789940783531003294973900307, 0);
+--Testcase 850:
+SELECT sqrt(n1::numeric) FROM num_test_calc;
 
 --
 -- Test code path for raising to integer powers
 --
 --Testcase 624:
-DELETE FROM num_input_test;
+DELETE FROM num_test_calc;
 --Testcase 625:
-INSERT INTO num_input_test(n1) VALUES (10.0 ^ -2147483648);
+INSERT INTO num_test_calc(n1, n2) VALUES (10.0, -2147483648);
+--Testcase 851:
+SELECT n1::numeric ^ n2::numeric as rounds_to_zero FROM num_test_calc;
 --Testcase 626:
-INSERT INTO num_input_test(n1) VALUES (10.0 ^ -2147483647);
+DELETE FROM num_test_calc;
+--Testcase 852:
+INSERT INTO num_test_calc(n1, n2) VALUES (10.0, -2147483647);
+--Testcase 853:
+SELECT n1::numeric ^ n2::numeric as rounds_to_zero FROM num_test_calc;
 --Testcase 627:
-INSERT INTO num_input_test(n1) VALUES (10.0 ^ 2147483647);
+DELETE FROM num_test_calc;
+--Testcase 854:
+INSERT INTO num_test_calc(n1, n2) VALUES (10.0, 2147483647);
+--Testcase 855:
+SELECT n1::numeric ^ n2::numeric as overflows FROM num_test_calc;
 --Testcase 628:
-INSERT INTO num_input_test(n1) VALUES (117743296169.0 ^ 1000000000);
+DELETE FROM num_test_calc;
+--Testcase 856:
+INSERT INTO num_test_calc(n1, n2) VALUES (117743296169.0, 1000000000);
+--Testcase 857:
+SELECT n1::numeric ^ n2::numeric as overflows FROM num_test_calc;
 --Testcase 629:
-SELECT n1::numeric FROM num_input_test;
 
 -- cases that used to return inaccurate results
 --Testcase 630:
-DELETE FROM num_input_test;
+DELETE FROM num_test_calc;
 --Testcase 631:
-INSERT INTO num_input_test(n1) VALUES (3.789 ^ 21);
+INSERT INTO num_test_calc(n1, n2) VALUES (3.789, 21);
 --Testcase 632:
-INSERT INTO num_input_test(n1) VALUES (3.789 ^ 35);
+INSERT INTO num_test_calc(n1, n2) VALUES (3.789, 35);
 --Testcase 633:
-INSERT INTO num_input_test(n1) VALUES (1.2 ^ 345);
+INSERT INTO num_test_calc(n1, n2) VALUES (1.2, 345);
 --Testcase 634:
-INSERT INTO num_input_test(n1) VALUES (0.12 ^ (-20));
+INSERT INTO num_test_calc(n1, n2) VALUES (0.12, (-20));
 --Testcase 635:
-SELECT n1::numeric FROM num_input_test;
+SELECT n1::numeric ^ n2::numeric FROM num_test_calc;
 
 -- cases that used to error out
 --Testcase 636:
-DELETE FROM num_input_test;
+DELETE FROM num_test_calc;
 --Testcase 637:
-INSERT INTO num_input_test(n1) VALUES (0.12 ^ (-25));
+INSERT INTO num_test_calc(n1, n2) VALUES (0.12, -25);
 --Testcase 638:
-INSERT INTO num_input_test(n1) VALUES (0.5678 ^ (-85));
+INSERT INTO num_test_calc(n1, n2) VALUES (0.5678, -85);
 --Testcase 639:
-SELECT n1::numeric FROM num_input_test;
+SELECT n1::numeric ^ n2::numeric FROM num_test_calc;
 
 --
 -- Tests for raising to non-integer powers
@@ -1567,67 +1757,87 @@ SELECT n1::numeric FROM num_input_test;
 
 -- special cases
 --Testcase 640:
-DELETE FROM num_input_test;
+DELETE FROM num_test_calc;
 --Testcase 641:
-INSERT INTO num_input_test(n1) VALUES (0.0 ^ 0.0);
+INSERT INTO num_test_calc(n1, n2) VALUES (0.0, 0.0);
 --Testcase 642:
-INSERT INTO num_input_test(n1) VALUES ((-12.34) ^ 0.0);
+INSERT INTO num_test_calc(n1, n2) VALUES (-12.34, 0.0);
 --Testcase 643:
-INSERT INTO num_input_test(n1) VALUES (12.34 ^ 0.0);
+INSERT INTO num_test_calc(n1, n2) VALUES (12.34, 0.0);
 --Testcase 644:
-INSERT INTO num_input_test(n1) VALUES (0.0 ^ 12.34);
+INSERT INTO num_test_calc(n1, n2) VALUES (0.0, 12.34);
 --Testcase 645:
-SELECT n1::numeric(17,16) FROM num_input_test;
+SELECT n1::numeric ^ n2::numeric FROM num_test_calc;
 
 -- NaNs
 --Testcase 646:
-DELETE FROM num_input_test;
+DELETE FROM num_test_calc;
 --Testcase 647:
-INSERT INTO num_input_test(n1) VALUES ('NaN'::numeric ^ 'NaN'::numeric);
+INSERT INTO num_test_calc(n1, n2) VALUES ('NaN'::numeric, 'NaN'::numeric);
 --Testcase 648:
-INSERT INTO num_input_test(n1) VALUES ('NaN'::numeric ^ 0);
+INSERT INTO num_test_calc(n1, n2) VALUES ('NaN'::numeric, 0);
 --Testcase 649:
-INSERT INTO num_input_test(n1) VALUES ('NaN'::numeric ^ 1);
+INSERT INTO num_test_calc(n1, n2) VALUES ('NaN'::numeric, 1);
 --Testcase 650:
-INSERT INTO num_input_test(n1) VALUES (0 ^ 'NaN'::numeric);
+INSERT INTO num_test_calc(n1, n2) VALUES (0, 'NaN'::numeric);
 --Testcase 651:
-INSERT INTO num_input_test(n1) VALUES (1 ^ 'NaN'::numeric);
+INSERT INTO num_test_calc(n1, n2) VALUES (1, 'NaN'::numeric);
 --Testcase 652:
-SELECT n1::numeric FROM num_input_test;
+SELECT n1::numeric ^ n2::numeric FROM num_test_calc;
 
 -- invalid inputs
 --Testcase 653:
-DELETE FROM num_input_test;
+DELETE FROM num_test_calc;
 --Testcase 654:
-INSERT INTO num_input_test(n1) VALUES (0.0 ^ (-12.34));
+INSERT INTO num_test_calc(n1, n2) VALUES (0.0, -12.34);
+--Testcase 858:
+SELECT n1::numeric ^ n2::numeric FROM num_test_calc;
 --Testcase 655:
-INSERT INTO num_input_test(n1) VALUES ((-12.34) ^ 1.2);
---Testcase 656:
-SELECT n1::numeric FROM num_input_test;
+DELETE FROM num_test_calc;
+--Testcase 859:
+INSERT INTO num_test_calc(n1, n2) VALUES (-12.34, 1.2);
+--Testcase 860:
+SELECT n1::numeric ^ n2::numeric FROM num_test_calc;
 
 -- cases that used to generate inaccurate results
 --Testcase 657:
-DELETE FROM num_input_test;
+BEGIN;
+--Testcase 861:
+DELETE FROM num_test_calc;
 --Testcase 658:
-INSERT INTO num_input_test(n1) VALUES (32.1 ^ 9.8);
+INSERT INTO num_test_calc(n1, n2) VALUES (32.1, 9.8);
+--Testcase 862:
+SELECT n1::numeric ^ n2::numeric FROM num_test_calc;
 --Testcase 659:
-INSERT INTO num_input_test(n1) VALUES (32.1 ^ (-9.8));
+DELETE FROM num_test_calc;
+--Testcase 863:
+INSERT INTO num_test_calc(n1, n2) VALUES (32.1, -9.8);
+--Testcase 864:
+SELECT n1::numeric ^ n2::numeric FROM num_test_calc;
 --Testcase 660:
-INSERT INTO num_input_test(n1) VALUES (12.3 ^ 45.6);
+DELETE FROM num_test_calc;
+--Testcase 865:
+INSERT INTO num_test_calc(n1, n2) VALUES (12.3, 45.6);
+--Testcase 866:
+SELECT n1::numeric ^ n2::numeric FROM num_test_calc;
 --Testcase 661:
-INSERT INTO num_input_test(n1) VALUES (12.3 ^ (-45.6));
---Testcase 662:
-SELECT n1::numeric FROM num_input_test;
-
+DELETE FROM num_test_calc;
+--Testcase 867:
+INSERT INTO num_test_calc(n1, n2) VALUES (12.3, (-45.6));
+--Testcase 868:
+SELECT n1::numeric ^ n2::numeric FROM num_test_calc;
+ROLLBACK;
 -- big test
 -- out of range
 --Testcase 663:
+BEGIN;
+--Testcase 869:
 DELETE FROM num_input_test;
 --Testcase 664:
-INSERT INTO num_input_test(n1) VALUES (1.234 & 5678);
---Testcase 665:
-SELECT n1::numeric FROM num_input_test;
-
+INSERT INTO num_test_calc(n1, n2) VALUES (1.234, 5678);
+--Testcase 870:
+SELECT n1::numeric ^ n2::numeric FROM num_test_calc;
+ROLLBACK;
 --
 -- Tests for EXP()
 --
@@ -1705,29 +1915,63 @@ INSERT INTO num_input_test(n1) select * from generate_series(4.0, -1.5, -2.2);
 --Testcase 694:
 SELECT n1::numeric(2,1) FROM num_input_test;
 
--- skip, cannot insert out of range value
 -- Trigger errors
 --Testcase 695:
-select * from generate_series(-100::numeric, 100::numeric, 0::numeric);
+DELETE FROM num_input_test;
+--Testcase 693:
+INSERT INTO num_input_test(n1) select * from generate_series(-100::numeric, 100::numeric, 0::numeric);
+--Testcase 871:
+SELECT n1 FROM num_input_test;
 --Testcase 696:
-select * from generate_series(-100::numeric, 100::numeric, 'nan'::numeric);
+DELETE FROM num_input_test;
+--Testcase 872:
+INSERT INTO num_input_test(n1) select * from generate_series(-100::numeric, 100::numeric, 'nan'::numeric);
+--Testcase 873:
+SELECT n1 FROM num_input_test;
 --Testcase 697:
-select * from generate_series('nan'::numeric, 100::numeric, 10::numeric);
+DELETE FROM num_input_test;
+--Testcase 874:
+INSERT INTO num_input_test(n1) select * from generate_series('nan'::numeric, 100::numeric, 10::numeric);
+--Testcase 875:
+SELECT n1 FROM num_input_test;
 --Testcase 698:
-select * from generate_series(0::numeric, 'nan'::numeric, 10::numeric);
+DELETE FROM num_input_test;
+--Testcase 876:
+INSERT INTO num_input_test(n1) select * from generate_series(0::numeric, 'nan'::numeric, 10::numeric);
+--Testcase 877:
+SELECT n1 FROM num_input_test;
 -- Checks maximum, output is truncated
 --Testcase 699:
-select (i / (10::numeric ^ 131071))::numeric(1,0)
+DELETE FROM num_input_test;
+--Testcase 878:
+INSERT INTO num_input_test(n1) select (i / (10::numeric ^ 131071))::numeric(1,0)
 	from generate_series(6 * (10::numeric ^ 131071),
 			     9 * (10::numeric ^ 131071),
 			     10::numeric ^ 131071) as a(i);
+--Testcase 879:
+SELECT n1 AS numeric FROM num_input_test;
+
 -- Check usage with variables
 --Testcase 700:
-select * from generate_series(1::numeric, 3::numeric) i, generate_series(i,3) j;
+DELETE FROM num_test_calc;
+--Testcase 880:
+INSERT INTO num_test_calc(n1, n2) select * from generate_series(1::numeric, 3::numeric) i, generate_series(i,3) j;
+--Testcase 881:
+SELECT n1 as i, n2 as j FROM num_test_calc;
+
 --Testcase 701:
-select * from generate_series(1::numeric, 3::numeric) i, generate_series(1,i) j;
+DELETE FROM num_test_calc;
+--Testcase 882:
+INSERT INTO num_test_calc(n1, n2) select * from generate_series(1::numeric, 3::numeric) i, generate_series(1,i) j;
+--Testcase 883:
+SELECT n1 as i, n2 as j FROM num_test_calc;
+
 --Testcase 702:
-select * from generate_series(1::numeric, 3::numeric) i, generate_series(1,5,i) j;
+DELETE FROM num_test_calc;
+--Testcase 884:
+INSERT INTO num_test_calc(n1, n2) select * from generate_series(1::numeric, 3::numeric) i, generate_series(1,5,i) j;
+--Testcase 885:
+SELECT n1 as i, n2 as j FROM num_test_calc;
 
 --
 -- Tests for LN()
@@ -1815,14 +2059,14 @@ DELETE FROM num_input_test;
 --Testcase 734:
 INSERT INTO num_input_test(n1) values('-12.34');
 --Testcase 735:
-SELECT ln(n1::numeric) FROM num_input_test;
+SELECT log(n1::numeric) FROM num_input_test;
 
 --Testcase 736:
 DELETE FROM num_input_test;
 --Testcase 737:
 INSERT INTO num_input_test(n1) values('0.0');
 --Testcase 738:
-SELECT ln(n1::numeric) FROM num_input_test;
+SELECT log(n1::numeric) FROM num_input_test;
 
 -- some random tests
 --Testcase 739:
@@ -1874,50 +2118,274 @@ SELECT log(n1::numeric) FROM num_input_test;
 
 -- invalid inputs
 --Testcase 757:
-select log(-12.34, 56.78);
+DELETE FROM num_test_calc;
+--Testcase 886:
+INSERT INTO num_test_calc(n1, n2) VALUES(-12.34, 56.78);
+--Testcase 887:
+SELECT log(n1::numeric, n2::numeric) FROM num_test_calc;
 --Testcase 758:
-select log(-12.34, -56.78);
+DELETE FROM num_test_calc;
+--Testcase 888:
+INSERT INTO num_test_calc(n1, n2) VALUES(-12.34, -56.78);
+--Testcase 889:
+SELECT log(n1::numeric, n2::numeric) FROM num_test_calc;
 --Testcase 759:
-select log(12.34, -56.78);
+DELETE FROM num_test_calc;
+--Testcase 890:
+INSERT INTO num_test_calc(n1, n2) VALUES(12.34, -56.78);
+--Testcase 891:
+SELECT log(n1::numeric, n2::numeric) FROM num_test_calc;
 --Testcase 760:
-select log(0.0, 12.34);
+DELETE FROM num_test_calc;
+--Testcase 892:
+INSERT INTO num_test_calc(n1, n2) VALUES(0.0, 12.34);
+--Testcase 893:
+SELECT log(n1::numeric, n2::numeric) FROM num_test_calc;
 --Testcase 761:
-select log(12.34, 0.0);
+DELETE FROM num_test_calc;
+--Testcase 894:
+INSERT INTO num_test_calc(n1, n2) VALUES(12.34, 0.0);
+--Testcase 895:
+SELECT log(n1::numeric, n2::numeric) FROM num_test_calc;
 --Testcase 762:
-select log(1.0, 12.34);
+DELETE FROM num_test_calc;
+--Testcase 896:
+INSERT INTO num_test_calc(n1, n2) VALUES(1.0, 12.34);
+--Testcase 897:
+SELECT log(n1::numeric, n2::numeric) FROM num_test_calc;
 
 -- some random tests
 --Testcase 763:
-select log(1.23e-89, 6.4689e45);
+DELETE FROM num_test_calc;
+--Testcase 898:
+INSERT INTO num_test_calc(n1, n2) VALUES(1.23e-89, 6.4689e45);
+--Testcase 899:
+SELECT log(n1::numeric, n2::numeric) FROM num_test_calc;
 --Testcase 764:
-select log(0.99923, 4.58934e34);
+DELETE FROM num_test_calc;
+--Testcase 900:
+INSERT INTO num_test_calc(n1, n2) VALUES(0.99923, 4.58934e34);
+--Testcase 901:
+SELECT log(n1::numeric, n2::numeric) FROM num_test_calc;
 --Testcase 765:
-select log(1.000016, 8.452010e18);
+DELETE FROM num_test_calc;
+--Testcase 902:
+INSERT INTO num_test_calc(n1, n2) VALUES(1.000016, 8.452010e18);
+--Testcase 903:
+SELECT log(n1::numeric, n2::numeric) FROM num_test_calc;
 --Testcase 766:
-select log(3.1954752e47, 9.4792021e-73);
+DELETE FROM num_test_calc;
+--Testcase 904:
+INSERT INTO num_test_calc(n1, n2) VALUES(3.1954752e47, 9.4792021e-73);
+--Testcase 905:
+SELECT log(n1::numeric, n2::numeric) FROM num_test_calc;
 
 --
 -- Tests for scale()
 --
 
 --Testcase 767:
-select scale(numeric 'NaN');
+DELETE FROM num_input_test;
+--Testcase 906:
+INSERT INTO num_input_test(n1) values(numeric 'NaN');
+--Testcase 907:
+SELECT scale(n1::numeric) FROM num_input_test;
 --Testcase 768:
-select scale(NULL::numeric);
+DELETE FROM num_input_test;
+--Testcase 908:
+INSERT INTO num_input_test(n1) values(NULL::numeric);
+--Testcase 909:
+SELECT scale(n1::numeric) FROM num_input_test;
 --Testcase 769:
-select scale(1.12);
+DELETE FROM num_input_test;
+--Testcase 910:
+INSERT INTO num_input_test(n1) values(1.12);
+--Testcase 911:
+SELECT scale(n1::numeric) FROM num_input_test;
 --Testcase 770:
-select scale(0);
+DELETE FROM num_input_test;
+--Testcase 912:
+INSERT INTO num_input_test(n1) values(0);
+--Testcase 913:
+SELECT scale(n1::numeric) FROM num_input_test;
 --Testcase 771:
-select scale(0.00);
+DELETE FROM num_input_test;
+--Testcase 914:
+INSERT INTO num_input_test(n1) values(0.00);
+--Testcase 915:
+SELECT scale(n1::numeric) FROM num_input_test;
 --Testcase 772:
-select scale(1.12345);
+DELETE FROM num_input_test;
+--Testcase 916:
+INSERT INTO num_input_test(n1) values(1.12345);
+--Testcase 917:
+SELECT scale(n1::numeric) FROM num_input_test;
 --Testcase 773:
-select scale(110123.12475871856128);
+DELETE FROM num_input_test;
+--Testcase 918:
+INSERT INTO num_input_test(n1) values(110123.12475871856128);
+--Testcase 919:
+SELECT scale(n1::numeric) FROM num_input_test;
 --Testcase 774:
-select scale(-1123.12471856128);
+DELETE FROM num_input_test;
+--Testcase 920:
+INSERT INTO num_input_test(n1) values(-1123.12471856128);
+--Testcase 921:
+SELECT scale(n1::numeric) FROM num_input_test;
 --Testcase 775:
-select scale(-13.000000000000000);
+DELETE FROM num_input_test;
+--Testcase 922:
+INSERT INTO num_input_test(n1) values(-13.000000000000000);
+--Testcase 923:
+SELECT scale(n1::numeric) FROM num_input_test;
+
+--
+-- Tests for min_scale()
+--
+
+--Testcase 924:
+DELETE FROM num_input_test;
+--Testcase 925:
+INSERT INTO num_input_test(n1) values(numeric 'NaN');
+--Testcase 926:
+SELECT min_scale(n1::numeric) is NULL FROM num_input_test; -- should be true
+
+--Testcase 927:
+DELETE FROM num_input_test;
+--Testcase 928:
+INSERT INTO num_input_test(n1) values(0);
+--Testcase 929:
+SELECT min_scale(n1::numeric) FROM num_input_test; -- no digits
+
+--Testcase 930:
+DELETE FROM num_input_test;
+--Testcase 931:
+INSERT INTO num_input_test(n1) values(0.00);
+--Testcase 932:
+SELECT min_scale(n1::numeric) FROM num_input_test; -- no digits again
+
+--Testcase 933:
+DELETE FROM num_input_test;
+--Testcase 934:
+INSERT INTO num_input_test(n1) values(1.0);
+--Testcase 935:
+SELECT min_scale(n1::numeric) FROM num_input_test; -- no scale
+
+--Testcase 936:
+DELETE FROM num_input_test;
+--Testcase 937:
+INSERT INTO num_input_test(n1) values(1.1);
+--Testcase 938:
+SELECT min_scale(n1::numeric) FROM num_input_test; -- scale 1
+
+--Testcase 939:
+DELETE FROM num_input_test;
+--Testcase 940:
+INSERT INTO num_input_test(n1) values(1.12);
+--Testcase 941:
+SELECT min_scale(n1::numeric) FROM num_input_test; -- scale 2
+
+--Testcase 942:
+DELETE FROM num_input_test;
+--Testcase 943:
+INSERT INTO num_input_test(n1) values(1.123);
+--Testcase 944:
+SELECT min_scale(n1::numeric) FROM num_input_test; -- scale 3
+
+--Testcase 945:
+DELETE FROM num_input_test;
+--Testcase 946:
+INSERT INTO num_input_test(n1) values(1.1234);
+--Testcase 947:
+SELECT min_scale(n1::numeric) FROM num_input_test; -- scale 4, filled digit
+
+--Testcase 948:
+DELETE FROM num_input_test;
+--Testcase 949:
+INSERT INTO num_input_test(n1) values(1.12345);
+--Testcase 950:
+SELECT min_scale(n1::numeric) FROM num_input_test; -- scale 5, 2 NDIGITS
+
+--Testcase 951:
+DELETE FROM num_input_test;
+--Testcase 952:
+INSERT INTO num_input_test(n1) values(1.1000);
+--Testcase 953:
+SELECT min_scale(n1::numeric) FROM num_input_test; -- 1 pos in NDIGITS
+
+--Testcase 954:
+DELETE FROM num_input_test;
+--Testcase 955:
+INSERT INTO num_input_test(n1) values(1e100);
+--Testcase 956:
+SELECT min_scale(n1::numeric) FROM num_input_test; -- very big number
+
+--
+-- Tests for trim_scale()
+--
+
+--Testcase 957:
+DELETE FROM num_input_test;
+--Testcase 958:
+INSERT INTO num_input_test(n1) values(numeric 'NaN');
+--Testcase 959:
+SELECT trim_scale(n1::numeric) FROM num_input_test;
+
+--Testcase 960:
+DELETE FROM num_input_test;
+--Testcase 961:
+INSERT INTO num_input_test(n1) values(1.120);
+--Testcase 962:
+SELECT trim_scale(n1::numeric) FROM num_input_test;
+
+--Testcase 963:
+DELETE FROM num_input_test;
+--Testcase 964:
+INSERT INTO num_input_test(n1) values(0);
+--Testcase 965:
+SELECT trim_scale(n1::numeric) FROM num_input_test;
+
+--Testcase 966:
+DELETE FROM num_input_test;
+--Testcase 967:
+INSERT INTO num_input_test(n1) values(0.00);
+--Testcase 968:
+SELECT trim_scale(n1::numeric) FROM num_input_test;
+
+--Testcase 969:
+DELETE FROM num_input_test;
+--Testcase 970:
+INSERT INTO num_input_test(n1) values(1.1234500);
+--Testcase 971:
+SELECT trim_scale(n1::numeric) FROM num_input_test;
+
+--Testcase 972:
+DELETE FROM num_input_test;
+--Testcase 973:
+INSERT INTO num_input_test(n1) values(110123.12475871856128000);
+--Testcase 974:
+SELECT trim_scale(n1::numeric) FROM num_input_test;
+
+--Testcase 975:
+DELETE FROM num_input_test;
+--Testcase 976:
+INSERT INTO num_input_test(n1) values(-1123.124718561280000000);
+--Testcase 977:
+SELECT trim_scale(n1::numeric) FROM num_input_test;
+
+--Testcase 978:
+DELETE FROM num_input_test;
+--Testcase 979:
+INSERT INTO num_input_test(n1) values(-13.00000000000000000000);
+--Testcase 980:
+SELECT trim_scale(n1::numeric) FROM num_input_test;
+
+--Testcase 981:
+DELETE FROM num_input_test;
+--Testcase 982:
+INSERT INTO num_input_test(n1) values(1e100);
+--Testcase 983:
+SELECT trim_scale(n1::numeric) FROM num_input_test;
 
 --
 -- Tests for SUM()
@@ -1929,22 +2397,80 @@ DELETE FROM num_input_test;
 --Testcase 777:
 INSERT INTO num_input_test(n1) values(generate_series(1, 100000));
 --Testcase 778:
-SELECT SUM(999::numeric) FROM num_input_test;
+SELECT SUM(9999::numeric) FROM num_input_test;
 --Testcase 779:
-SELECT SUM((-999)::numeric) FROM num_input_test;
+SELECT SUM((-9999)::numeric) FROM num_input_test;
 
+--
+-- Tests for GCD()
+--
+--Testcase 984:
+DELETE FROM num_test_calc;
+--Testcase 985:
+INSERT INTO num_test_calc(n1, n2) VALUES 
+             (0::numeric, 0::numeric),
+             (0::numeric, numeric 'NaN'),
+             (0::numeric, 46375::numeric),
+             (433125::numeric, 46375::numeric),
+             (43312.5::numeric, 4637.5::numeric),
+             (4331.250::numeric, 463.75000::numeric);
+--Testcase 986:
+SELECT n1 as a, n2 as b, gcd(n1::numeric, n2::numeric), gcd(n1::numeric, -n2::numeric), gcd(-n2::numeric, n1::numeric), gcd(-n2::numeric, -n1::numeric) FROM num_test_calc;
+--
+-- Tests for LCM()
+--
+--Testcase 987:
+DELETE FROM num_test_calc;
+--Testcase 988:
+INSERT INTO num_test_calc(n1, n2) VALUES 
+             (0::numeric, 0::numeric),
+             (0::numeric, numeric 'NaN'),
+             (0::numeric, 13272::numeric),
+             (13272::numeric, 13272::numeric),
+             (423282::numeric, 13272::numeric),
+             (42328.2::numeric, 1327.2::numeric),
+             (4232.820::numeric, 132.72000::numeric);
+--Testcase 989:
+SELECT n1 as a, n2 as b, lcm(n1::numeric, n2::numeric), lcm(n1::numeric, -n2::numeric), lcm(-n2::numeric, n1::numeric), lcm(-n2::numeric, -n1::numeric) FROM num_test_calc;
+
+--Testcase 990:
+DELETE FROM num_test_calc;
+--Testcase 991:
+INSERT INTO num_test_calc(n1, n2) VALUES (10::numeric, 131068); 
+--Testcase 992:
+SELECT lcm((9999 * (n1::numeric)^n2::numeric + (n1::numeric^n2::numeric - 1)), 2) FROM num_test_calc; -- overflow
+
+--Testcase 993:
+DROP FOREIGN TABLE width_bucket_tbl;
+--Testcase 994:
+DROP FOREIGN TABLE num_test_calc;
+--Testcase 995:
 DROP FOREIGN TABLE num_data;
+--Testcase 996:
 DROP FOREIGN TABLE num_exp_add;
+--Testcase 997:
 DROP FOREIGN TABLE num_exp_sub;
+--Testcase 998:
 DROP FOREIGN TABLE num_exp_div;
+--Testcase 999:
 DROP FOREIGN TABLE num_exp_mul;
+--Testcase 1000:
 DROP FOREIGN TABLE num_exp_sqrt;
+--Testcase 1001:
 DROP FOREIGN TABLE num_exp_ln;
+--Testcase 1002:
 DROP FOREIGN TABLE num_exp_log10;
+--Testcase 1003:
 DROP FOREIGN TABLE num_exp_power_10_ln;
+--Testcase 1004:
 DROP FOREIGN TABLE num_result;
+--Testcase 1005:
 DROP FOREIGN TABLE num_input_test;
+--Testcase 1006:
 DROP FOREIGN TABLE ceil_floor_round;
+--Testcase 1007:
 DROP USER MAPPING FOR public SERVER griddb_svr;
+--Testcase 1008:
 DROP SERVER griddb_svr;
+--Testcase 1009:
 DROP EXTENSION griddb_fdw CASCADE;

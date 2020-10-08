@@ -1,10 +1,14 @@
 --
 -- SELECT
 --
+--Testcase 68:
 CREATE EXTENSION griddb_fdw;
+--Testcase 69:
 CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS(host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster');
+--Testcase 70:
 CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS(username 'admin', password 'testadmin');
 
+--Testcase 71:
 CREATE FOREIGN TABLE onek (
   unique1   int4,
   unique2   int4,
@@ -24,6 +28,7 @@ CREATE FOREIGN TABLE onek (
   string4   text
 ) SERVER griddb_svr;
 
+--Testcase 72:
 CREATE FOREIGN TABLE onek2 (
   unique1   int4,
   unique2   int4,
@@ -43,8 +48,10 @@ CREATE FOREIGN TABLE onek2 (
   string4   text
 ) SERVER griddb_svr;
 
+--Testcase 73:
 CREATE FOREIGN TABLE INT8_TBL(id int4, q1 int8, q2 int8) SERVER griddb_svr;
 
+--Testcase 74:
 CREATE FOREIGN TABLE person (
   name    text,
   age     int4,
@@ -178,6 +185,7 @@ SELECT p.name, p.age FROM person* p ORDER BY age using >, name;
 --
 -- Test some cases involving whole-row Var referencing a subquery
 --
+--Testcase 75:
 create foreign table bar (id serial OPTIONS (rowkey 'true'), a text, b int, c int) server griddb_svr;
 --Testcase 14:
 insert into bar(a, b, c) values ('xyzzy',1,null);
@@ -186,7 +194,7 @@ select foo from (select b from bar offset 0) as foo;
 --Testcase 16:
 select foo from (select c from bar offset 0) as foo;
 --Testcase 17:
-select foo from (select * from bar offset 0) as foo;
+select foo from (select a, b, c from bar offset 0) as foo;
 
 --
 -- Test VALUES lists
@@ -225,6 +233,7 @@ SELECT q1, q2 FROM int8_tbl;
 -- Test ORDER BY options
 --
 
+--Testcase 76:
 CREATE FOREIGN TABLE foo (id serial OPTIONS(rowkey 'true'), f1 int) SERVER griddb_svr;
 
 --Testcase 23:
@@ -292,8 +301,8 @@ select * from onek2 where unique2 = 11 and stringu1 = 'ATAAAA';
 --Testcase 42:
 select * from onek2 where unique2 = 11 and stringu1 = 'ATAAAA';
 -- actually run the query with an analyze to use the partial index
+--Testcase 77:
 explain (costs off, analyze on, timing off, summary off)
---Testcase 43:
 select * from onek2 where unique2 = 11 and stringu1 = 'ATAAAA';
 --Testcase 44:
 explain (costs off)
@@ -358,11 +367,13 @@ SELECT 1 AS x ORDER BY x;
 -- But ORDER BY on a set-valued expression does
 --Testcase 61:
 delete from foo;
+--Testcase 78:
 create function sillysrf(int) returns setof int as
 $$
 declare
     returnrec int;
 begin
+--Testcase 79:
 	insert into foo(f1) values (1),(10),(2), ($1);
   	for returnrec in select f1 from foo loop
             return next returnrec;
@@ -380,6 +391,7 @@ begin;
 select sillysrf(-1) order by 1;
 rollback;
 
+--Testcase 80:
 drop function sillysrf(int);
 
 -- X = X isn't a no-op, it's effectively X IS NOT NULL assuming = is strict
@@ -390,9 +402,9 @@ delete from foo;
 --Testcase 65:
 insert into foo(f1) values (2),(null),(1);
 --Testcase 66:
-select f1 from foo where f1 = f1 order by f1;
+select f1 as k from foo where f1 = f1 order by f1;
 --Testcase 67:
-select f1 from foo where f1 = f1;
+select f1 as k from foo where f1 = f1;
 rollback;
 
 -- skip, gridb does not support partition tabl
@@ -404,12 +416,21 @@ rollback;
 --explain (costs off) select * from list_parted_tbl;
 --drop table list_parted_tbl;
 
+--Testcase 81:
 DROP FOREIGN TABLE onek;
+--Testcase 82:
 DROP FOREIGN TABLE onek2;
+--Testcase 83:
 DROP FOREIGN TABLE int8_tbl;
+--Testcase 84:
 DROP FOREIGN TABLE person;
+--Testcase 85:
 DROP FOREIGN TABLE foo;
+--Testcase 86:
 DROP FOREIGN TABLE bar;
+--Testcase 87:
 DROP USER MAPPING FOR public SERVER griddb_svr;
+--Testcase 88:
 DROP SERVER griddb_svr;
+--Testcase 89:
 DROP EXTENSION griddb_fdw CASCADE;

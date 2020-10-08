@@ -2,9 +2,13 @@
 -- LIMIT
 -- Check the LIMIT/OFFSET feature of SELECT
 --
+--Testcase 57:
 CREATE EXTENSION griddb_fdw;
+--Testcase 58:
 CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS(host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster');
+--Testcase 59:
 CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS(username 'admin', password 'testadmin');
+--Testcase 60:
 CREATE FOREIGN TABLE onek(
   unique1     int4 OPTIONS (rowkey 'true'),
   unique2     int4,
@@ -24,8 +28,10 @@ CREATE FOREIGN TABLE onek(
   string4     text
 ) SERVER griddb_svr;
 
+--Testcase 61:
 CREATE FOREIGN TABLE int8_tbl(id serial OPTIONS (rowkey 'true'), q1 int8, q2 int8) SERVER griddb_svr;
 
+--Testcase 62:
 CREATE FOREIGN TABLE tenk1 (
   unique1     int4 OPTIONS (rowkey 'true'),
   unique2     int4,
@@ -85,14 +91,14 @@ SELECT ''::text AS five, unique1, unique2, stringu1
 -- Test null limit and offset.  The planner would discard a simple null
 -- constant, so to ensure executor is exercised, do this:
 --Testcase 10:
-select * from int8_tbl limit (case when random() < 0.5 then null::bigint end);
+select q1, q2 from int8_tbl limit (case when random() < 0.5 then null::bigint end);
 --Testcase 11:
-select * from int8_tbl offset (case when random() < 0.5 then null::bigint end);
+select q1, q2 from int8_tbl offset (case when random() < 0.5 then null::bigint end);
 
 -- Test assorted cases involving backwards fetch from a LIMIT plan node
 begin;
 
-declare c1 scroll cursor for select * from int8_tbl limit 10;
+declare c1 scroll cursor for select q1, q2 from int8_tbl limit 10;
 --Testcase 12:
 fetch all in c1;
 --Testcase 13:
@@ -106,7 +112,7 @@ fetch backward 1 in c1;
 --Testcase 17:
 fetch all in c1;
 
-declare c2 scroll cursor for select * from int8_tbl limit 3;
+declare c2 scroll cursor for select q1, q2 from int8_tbl limit 3;
 --Testcase 18:
 fetch all in c2;
 --Testcase 19:
@@ -120,7 +126,7 @@ fetch backward 1 in c2;
 --Testcase 23:
 fetch all in c2;
 
-declare c3 scroll cursor for select * from int8_tbl offset 3;
+declare c3 scroll cursor for select q1, q2 from int8_tbl offset 3;
 --Testcase 24:
 fetch all in c3;
 --Testcase 25:
@@ -134,7 +140,7 @@ fetch backward 1 in c3;
 --Testcase 29:
 fetch all in c3;
 
-declare c4 scroll cursor for select * from int8_tbl offset 10;
+declare c4 scroll cursor for select q1, q2 from int8_tbl offset 10;
 --Testcase 30:
 fetch all in c4;
 --Testcase 31:
@@ -147,6 +153,24 @@ fetch backward all in c4;
 fetch backward 1 in c4;
 --Testcase 35:
 fetch all in c4;
+
+declare c5 scroll cursor for select q1, q2 from int8_tbl order by q1 fetch first 2 rows with ties;
+--Testcase 63:
+fetch all in c5;
+--Testcase 64:
+fetch 1 in c5;
+--Testcase 65:
+fetch backward 1 in c5;
+--Testcase 66:
+fetch backward 1 in c5;
+--Testcase 67:
+fetch all in c5;
+--Testcase 68:
+fetch backward all in c5;
+--Testcase 69:
+fetch all in c5;
+--Testcase 70:
+fetch backward all in c5;
 
 rollback;
 
@@ -170,6 +194,7 @@ ROLLBACK;
 -- with ORDER BY and LIMIT.
 --
 
+--Testcase 71:
 create temp sequence testseq;
 
 --Testcase 39:
@@ -246,9 +271,80 @@ select sum(tenthous) as s1, sum(tenthous) + random()*0 as s2
 select sum(tenthous) as s1, sum(tenthous) + random()*0 as s2
   from tenk1 group by thousand order by thousand limit 3;
 
+--
+-- FETCH FIRST
+-- Check the WITH TIES clause
+--
+
+--Testcase 72:
+SELECT  thousand
+		FROM onek WHERE thousand < 5
+		ORDER BY thousand FETCH FIRST 2 ROW WITH TIES;
+
+--Testcase 73:
+SELECT  thousand
+		FROM onek WHERE thousand < 5
+		ORDER BY thousand FETCH FIRST ROWS WITH TIES;
+
+--Testcase 74:
+SELECT  thousand
+		FROM onek WHERE thousand < 5
+		ORDER BY thousand FETCH FIRST 1 ROW WITH TIES;
+
+--Testcase 75:
+SELECT  thousand
+		FROM onek WHERE thousand < 5
+		ORDER BY thousand FETCH FIRST 2 ROW ONLY;
+
+-- should fail
+--Testcase 76:
+SELECT ''::text AS two, unique1, unique2, stringu1
+		FROM onek WHERE unique1 > 50
+		FETCH FIRST 2 ROW WITH TIES;
+
+-- test ruleutils
+--Testcase 77:
+CREATE VIEW limit_thousand_v_1 AS SELECT thousand FROM onek WHERE thousand < 995
+		ORDER BY thousand FETCH FIRST 5 ROWS WITH TIES OFFSET 10;
+--Testcase 78:
+\d+ limit_thousand_v_1
+--Testcase 79:
+CREATE VIEW limit_thousand_v_2 AS SELECT thousand FROM onek WHERE thousand < 995
+		ORDER BY thousand OFFSET 10 FETCH FIRST 5 ROWS ONLY;
+--Testcase 80:
+\d+ limit_thousand_v_2
+--Testcase 81:
+CREATE VIEW limit_thousand_v_3 AS SELECT thousand FROM onek WHERE thousand < 995
+		ORDER BY thousand FETCH FIRST NULL ROWS WITH TIES;		-- fails
+--Testcase 82:
+CREATE VIEW limit_thousand_v_3 AS SELECT thousand FROM onek WHERE thousand < 995
+		ORDER BY thousand FETCH FIRST (NULL+1) ROWS WITH TIES;
+--Testcase 83:
+\d+ limit_thousand_v_3
+--Testcase 84:
+CREATE VIEW limit_thousand_v_4 AS SELECT thousand FROM onek WHERE thousand < 995
+		ORDER BY thousand FETCH FIRST NULL ROWS ONLY;
+--Testcase 85:
+\d+ limit_thousand_v_4
+-- leave these views
+--Testcase 86:
+DROP VIEW limit_thousand_v_1;
+--Testcase 87:
+DROP VIEW limit_thousand_v_2;
+--Testcase 88:
+DROP VIEW limit_thousand_v_3;
+--Testcase 89:
+DROP VIEW limit_thousand_v_4;
+
+--Testcase 90:
 DROP FOREIGN TABLE onek;
+--Testcase 91:
 DROP FOREIGN TABLE int8_tbl;
+--Testcase 92:
 DROP FOREIGN TABLE tenk1;
+--Testcase 93:
 DROP USER MAPPING FOR public SERVER griddb_svr;
+--Testcase 94:
 DROP SERVER griddb_svr;
+--Testcase 95:
 DROP EXTENSION griddb_fdw CASCADE;

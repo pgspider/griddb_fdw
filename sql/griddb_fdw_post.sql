@@ -1,18 +1,24 @@
 --SET client_min_messages TO WARNING;
+--Testcase 703:
 CREATE EXTENSION IF NOT EXISTS griddb_fdw;
 DO $d$
     BEGIN
-        EXECUTE $$CREATE SERVER IF NOT EXISTS griddb_svr FOREIGN DATA WRAPPER griddb_fdw
+        EXECUTE $$CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw
             OPTIONS (host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster')$$;
         EXECUTE $$CREATE SERVER griddb_svr2 FOREIGN DATA WRAPPER griddb_fdw
             OPTIONS (host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster')$$;
         EXECUTE $$CREATE SERVER testserver1 FOREIGN DATA WRAPPER griddb_fdw$$;
     END;
 $d$;
-CREATE USER MAPPING IF NOT EXISTS FOR public SERVER griddb_svr OPTIONS (username 'admin', password 'testadmin');
+--Testcase 704:
+CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS (username 'admin', password 'testadmin');
+--Testcase 705:
 CREATE USER MAPPING FOR public SERVER griddb_svr2 OPTIONS (username 'admin', password 'testadmin');
+--Testcase 706:
 CREATE USER MAPPING FOR public SERVER testserver1 OPTIONS (username 'value', password 'value');
 
+CREATE TYPE user_enum AS ENUM ('foo', 'bar', 'buz');
+--Testcase 707:
 CREATE SCHEMA "S 1";
 IMPORT FOREIGN SCHEMA griddb_schema LIMIT TO
 	("T0", "T1", "T2", "T3", "T4", ft1, ft2, ft4, ft5, base_tbl,
@@ -44,6 +50,7 @@ INSERT INTO "S 1"."T3"
 	       id + 1,
 	       'AAA' || to_char(id, 'FM000')
 	FROM generate_series(1, 100) id;
+--Testcase 708:
 DELETE FROM "S 1"."T3" WHERE c1 % 2 != 0;	-- delete for outer join tests
 --Testcase 4:
 INSERT INTO "S 1"."T4"
@@ -51,11 +58,13 @@ INSERT INTO "S 1"."T4"
 	       id + 1,
 	       'AAA' || to_char(id, 'FM000')
 	FROM generate_series(1, 100) id;
+--Testcase 709:
 DELETE FROM "S 1"."T4" WHERE c1 % 3 != 0;	-- delete for outer join tests
 
 -- ===================================================================
 -- create foreign tables
 -- ===================================================================
+--Testcase 710:
 CREATE FOREIGN TABLE ft1 (
 	-- c0 int,
 	c1 int OPTIONS (rowkey 'true'),
@@ -69,6 +78,7 @@ CREATE FOREIGN TABLE ft1 (
 ) SERVER griddb_svr;
 -- ALTER FOREIGN TABLE ft1 DROP COLUMN c0;
 
+--Testcase 711:
 CREATE FOREIGN TABLE ft2 (
 	c1 int OPTIONS (rowkey 'true'),
 	c2 int NOT NULL,
@@ -82,18 +92,21 @@ CREATE FOREIGN TABLE ft2 (
 ) SERVER griddb_svr;
 -- ALTER FOREIGN TABLE ft2 DROP COLUMN cx;
 
+--Testcase 712:
 CREATE FOREIGN TABLE ft4 (
 	c1 int OPTIONS (rowkey 'true'),
 	c2 int NOT NULL,
 	c3 text
 ) SERVER griddb_svr OPTIONS (table_name 'T3');
 
+--Testcase 713:
 CREATE FOREIGN TABLE ft5 (
 	c1 int OPTIONS (rowkey 'true'),
 	c2 int NOT NULL,
 	c3 text
 ) SERVER griddb_svr OPTIONS (table_name 'T4');
 
+--Testcase 714:
 CREATE FOREIGN TABLE ft6 (
 	c1 int OPTIONS (rowkey 'true'),
 	c2 int NOT NULL,
@@ -108,12 +121,35 @@ CREATE FOREIGN TABLE ft6 (
 -- HINT: valid options in this context are: host, port, clustername, database,
 -- notification_member, updatable, fdw_startup_cost, fdw_tuple_cost
 ALTER SERVER testserver1 OPTIONS (
+	--use_remote_estimate 'false',
 	updatable 'true',
 	fdw_startup_cost '123.456',
 	fdw_tuple_cost '0.123',
+	--service 'value',
+	--connect_timeout 'value',
+	--dbname 'value',
 	host 'value',
+	--hostaddr 'value',
 	port 'value',
 	clustername 'value'
+	--client_encoding 'value',
+	--application_name 'value',
+	--fallback_application_name 'value',
+	--keepalives 'value',
+	--keepalives_idle 'value',
+	--keepalives_interval 'value',
+	--tcp_user_timeout 'value',
+	-- requiressl 'value',
+	--sslcompression 'value',
+	--sslmode 'value',
+	--sslcert 'value',
+	--sslkey 'value',
+	--sslrootcert 'value',
+	--sslcrl 'value',
+	--requirepeer 'value',
+	--krbsrvname 'value',
+	--gsslib 'value'
+	--replication 'value'
 );
 -- GridDB does not support 'extensions' option
 -- Error, invalid list syntax
@@ -283,7 +319,7 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE (c1 IS NOT NULL) IS DIST
 --Testcase 47:
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c1 = ANY(ARRAY[c2, 1, c1 + 0]); -- ScalarArrayOpExpr
 --Testcase 48:
-EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c1 = (ARRAY[c1,c2,3])[1]; -- ArrayRef
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c1 = (ARRAY[c1,c2,3])[1]; -- SubscriptingRef
 --Testcase 49:
 EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c6 = E'foo''s\\bar';  -- check special chars
 --Testcase 50:
@@ -318,11 +354,13 @@ EXPLAIN (VERBOSE, COSTS OFF)
 	SELECT * FROM ft2 ORDER BY ft2.c1, ft2.c3 collate "C";
 
 -- user-defined operator/function
+--Testcase 715:
 CREATE FUNCTION griddb_fdw_abs(int) RETURNS int AS $$
 BEGIN
 RETURN abs($1);
 END
 $$ LANGUAGE plpgsql IMMUTABLE;
+--Testcase 716:
 CREATE OPERATOR === (
     LEFTARG = int,
     RIGHTARG = int,
@@ -542,9 +580,10 @@ EXPLAIN (VERBOSE, COSTS OFF)
 SELECT t1.c1, t2.c2, t1.c3 FROM ft1 t1 FULL JOIN ft2 t2 ON (t1.c1 = t2.c1) WHERE griddb_fdw_abs(t1.c1) > 0 OFFSET 10 LIMIT 10;
 --ALTER SERVER griddb_svr OPTIONS (DROP extensions);
 -- full outer join + WHERE clause with shippable extensions not set
---EXPLAIN (VERBOSE, COSTS OFF)
---SELECT t1.c1, t2.c2, t1.c3 FROM ft1 t1 FULL JOIN ft2 t2 ON (t1.c1 = t2.c1) WHERE postgres_fdw_abs(t1.c1) > 0 OFFSET 10 LIMIT 10;
---ALTER SERVER griddb_svr OPTIONS (ADD extensions 'postgres_fdw');
+--Testcase 717:
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT t1.c1, t2.c2, t1.c3 FROM ft1 t1 FULL JOIN ft2 t2 ON (t1.c1 = t2.c1) WHERE griddb_fdw_abs(t1.c1) > 0 OFFSET 10 LIMIT 10;
+--ALTER SERVER griddb_svr OPTIONS (ADD extensions 'griddb_fdw');
 -- join two tables with FOR UPDATE clause
 -- tests whole-row reference for row marks
 --Testcase 122:
@@ -555,7 +594,7 @@ SELECT t1.c1, t2.c1 FROM ft1 t1 JOIN ft2 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c3, t
 --Testcase 124:
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT t1.c1, t2.c1 FROM ft1 t1 JOIN ft2 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c3, t1.c1 OFFSET 100 LIMIT 10 FOR UPDATE;
--- Skip test case: (Related to https://tccloud2.toshiba.co.jp/accio/redmine/issues/112):
+-- Skip test case: Relate #112
 --SELECT t1.c1, t2.c1 FROM ft1 t1 JOIN ft2 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c3, t1.c1 OFFSET 100 LIMIT 10 FOR UPDATE;
 -- join two tables with FOR SHARE clause
 --Testcase 125:
@@ -566,7 +605,7 @@ SELECT t1.c1, t2.c1 FROM ft1 t1 JOIN ft2 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c3, t
 --Testcase 127:
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT t1.c1, t2.c1 FROM ft1 t1 JOIN ft2 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c3, t1.c1 OFFSET 100 LIMIT 10 FOR SHARE;
--- Skip test case: (Related to https://tccloud2.toshiba.co.jp/accio/redmine/issues/112):
+-- Skip test case: Relate #112
 --SELECT t1.c1, t2.c1 FROM ft1 t1 JOIN ft2 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c3, t1.c1 OFFSET 100 LIMIT 10 FOR SHARE;
 -- join in CTE
 --Testcase 128:
@@ -664,6 +703,7 @@ SELECT ft5, ft5.c1, ft5.c2, ft5.c3, ft4.c1, ft4.c2 FROM ft5 left join ft4 on ft5
 
 -- multi-way join involving multiple merge joins
 -- (this case used to have EPQ-related planning problems)
+--Testcase 718:
 CREATE FOREIGN TABLE local_tbl (c1 int OPTIONS(rowkey 'true'), c2 int, c3 text) SERVER griddb_svr;
 --Testcase 156:
 INSERT INTO local_tbl(c1, c2, c3) SELECT id, id % 10, to_char(id, 'FM0000') FROM generate_series(1, 1000) id;
@@ -674,19 +714,23 @@ SET enable_hashjoin TO false;
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT * FROM ft1, ft2, ft4, ft5, local_tbl WHERE ft1.c1 = ft2.c1 AND ft1.c2 = ft4.c1
     AND ft1.c2 = ft5.c1 AND ft1.c2 = local_tbl.c1 AND ft1.c1 < 100 AND ft2.c1 < 100 FOR UPDATE;
--- Skip test case: (Related to https://tccloud2.toshiba.co.jp/accio/redmine/issues/112):
+-- Skip test case: Relate #112
 --SELECT * FROM ft1, ft2, ft4, ft5, local_tbl WHERE ft1.c1 = ft2.c1 AND ft1.c2 = ft4.c1
 --  AND ft1.c2 = ft5.c1 AND ft1.c2 = local_tbl.c1 AND ft1.c1 < 100 AND ft2.c1 < 100 FOR UPDATE;
 RESET enable_nestloop;
 RESET enable_hashjoin;
-
+DROP FOREIGN TABLE local_tbl;
 -- check join pushdown in situations where multiple userids are involved
+--Testcase 719:
 CREATE ROLE regress_view_owner SUPERUSER;
+--Testcase 720:
 CREATE USER MAPPING FOR regress_view_owner SERVER griddb_svr OPTIONS (username 'admin', password 'testadmin');
 GRANT SELECT ON ft4 TO regress_view_owner;
 GRANT SELECT ON ft5 TO regress_view_owner;
 
+--Testcase 721:
 CREATE VIEW v4 AS SELECT * FROM ft4;
+--Testcase 722:
 CREATE VIEW v5 AS SELECT * FROM ft5;
 ALTER VIEW v5 OWNER TO regress_view_owner;
 --Testcase 158:
@@ -715,7 +759,9 @@ SELECT t1.c1, t2.c2 FROM v4 t1 LEFT JOIN ft5 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c
 ALTER VIEW v4 OWNER TO regress_view_owner;
 
 -- cleanup
+--Testcase 723:
 DROP OWNED BY regress_view_owner;
+--Testcase 724:
 DROP ROLE regress_view_owner;
 
 
@@ -813,6 +859,7 @@ select count(*) from (select c5, count(c1) from ft1 group by c5, sqrt(c2) having
 explain (verbose, costs off)
 select sum(c1) from ft1 group by c2 having avg(c1 * (random() <= 1)::int) > 100 order by 1;
 
+-- GridDB does not create type user_enum so pg_enum table has no record.
 -- Remote aggregate in combination with a local Param (for the output
 -- of an initplan) can be trouble, per bug #15781
 --Testcase 190:
@@ -914,9 +961,11 @@ select c1, rank(c1, c2) within group (order by c1, c2) from ft1 group by c1, c2 
 select c1, rank(c1, c2) within group (order by c1, c2) from ft1 group by c1, c2 having c1 = 6 order by 1;
 
 -- User defined function for user defined aggregate, VARIADIC
+--Testcase 725:
 create function least_accum(anyelement, variadic anyarray)
 returns anyelement language sql as
   'select least($1, min($2[i])) from generate_subscripts($2,1) g(i)';
+--Testcase 726:
 create aggregate least_agg(variadic items anyarray) (
   stype = anyelement, sfunc = least_accum
 );
@@ -953,7 +1002,9 @@ select c2, least_agg(c1) from ft1 group by c2 order by c2;
 
 -- Cleanup
 reset enable_hashagg;
+--Testcase 727:
 drop aggregate least_agg(variadic items anyarray);
+--Testcase 728:
 drop function least_accum(anyelement, variadic anyarray);
 
 
@@ -962,29 +1013,35 @@ drop function least_accum(anyelement, variadic anyarray);
 -- operator class.  Create those and then add them in extension.  Note that
 -- user defined objects are considered unshippable unless they are part of
 -- the extension.
+--Testcase 729:
 create operator public.<^ (
  leftarg = int4,
  rightarg = int4,
  procedure = int4eq
 );
 
+--Testcase 730:
 create operator public.=^ (
  leftarg = int4,
  rightarg = int4,
  procedure = int4lt
 );
 
+--Testcase 731:
 create operator public.>^ (
  leftarg = int4,
  rightarg = int4,
  procedure = int4gt
 );
 
+--Testcase 732:
 create operator family my_op_family using btree;
 
+--Testcase 733:
 create function my_op_cmp(a int, b int) returns int as
   $$begin return btint4cmp(a, b); end $$ language plpgsql;
 
+--Testcase 734:
 create operator class my_op_class for type int using btree family my_op_family as
  operator 1 public.<^,
  operator 3 public.=^,
@@ -1030,11 +1087,17 @@ explain (verbose, costs off)
 select array_agg(c1 order by c1 using operator(public.<^)) from ft2 where c2 = 6 and c1 < 100 group by c2;
 
 -- Cleanup
+--Testcase 735:
 drop operator class my_op_class using btree;
+--Testcase 736:
 drop function my_op_cmp(a int, b int);
+--Testcase 737:
 drop operator family my_op_family using btree;
+--Testcase 738:
 drop operator public.>^(int, int);
+--Testcase 739:
 drop operator public.=^(int, int);
+--Testcase 740:
 drop operator public.<^(int, int);
 
 -- Input relation to aggregate push down hook is not safe to pushdown and thus
@@ -1239,23 +1302,18 @@ EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st6;
 PREPARE st7 AS INSERT INTO ft1 (c1,c2,c3) VALUES (1001,101,'foo');
 --Testcase 287:
 EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st7;
-
--- T0 has no data, after execute st6 the result is empty
-ALTER FOREIGN TABLE ft1 OPTIONS (SET table_name 'T0');  -- Modified the link to 'T0'
+--Testcase 741:
+INSERT INTO "S 1"."T0" SELECT * FROM "S 1"."T1";
+ALTER FOREIGN TABLE ft1 OPTIONS (SET table_name 'T0');
 --Testcase 288:
 EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st6;
 --Testcase 289:
 EXECUTE st6;
 --Testcase 290:
 EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st7;
-
-ALTER FOREIGN TABLE ft1 OPTIONS (SET table_name 'T1');  -- Re-modified the link to 'T1'
---Testcase 291:
-EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st6;
---Testcase 292:
-EXECUTE st6;
---Testcase 293:
-EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st7;
+--Testcase 742:
+DELETE FROM "S 1"."T0";
+ALTER FOREIGN TABLE ft1 OPTIONS (SET table_name 'T1');
 
 --Testcase 294:
 PREPARE st8 AS SELECT count(c3) FROM ft1 t1 WHERE t1.c1 === t1.c2;
@@ -1264,7 +1322,7 @@ PREPARE st8 AS SELECT count(c3) FROM ft1 t1 WHERE t1.c1 === t1.c2;
 EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st8;
 --Testcase 296:
 EXECUTE st8;
---ALTER SERVER loopback OPTIONS (ADD extensions 'postgres_fdw');
+--ALTER SERVER loopback OPTIONS (ADD extensions 'griddb_fdw');
 
 -- cleanup
 DEALLOCATE st1;
@@ -1302,10 +1360,12 @@ SELECT ctid, * FROM ft1 t1 LIMIT 1;
 -- ===================================================================
 -- used in PL/pgSQL function
 -- ===================================================================
+--Testcase 743:
 CREATE OR REPLACE FUNCTION f_test(p_c1 int) RETURNS int AS $$
 DECLARE
 	v_c1 int;
 BEGIN
+--Testcase 744:
     SELECT c1 INTO v_c1 FROM ft1 WHERE c1 = p_c1 LIMIT 1;
     PERFORM c1 FROM ft1 WHERE c1 = p_c1 AND p_c1 = v_c1 LIMIT 1;
     RETURN v_c1;
@@ -1313,6 +1373,7 @@ END;
 $$ LANGUAGE plpgsql;
 --Testcase 305:
 SELECT f_test(100);
+--Testcase 745:
 DROP FUNCTION f_test(int);
 
 -- ===================================================================
@@ -1355,6 +1416,13 @@ COMMIT;
 -- ===================================================================
 -- test handling of collations
 -- ===================================================================
+--Testcase 746:
+create foreign table loct3 (
+	f1 text OPTIONS (rowkey 'true'), 
+	f2 text, 
+	f3 text OPTIONS (rowkey 'true'))
+  server griddb_svr;
+--Testcase 747:
 create foreign table ft3 (
 	f1 text OPTIONS (rowkey 'true'), 
 	f2 text, 
@@ -1364,15 +1432,16 @@ create foreign table ft3 (
 -- can be sent to remote
 --Testcase 315:
 explain (verbose, costs off) select * from ft3 where f1 = 'foo';
+--Testcase 748:
+explain (verbose, costs off) select * from ft3 where f1 COLLATE "C" = 'foo';
 --Testcase 316:
 explain (verbose, costs off) select * from ft3 where f2 = 'foo';
 --Testcase 317:
 explain (verbose, costs off) select * from ft3 where f3 = 'foo';
---explain (verbose, costs off) select * from ft3 f, loct3 l
---  where f.f3 = l.f3 and l.f1 = 'foo';
+--Testcase 749:
+explain (verbose, costs off) select * from ft3 f, loct3 l
+  where f.f3 = l.f3 and l.f1 = 'foo';
 -- can't be sent to remote
---Testcase 318:
-explain (verbose, costs off) select * from ft3 where f1 COLLATE "C" = 'foo';
 --Testcase 319:
 explain (verbose, costs off) select * from ft3 where f1 COLLATE "POSIX" = 'foo';
 --Testcase 320:
@@ -1381,8 +1450,9 @@ explain (verbose, costs off) select * from ft3 where f1 = 'foo' COLLATE "C";
 explain (verbose, costs off) select * from ft3 where f2 COLLATE "C" = 'foo';
 --Testcase 322:
 explain (verbose, costs off) select * from ft3 where f2 = 'foo' COLLATE "C";
---explain (verbose, costs off) select * from ft3 f, loct3 l
---  where f.f3 = l.f3 COLLATE "POSIX" and l.f1 = 'foo';
+--Testcase 750:
+explain (verbose, costs off) select * from ft3 f, loct3 l
+  where f.f3 = l.f3 COLLATE "POSIX" and l.f1 = 'foo';
 
 -- ===================================================================
 -- test writable foreign table stuff
@@ -1422,8 +1492,6 @@ UPDATE ft2 SET c2 = ft2.c2 + 500, c3 = ft2.c3 || '_update9', c7 = DEFAULT
 --Testcase 335:
 EXPLAIN (verbose, costs off)
   DELETE FROM ft2 WHERE c1 % 10 = 5;                                                -- can be pushed down
--- DELETE RETURNING means returning rows which are deleted
--- GridDB does not support DELETE RETURNING
 --Testcase 336:
 SELECT c1,c4 FROM ft2 WHERE c1 % 10 = 5;
 --Testcase 337:
@@ -1454,9 +1522,9 @@ SELECT tableoid::regclass FROM ft2 WHERE c1 = 1200;
 EXPLAIN (verbose, costs off)
 DELETE FROM ft2 WHERE c1 = 1200;                                                    -- can be pushed down
 --Testcase 348:
-DELETE FROM ft2 WHERE c1 = 1200;
---Testcase 349:
 SELECT tableoid::regclass FROM ft2 WHERE c1 = 1200;
+--Testcase 349:
+DELETE FROM ft2 WHERE c1 = 1200;
 
 -- Test UPDATE/DELETE with RETURNING on a three-table join
 --Testcase 350:
@@ -1479,13 +1547,36 @@ DELETE FROM ft2
   USING ft4 LEFT JOIN ft5 ON (ft4.c1 = ft5.c1)
   WHERE ft2.c1 > 1200 AND ft2.c1 % 10 = 0 AND ft2.c2 = ft4.c1;
 --Testcase 355:
-SELECT * FROM ft2, ft4 WHERE ft2.c1 > 1200 AND ft2.c1 % 10 = 0 AND ft2.c2 = ft4.c1;
+SELECT 100 FROM ft2, ft4 WHERE ft2.c1 > 1200 AND ft2.c1 % 10 = 0 AND ft2.c2 = ft4.c1;
 --Testcase 356:
 DELETE FROM ft2 
   USING ft4 LEFT JOIN ft5 ON (ft4.c1 = ft5.c1)
   WHERE ft2.c1 > 1200 AND ft2.c1 % 10 = 0 AND ft2.c2 = ft4.c1;
 --Testcase 357:
 DELETE FROM ft2 WHERE ft2.c1 > 1200;
+
+-- Test UPDATE with a MULTIEXPR sub-select
+-- (maybe someday this'll be remotely executable, but not today)
+--Testcase 751:
+EXPLAIN (verbose, costs off)
+UPDATE ft2 AS target SET (c2, c7) = (
+    SELECT c2 * 10, c7
+        FROM ft2 AS src
+        WHERE target.c1 = src.c1
+) WHERE c1 > 1100;
+--Testcase 752:
+UPDATE ft2 AS target SET (c2, c7) = (
+    SELECT c2 * 10, c7
+        FROM ft2 AS src
+        WHERE target.c1 = src.c1
+) WHERE c1 > 1100;
+
+--Testcase 753:
+UPDATE ft2 AS target SET (c2) = (
+    SELECT c2 / 10
+        FROM ft2 AS src
+        WHERE target.c1 = src.c1
+) WHERE c1 > 1100;
 
 -- Test UPDATE/DELETE with WHERE or JOIN/ON conditions containing
 -- user-defined operators/functions
@@ -1528,15 +1619,17 @@ DELETE FROM ft2
   WHERE ft2.c1 > 2000 AND ft2.c2 = ft4.c1;
 --Testcase 368:
 DELETE FROM ft2 WHERE ft2.c1 > 2000;
---ALTER SERVER loopback OPTIONS (ADD extensions 'postgres_fdw');
+--ALTER SERVER loopback OPTIONS (ADD extensions 'griddb_fdw');
 
 -- Test that trigger on remote table works as expected
+--Testcase 754:
 CREATE OR REPLACE FUNCTION "S 1".F_BRTRIG() RETURNS trigger AS $$
 BEGIN
     NEW.c3 = NEW.c3 || '_trig_update';
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+--Testcase 755:
 CREATE TRIGGER t1_br_insert BEFORE INSERT OR UPDATE
     ON "S 1"."T1" FOR EACH ROW EXECUTE PROCEDURE "S 1".F_BRTRIG();
 
@@ -1558,18 +1651,19 @@ ALTER FOREIGN TABLE ft1 ADD CONSTRAINT c2positive CHECK (c2 >= 0);
 
 -- row was updated instead of insert because same row key has already existed.
 --Testcase 375:
-INSERT INTO ft1(c1, c2) VALUES(1228, 12);
+--INSERT INTO ft1(c1, c2) VALUES(11, 12);
 -- ON CONFLICT is not suported
 --Testcase 376:
-INSERT INTO ft1(c1, c2) VALUES(11, 12) ON CONFLICT DO NOTHING; -- works
+INSERT INTO ft1(c1, c2) VALUES(11, 12) ON CONFLICT DO NOTHING; -- not supported
 --Testcase 377:
 INSERT INTO ft1(c1, c2) VALUES(11, 12) ON CONFLICT (c1, c2) DO NOTHING; -- unsupported
 --Testcase 378:
 INSERT INTO ft1(c1, c2) VALUES(11, 12) ON CONFLICT (c1, c2) DO UPDATE SET c3 = 'ffg'; -- unsupported
+-- GridDB not support constraints
 --Testcase 379:
-INSERT INTO ft1(c1, c2) VALUES(1111, -2);  -- c2positive
+--INSERT INTO ft1(c1, c2) VALUES(1111, -2);  -- c2positive
 --Testcase 380:
-UPDATE ft1 SET c2 = -c2 WHERE c1 = 1;  -- c2positive
+--UPDATE ft1 SET c2 = -c2 WHERE c1 = 1;  -- c2positive
 
 -- Test savepoint/rollback behavior
 --Testcase 381:
@@ -1595,6 +1689,9 @@ update ft2 set c2 = 46 where c2 = 6;
 --Testcase 389:
 select c2, count(*) from ft2 where c2 < 500 group by 1 order by 1;
 rollback to savepoint s2;
+-- savepoint not supported.
+--Testcase 756:
+update ft2 set c2 = 6 where c2 = 46;
 --Testcase 390:
 select c2, count(*) from ft2 where c2 < 500 group by 1 order by 1;
 release savepoint s2;
@@ -1602,7 +1699,8 @@ release savepoint s2;
 select c2, count(*) from ft2 where c2 < 500 group by 1 order by 1;
 savepoint s3;
 --Testcase 392:
-update ft2 set c2 = -2 where c2 = 42 and c1 = 10; -- fail on remote side
+-- GridDB not support constraints
+--update ft2 set c2 = -2 where c2 = 42 and c1 = 10; -- fail on remote side
 rollback to savepoint s3;
 --Testcase 393:
 select c2, count(*) from ft2 where c2 < 500 group by 1 order by 1;
@@ -1638,10 +1736,11 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 ORDER BY c6 ASC NULLS FIRST, c1 O
 --Testcase 403:
 SELECT * FROM ft1 ORDER BY c6 ASC NULLS FIRST, c1 OFFSET 15 LIMIT 10;
 
+/*
+-- GridDB not support constraints
 -- ===================================================================
 -- test check constraints
 -- ===================================================================
-/*
 -- Consistent check constraints provide consistent results
 ALTER FOREIGN TABLE ft1 ADD CONSTRAINT ft1_c2positive CHECK (c2 >= 0);
 --Testcase 404:
@@ -1680,32 +1779,38 @@ INSERT INTO ft1(c1, c2) VALUES(1111, 2);
 UPDATE ft1 SET c2 = c2 + 1 WHERE c1 = 1;
 ALTER FOREIGN TABLE ft1 DROP CONSTRAINT ft1_c2negative;
 */
+
 -- ===================================================================
 -- test WITH CHECK OPTION constraints
 -- ===================================================================
 
+--Testcase 757:
 CREATE FUNCTION row_before_insupd_trigfunc() RETURNS trigger AS $$BEGIN NEW.a := NEW.a + 10; RETURN NEW; END$$ LANGUAGE plpgsql;
 
-CREATE FOREIGN TABLE foreign_tbl (a int OPTIONS (rowkey 'true'), b int)
+--Testcase 758:
+CREATE FOREIGN TABLE foreign_tbl (id serial OPTIONS (rowkey 'true'), a int, b int)
   SERVER griddb_svr OPTIONS(table_name 'base_tbl');
+--Testcase 759:
 CREATE TRIGGER row_before_insupd_trigger BEFORE INSERT OR UPDATE ON foreign_tbl FOR EACH ROW EXECUTE PROCEDURE row_before_insupd_trigfunc();
 
+--Testcase 760:
 CREATE VIEW rw_view AS SELECT * FROM foreign_tbl
   WHERE a < b WITH CHECK OPTION;
+--Testcase 761:
 \d+ rw_view
 
 --Testcase 416:
 EXPLAIN (VERBOSE, COSTS OFF)
-INSERT INTO rw_view VALUES (0, 5);
+INSERT INTO rw_view(a, b) VALUES (0, 5);
 --Testcase 417:
-INSERT INTO rw_view VALUES (0, 5); -- should fail
+INSERT INTO rw_view(a, b) VALUES (0, 5); -- should fail
 --Testcase 418:
 EXPLAIN (VERBOSE, COSTS OFF)
-INSERT INTO rw_view VALUES (0, 15);
+INSERT INTO rw_view(a, b) VALUES (0, 15);
 --Testcase 419:
-INSERT INTO rw_view VALUES (0, 15); -- ok
+INSERT INTO rw_view(a, b) VALUES (0, 15); -- ok
 --Testcase 420:
-SELECT * FROM foreign_tbl;
+SELECT a, b FROM foreign_tbl;
 
 --Testcase 421:
 EXPLAIN (VERBOSE, COSTS OFF)
@@ -1718,38 +1823,42 @@ UPDATE rw_view SET b = b + 15;
 --Testcase 424:
 UPDATE rw_view SET b = b + 15; -- ok
 --Testcase 425:
-SELECT * FROM foreign_tbl;
+SELECT a, b FROM foreign_tbl;
 
+--Testcase 762:
 DROP TRIGGER row_before_insupd_trigger ON foreign_tbl;
+--Testcase 763:
 DROP FOREIGN TABLE foreign_tbl CASCADE;
 
 -- test WCO for partitions
-
---CREATE TABLE child_tbl (a int, b int);
---ALTER TABLE child_tbl SET (autovacuum_enabled = 'false');
-CREATE FOREIGN TABLE foreign_tbl (a int OPTIONS (rowkey 'true'), b int)
+--Testcase 764:
+CREATE FOREIGN TABLE foreign_tbl (id serial OPTIONS (rowkey 'true'), a int, b int)
   SERVER griddb_svr OPTIONS (table_name 'child_tbl');
+--Testcase 765:
 CREATE TRIGGER row_before_insupd_trigger BEFORE INSERT OR UPDATE ON foreign_tbl FOR EACH ROW EXECUTE PROCEDURE row_before_insupd_trigfunc();
 
-CREATE TABLE parent_tbl (a int, b int) PARTITION BY RANGE(a);
+--Testcase 766:
+CREATE TABLE parent_tbl (id serial, a int, b int) PARTITION BY RANGE(a);
 ALTER TABLE parent_tbl ATTACH PARTITION foreign_tbl FOR VALUES FROM (0) TO (100);
 
+--Testcase 767:
 CREATE VIEW rw_view AS SELECT * FROM parent_tbl
   WHERE a < b WITH CHECK OPTION;
+--Testcase 768:
 \d+ rw_view
 
 --Testcase 426:
 EXPLAIN (VERBOSE, COSTS OFF)
-INSERT INTO rw_view VALUES (0, 5);
+INSERT INTO rw_view(a, b) VALUES (0, 5);
 --Testcase 427:
-INSERT INTO rw_view VALUES (0, 5); -- should fail
+INSERT INTO rw_view(a, b) VALUES (0, 5); -- should fail
 --Testcase 428:
 EXPLAIN (VERBOSE, COSTS OFF)
-INSERT INTO rw_view VALUES (0, 15);
+INSERT INTO rw_view(a, b) VALUES (0, 15);
 --Testcase 429:
-INSERT INTO rw_view VALUES (0, 15); -- ok
+INSERT INTO rw_view(a, b) VALUES (0, 15); -- ok
 --Testcase 430:
-SELECT * FROM foreign_tbl;
+SELECT a, b FROM foreign_tbl;
 
 --Testcase 431:
 EXPLAIN (VERBOSE, COSTS OFF)
@@ -1762,18 +1871,23 @@ UPDATE rw_view SET b = b + 15;
 --Testcase 434:
 UPDATE rw_view SET b = b + 15; -- ok
 --Testcase 435:
-SELECT * FROM foreign_tbl;
+SELECT a, b FROM foreign_tbl;
 
+--Testcase 769:
 DROP TRIGGER row_before_insupd_trigger ON foreign_tbl;
+--Testcase 770:
 DROP FOREIGN TABLE foreign_tbl CASCADE;
+--Testcase 771:
 DROP TABLE parent_tbl CASCADE;
 
+--Testcase 772:
 DROP FUNCTION row_before_insupd_trigfunc;
 
 -- ===================================================================
 -- test serial columns (ie, sequence-based defaults)
 -- ===================================================================
 
+--Testcase 773:
 create foreign table rem1 (id serial OPTIONS (rowkey 'true'), f1 serial, f2 text)
   server griddb_svr options(table_name 'loct13');
 --Testcase 436:
@@ -1787,13 +1901,14 @@ insert into rem1(f2) values('hi remote');
 --Testcase 440:
 insert into rem1(f2) values('bye remote');
 --Testcase 441:
-select * from rem1;
+select f1, f2 from rem1;
 
 -- ===================================================================
 -- test generated columns
 -- ===================================================================
 --create table gloc1 (a int, b int);
 --alter table gloc1 set (autovacuum_enabled = 'false');
+--Testcase 774:
 create foreign table grem1 (
   id serial OPTIONS (rowkey 'true'),
   a int,
@@ -1803,15 +1918,15 @@ create foreign table grem1 (
 insert into grem1 (a) values (1), (2);
 --Testcase 443:
 update grem1 set a = 22 where a = 2;
---select * from gloc1;
 --Testcase 444:
-select * from grem1;
+select a, b from grem1;
 
 -- ===================================================================
 -- test local triggers
 -- ===================================================================
 
 -- Trigger functions "borrowed" from triggers regress test.
+--Testcase 775:
 CREATE FUNCTION trigger_func() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
 	RAISE NOTICE 'trigger_func(%) called: action = %, when = %, level = %',
@@ -1819,11 +1934,14 @@ BEGIN
 	RETURN NULL;
 END;$$;
 
+--Testcase 776:
 CREATE TRIGGER trig_stmt_before BEFORE DELETE OR INSERT OR UPDATE ON rem1
 	FOR EACH STATEMENT EXECUTE PROCEDURE trigger_func();
+--Testcase 777:
 CREATE TRIGGER trig_stmt_after AFTER DELETE OR INSERT OR UPDATE ON rem1
 	FOR EACH STATEMENT EXECUTE PROCEDURE trigger_func();
 
+--Testcase 778:
 CREATE OR REPLACE FUNCTION trigger_data()  RETURNS trigger
 LANGUAGE plpgsql AS $$
 
@@ -1864,10 +1982,12 @@ end;
 $$;
 
 -- Test basic functionality
+--Testcase 779:
 CREATE TRIGGER trig_row_before
 BEFORE INSERT OR UPDATE OR DELETE ON rem1
 FOR EACH ROW EXECUTE PROCEDURE trigger_data(23,'skidoo');
 
+--Testcase 780:
 CREATE TRIGGER trig_row_after
 AFTER INSERT OR UPDATE OR DELETE ON rem1
 FOR EACH ROW EXECUTE PROCEDURE trigger_data(23,'skidoo');
@@ -1883,29 +2003,58 @@ update rem1 set f2 = f2 || f2;
 
 
 -- cleanup
+--Testcase 781:
 DROP TRIGGER trig_row_before ON rem1;
+--Testcase 782:
 DROP TRIGGER trig_row_after ON rem1;
+--Testcase 783:
 DROP TRIGGER trig_stmt_before ON rem1;
+--Testcase 784:
 DROP TRIGGER trig_stmt_after ON rem1;
 
 --Testcase 449:
 DELETE from rem1;
 
+-- Test multiple AFTER ROW triggers on a foreign table
+--Testcase 785:
+CREATE TRIGGER trig_row_after1
+AFTER INSERT OR UPDATE OR DELETE ON rem1
+FOR EACH ROW EXECUTE PROCEDURE trigger_data(23,'skidoo');
+
+--Testcase 786:
+CREATE TRIGGER trig_row_after2
+AFTER INSERT OR UPDATE OR DELETE ON rem1
+FOR EACH ROW EXECUTE PROCEDURE trigger_data(23,'skidoo');
+
+--Testcase 787:
+insert into rem1(f1, f2) values(1,'insert');
+--Testcase 788:
+update rem1 set f2  = 'update' where f1 = 1;
+--Testcase 789:
+update rem1 set f2 = f2 || f2;
+--Testcase 790:
+delete from rem1;
+
+-- cleanup
+--Testcase 791:
+DROP TRIGGER trig_row_after1 ON rem1;
+--Testcase 792:
+DROP TRIGGER trig_row_after2 ON rem1;
 
 -- Test WHEN conditions
 
+--Testcase 793:
 CREATE TRIGGER trig_row_before_insupd
 BEFORE INSERT OR UPDATE ON rem1
 FOR EACH ROW
 WHEN (NEW.f2 like '%update%')
---Testcase 450:
 EXECUTE PROCEDURE trigger_data(23,'skidoo');
 
+--Testcase 794:
 CREATE TRIGGER trig_row_after_insupd
 AFTER INSERT OR UPDATE ON rem1
 FOR EACH ROW
 WHEN (NEW.f2 like '%update%')
---Testcase 451:
 EXECUTE PROCEDURE trigger_data(23,'skidoo');
 
 -- Insert or update not matching: nothing happens
@@ -1920,18 +2069,18 @@ INSERT INTO rem1(f1, f2) values(2, 'update');
 --Testcase 455:
 UPDATE rem1 set f2 = 'update update' where f1 = '2';
 
+--Testcase 795:
 CREATE TRIGGER trig_row_before_delete
 BEFORE DELETE ON rem1
 FOR EACH ROW
 WHEN (OLD.f2 like '%update%')
---Testcase 456:
 EXECUTE PROCEDURE trigger_data(23,'skidoo');
 
+--Testcase 796:
 CREATE TRIGGER trig_row_after_delete
 AFTER DELETE ON rem1
 FOR EACH ROW
 WHEN (OLD.f2 like '%update%')
---Testcase 457:
 EXECUTE PROCEDURE trigger_data(23,'skidoo');
 
 -- Trigger is fired for f1=2, not for f1=1
@@ -1939,14 +2088,19 @@ EXECUTE PROCEDURE trigger_data(23,'skidoo');
 DELETE FROM rem1;
 
 -- cleanup
+--Testcase 797:
 DROP TRIGGER trig_row_before_insupd ON rem1;
+--Testcase 798:
 DROP TRIGGER trig_row_after_insupd ON rem1;
+--Testcase 799:
 DROP TRIGGER trig_row_before_delete ON rem1;
+--Testcase 800:
 DROP TRIGGER trig_row_after_delete ON rem1;
 
 
 -- Test various RETURN statements in BEFORE triggers.
 
+--Testcase 801:
 CREATE FUNCTION trig_row_before_insupdate() RETURNS TRIGGER AS $$
   BEGIN
     NEW.f2 := NEW.f2 || ' triggered !';
@@ -1954,6 +2108,7 @@ CREATE FUNCTION trig_row_before_insupdate() RETURNS TRIGGER AS $$
   END
 $$ language plpgsql;
 
+--Testcase 802:
 CREATE TRIGGER trig_row_before_insupd
 BEFORE INSERT OR UPDATE ON rem1
 FOR EACH ROW EXECUTE PROCEDURE trig_row_before_insupdate();
@@ -1962,19 +2117,19 @@ FOR EACH ROW EXECUTE PROCEDURE trig_row_before_insupdate();
 --Testcase 459:
 INSERT INTO rem1(f1, f2) values(1, 'insert');
 --Testcase 460:
-SELECT * from rem1;
+SELECT f1, f2 from rem1;
 --Testcase 461:
 INSERT INTO rem1(f1, f2) values(2, 'insert');
 --Testcase 462:
-SELECT * from rem1;
+SELECT f1, f2 from rem1;
 --Testcase 463:
 UPDATE rem1 set f2 = '';
 --Testcase 464:
-SELECT * from rem1;
+SELECT f1, f2 from rem1;
 --Testcase 465:
 UPDATE rem1 set f2 = 'skidoo';
 --Testcase 466:
-SELECT * from rem1;
+SELECT f1, f2 from rem1;
 
 --Testcase 467:
 EXPLAIN (verbose, costs off)
@@ -1982,13 +2137,14 @@ UPDATE rem1 set f1 = 10;          -- all columns should be transmitted
 --Testcase 468:
 UPDATE rem1 set f1 = 10;
 --Testcase 469:
-SELECT * from rem1;
+SELECT f1, f2 from rem1;
 
 --Testcase 470:
 DELETE FROM rem1;
 
 -- Add a second trigger, to check that the changes are propagated correctly
 -- from trigger to trigger
+--Testcase 803:
 CREATE TRIGGER trig_row_before_insupd2
 BEFORE INSERT OR UPDATE ON rem1
 FOR EACH ROW EXECUTE PROCEDURE trig_row_before_insupdate();
@@ -1996,21 +2152,23 @@ FOR EACH ROW EXECUTE PROCEDURE trig_row_before_insupdate();
 --Testcase 471:
 INSERT INTO rem1(f1, f2) values(1, 'insert');
 --Testcase 472:
-SELECT * from rem1;
+SELECT f1, f2 from rem1;
 --Testcase 473:
 INSERT INTO rem1(f1, f2) values(2, 'insert');
 --Testcase 474:
-SELECT * from rem1;
+SELECT f1, f2 from rem1;
 --Testcase 475:
 UPDATE rem1 set f2 = '';
 --Testcase 476:
-SELECT * from rem1;
+SELECT f1, f2 from rem1;
 --Testcase 477:
 UPDATE rem1 set f2 = 'skidoo';
 --Testcase 478:
-SELECT * from rem1;
+SELECT f1, f2 from rem1;
 
+--Testcase 804:
 DROP TRIGGER trig_row_before_insupd ON rem1;
+--Testcase 805:
 DROP TRIGGER trig_row_before_insupd2 ON rem1;
 
 --Testcase 479:
@@ -2020,12 +2178,14 @@ DELETE from rem1;
 INSERT INTO rem1(f1, f2) VALUES (1, 'test');
 
 -- Test with a trigger returning NULL
+--Testcase 806:
 CREATE FUNCTION trig_null() RETURNS TRIGGER AS $$
   BEGIN
     RETURN NULL;
   END
 $$ language plpgsql;
 
+--Testcase 807:
 CREATE TRIGGER trig_null
 BEFORE INSERT OR UPDATE OR DELETE ON rem1
 FOR EACH ROW EXECUTE PROCEDURE trig_null();
@@ -2035,33 +2195,37 @@ FOR EACH ROW EXECUTE PROCEDURE trig_null();
 INSERT INTO rem1(f1, f2) VALUES (2, 'test2');
 
 --Testcase 482:
-SELECT * from rem1;
+SELECT f1, f2 from rem1;
 
 --Testcase 483:
 UPDATE rem1 SET f2 = 'test2';
 
 --Testcase 484:
-SELECT * from rem1;
+SELECT f1, f2 from rem1;
 
 --Testcase 485:
 DELETE from rem1;
 
 --Testcase 486:
-SELECT * from rem1;
+SELECT f1, f2 from rem1;
 
+--Testcase 808:
 DROP TRIGGER trig_null ON rem1;
 --Testcase 487:
 DELETE from rem1;
 
 -- Test a combination of local and remote triggers
+--Testcase 809:
 CREATE TRIGGER trig_row_before
 BEFORE INSERT OR UPDATE OR DELETE ON rem1
 FOR EACH ROW EXECUTE PROCEDURE trigger_data(23,'skidoo');
 
+--Testcase 810:
 CREATE TRIGGER trig_row_after
 AFTER INSERT OR UPDATE OR DELETE ON rem1
 FOR EACH ROW EXECUTE PROCEDURE trigger_data(23,'skidoo');
 
+--Testcase 811:
 CREATE TRIGGER trig_local_before 
 BEFORE INSERT OR UPDATE ON rem1
 FOR EACH ROW EXECUTE PROCEDURE trig_row_before_insupdate();
@@ -2078,14 +2242,18 @@ INSERT INTO rem1(f2) VALUES ('test');
 SELECT ctid FROM rem1 WHERE f2 = 'test triggered !';
 
 -- cleanup
+--Testcase 812:
 DROP TRIGGER trig_row_before ON rem1;
+--Testcase 813:
 DROP TRIGGER trig_row_after ON rem1;
+--Testcase 814:
 DROP TRIGGER trig_local_before ON rem1;
 
 
 -- Test direct foreign table modification functionality
 
 -- Test with statement-level triggers
+--Testcase 815:
 CREATE TRIGGER trig_stmt_before
 	BEFORE DELETE OR INSERT OR UPDATE ON rem1
 	FOR EACH STATEMENT EXECUTE PROCEDURE trigger_func();
@@ -2095,8 +2263,10 @@ UPDATE rem1 set f2 = '';          -- can be pushed down
 --Testcase 493:
 EXPLAIN (verbose, costs off)
 DELETE FROM rem1;                 -- can be pushed down
+--Testcase 816:
 DROP TRIGGER trig_stmt_before ON rem1;
 
+--Testcase 817:
 CREATE TRIGGER trig_stmt_after
 	AFTER DELETE OR INSERT OR UPDATE ON rem1
 	FOR EACH STATEMENT EXECUTE PROCEDURE trigger_func();
@@ -2106,9 +2276,11 @@ UPDATE rem1 set f2 = '';          -- can be pushed down
 --Testcase 495:
 EXPLAIN (verbose, costs off)
 DELETE FROM rem1;                 -- can be pushed down
+--Testcase 818:
 DROP TRIGGER trig_stmt_after ON rem1;
 
 -- Test with row-level ON INSERT triggers
+--Testcase 819:
 CREATE TRIGGER trig_row_before_insert
 BEFORE INSERT ON rem1
 FOR EACH ROW EXECUTE PROCEDURE trigger_data(23,'skidoo');
@@ -2118,8 +2290,10 @@ UPDATE rem1 set f2 = '';          -- can be pushed down
 --Testcase 497:
 EXPLAIN (verbose, costs off)
 DELETE FROM rem1;                 -- can be pushed down
+--Testcase 820:
 DROP TRIGGER trig_row_before_insert ON rem1;
 
+--Testcase 821:
 CREATE TRIGGER trig_row_after_insert
 AFTER INSERT ON rem1
 FOR EACH ROW EXECUTE PROCEDURE trigger_data(23,'skidoo');
@@ -2129,9 +2303,11 @@ UPDATE rem1 set f2 = '';          -- can be pushed down
 --Testcase 499:
 EXPLAIN (verbose, costs off)
 DELETE FROM rem1;                 -- can be pushed down
+--Testcase 822:
 DROP TRIGGER trig_row_after_insert ON rem1;
 
 -- Test with row-level ON UPDATE triggers
+--Testcase 823:
 CREATE TRIGGER trig_row_before_update
 BEFORE UPDATE ON rem1
 FOR EACH ROW EXECUTE PROCEDURE trigger_data(23,'skidoo');
@@ -2141,8 +2317,10 @@ UPDATE rem1 set f2 = '';          -- can't be pushed down
 --Testcase 501:
 EXPLAIN (verbose, costs off)
 DELETE FROM rem1;                 -- can be pushed down
+--Testcase 824:
 DROP TRIGGER trig_row_before_update ON rem1;
 
+--Testcase 825:
 CREATE TRIGGER trig_row_after_update
 AFTER UPDATE ON rem1
 FOR EACH ROW EXECUTE PROCEDURE trigger_data(23,'skidoo');
@@ -2152,9 +2330,11 @@ UPDATE rem1 set f2 = '';          -- can't be pushed down
 --Testcase 503:
 EXPLAIN (verbose, costs off)
 DELETE FROM rem1;                 -- can be pushed down
+--Testcase 826:
 DROP TRIGGER trig_row_after_update ON rem1;
 
 -- Test with row-level ON DELETE triggers
+--Testcase 827:
 CREATE TRIGGER trig_row_before_delete
 BEFORE DELETE ON rem1
 FOR EACH ROW EXECUTE PROCEDURE trigger_data(23,'skidoo');
@@ -2164,8 +2344,10 @@ UPDATE rem1 set f2 = '';          -- can be pushed down
 --Testcase 505:
 EXPLAIN (verbose, costs off)
 DELETE FROM rem1;                 -- can't be pushed down
+--Testcase 828:
 DROP TRIGGER trig_row_before_delete ON rem1;
 
+--Testcase 829:
 CREATE TRIGGER trig_row_after_delete
 AFTER DELETE ON rem1
 FOR EACH ROW EXECUTE PROCEDURE trigger_data(23,'skidoo');
@@ -2175,14 +2357,17 @@ UPDATE rem1 set f2 = '';          -- can be pushed down
 --Testcase 507:
 EXPLAIN (verbose, costs off)
 DELETE FROM rem1;                 -- can't be pushed down
+--Testcase 830:
 DROP TRIGGER trig_row_after_delete ON rem1;
 
 -- ===================================================================
 -- test inheritance features
 -- ===================================================================
 
+--Testcase 831:
 CREATE TABLE a (id serial, aa TEXT);
 ALTER TABLE a SET (autovacuum_enabled = 'false');
+--Testcase 832:
 CREATE FOREIGN TABLE b (bb TEXT) INHERITS (a)
   SERVER griddb_svr OPTIONS (table_name 'loct');
 ALTER FOREIGN TABLE b ALTER COLUMN id OPTIONS (rowkey 'true');
@@ -2202,60 +2387,65 @@ INSERT INTO b(aa) VALUES('bbbb');
 INSERT INTO b(aa) VALUES('bbbbb');
 
 --Testcase 514:
-SELECT tableoid::regclass, * FROM a;
+SELECT tableoid::regclass, aa FROM a;
 --Testcase 515:
-SELECT tableoid::regclass, * FROM b;
+SELECT tableoid::regclass, aa, bb FROM b;
 --Testcase 516:
-SELECT tableoid::regclass, * FROM ONLY a;
+SELECT tableoid::regclass, aa FROM ONLY a;
 
 --Testcase 517:
 UPDATE a SET aa = 'zzzzzz' WHERE aa LIKE 'aaaa%'; -- limitation
 
 --Testcase 518:
-SELECT tableoid::regclass, * FROM a;
+SELECT tableoid::regclass, aa FROM a;
 --Testcase 519:
-SELECT tableoid::regclass, * FROM b;
+SELECT tableoid::regclass, aa, bb FROM b;
 --Testcase 520:
-SELECT tableoid::regclass, * FROM ONLY a;
+SELECT tableoid::regclass, aa FROM ONLY a;
 
 --Testcase 521:
 UPDATE b SET aa = 'new';
 
 --Testcase 522:
-SELECT tableoid::regclass, * FROM a;
+SELECT tableoid::regclass, aa FROM a;
 --Testcase 523:
-SELECT tableoid::regclass, * FROM b;
+SELECT tableoid::regclass, aa, bb FROM b;
 --Testcase 524:
-SELECT tableoid::regclass, * FROM ONLY a;
+SELECT tableoid::regclass, aa FROM ONLY a;
 
 --Testcase 525:
 UPDATE a SET aa = 'newtoo';
 
 --Testcase 526:
-SELECT tableoid::regclass, * FROM a;
+SELECT tableoid::regclass, aa FROM a;
 --Testcase 527:
-SELECT tableoid::regclass, * FROM b;
+SELECT tableoid::regclass, aa, bb FROM b;
 --Testcase 528:
-SELECT tableoid::regclass, * FROM ONLY a;
+SELECT tableoid::regclass, aa FROM ONLY a;
 
 --Testcase 529:
 DELETE FROM a;
 
 --Testcase 530:
-SELECT tableoid::regclass, * FROM a;
+SELECT tableoid::regclass, aa FROM a;
 --Testcase 531:
-SELECT tableoid::regclass, * FROM b;
+SELECT tableoid::regclass, aa, bb FROM b;
 --Testcase 532:
-SELECT tableoid::regclass, * FROM ONLY a;
+SELECT tableoid::regclass, aa FROM ONLY a;
 
+--Testcase 833:
 DROP TABLE a CASCADE;
 
 -- Check SELECT FOR UPDATE/SHARE with an inherited source table
 
+--Testcase 834:
 create table foo (f1 int, f2 int);
+--Testcase 835:
 create foreign table foo2 (f3 int) inherits (foo)
   server griddb_svr options (table_name 'loct1');
+--Testcase 836:
 create table bar (f1 int, f2 int);
+--Testcase 837:
 create foreign table bar2 (f3 int) inherits (bar)
   server griddb_svr options (table_name 'loct2');
 
@@ -2291,12 +2481,6 @@ explain (verbose, costs off)
 select * from bar where f1 in (select f1 from foo) for update;
 --Testcase 544:
 select * from bar where f1 in (select f1 from foo) for update;
-
---Testcase 545:
-explain (verbose, costs off)
-select * from bar2 where f1 in (select f1 from foo2) for update;
---Testcase 546:
-select * from bar2 where f1 in (select f1 from foo2) for update;
 
 --Testcase 547:
 explain (verbose, costs off)
@@ -2391,10 +2575,12 @@ update bar set f2 = f2 + 100;
 select * from bar;
 
 -- Test that UPDATE/DELETE with inherited target works with row-level triggers
+--Testcase 838:
 CREATE TRIGGER trig_row_before
 BEFORE UPDATE OR DELETE ON bar2
 FOR EACH ROW EXECUTE PROCEDURE trigger_data(23,'skidoo');
 
+--Testcase 839:
 CREATE TRIGGER trig_row_after
 AFTER UPDATE OR DELETE ON bar2
 FOR EACH ROW EXECUTE PROCEDURE trigger_data(23,'skidoo');
@@ -2412,13 +2598,18 @@ delete from bar where f2 < 400;
 delete from bar where f2 < 400;
 
 -- cleanup
+--Testcase 840:
 drop table foo cascade;
+--Testcase 841:
 drop table bar cascade;
 
 -- Test pushing down UPDATE/DELETE joins to the remote server
+--Testcase 842:
 create table parent (a int, b text);
+--Testcase 843:
 create foreign table remt1 (a int, b text)
   server griddb_svr options (table_name 'loct11');
+--Testcase 844:
 create foreign table remt2 (a int, b text)
   server griddb_svr options (table_name 'loct22');
 alter foreign table remt1 inherit parent;
@@ -2440,17 +2631,22 @@ explain (verbose, costs off)
 update parent set b = parent.b || remt2.b from remt2 where parent.a = remt2.a;
 --Testcase 579:
 update parent set b = parent.b || remt2.b from remt2 where parent.a = remt2.a;
+--Testcase 845:
+select * from parent, remt2 where parent.a = remt2.a;
 --Testcase 580:
 explain (verbose, costs off)
 delete from parent using remt2 where parent.a = remt2.a;
 --Testcase 581:
-select parent.a, parent.b from parent, remt2 where parent.a = remt2.a;
+select parent.* from parent, remt2 where parent.a = remt2.a;
 --Testcase 582:
 delete from parent using remt2 where parent.a = remt2.a;
 
 -- cleanup
+--Testcase 846:
 drop foreign table remt1;
+--Testcase 847:
 drop foreign table remt2;
+--Testcase 848:
 drop table parent;
 
 -- ===================================================================
@@ -2458,8 +2654,11 @@ drop table parent;
 -- ===================================================================
 
 -- Test insert tuple routing
+--Testcase 849:
 create table itrtest (id serial, a int, b text) partition by list (a);
+--Testcase 850:
 create foreign table remp1 (id serial, a int, b text) server griddb_svr options (table_name 'loct12');
+--Testcase 851:
 create foreign table remp2 (id serial, a int, b text) server griddb_svr options (table_name 'loct21');
 alter foreign table remp1 alter column id options (rowkey 'true');
 alter foreign table remp2 alter column id options (rowkey 'true');
@@ -2478,11 +2677,11 @@ insert into itrtest(a, b) values (2, 'qux');
 insert into itrtest(a, b) values (1, 'test1'), (2, 'test2');
 
 --Testcase 588:
-select tableoid::regclass, * FROM itrtest;
+select tableoid::regclass, a, b FROM itrtest;
 --Testcase 589:
-select tableoid::regclass, * FROM remp1;
+select tableoid::regclass, a, b FROM remp1;
 --Testcase 590:
-select tableoid::regclass, * FROM remp2;
+select tableoid::regclass, b, a FROM remp2;
 
 --Testcase 591:
 delete from itrtest;
@@ -2505,14 +2704,17 @@ delete from itrtest;
 --drop index loct1_idx;
 
 -- Test that remote triggers work with insert tuple routing
+--Testcase 852:
 create function br_insert_trigfunc() returns trigger as $$
 begin
 	new.b := new.b || ' triggered !';
 	return new;
 end
 $$ language plpgsql;
+--Testcase 853:
 create trigger remp1_br_insert_trigger before insert on remp1
 	for each row execute procedure br_insert_trigfunc();
+--Testcase 854:
 create trigger remp2_br_insert_trigger before insert on remp2
 	for each row execute procedure br_insert_trigfunc();
 
@@ -2523,20 +2725,27 @@ insert into itrtest(a, b) values (1, 'foo');
 insert into itrtest(a, b) values (2, 'qux');
 --Testcase 594:
 insert into itrtest(a, b) values (1, 'test1'), (2, 'test2');
-with result as (insert into itrtest(a ,b) values (1, 'test1'), (2, 'test2') returning *) select * from result;
+--Testcase 855:
+with result as (insert into itrtest(a ,b) values (1, 'test1'), (2, 'test2') returning *) select a, b from result;
 
+--Testcase 856:
 drop trigger remp1_br_insert_trigger on remp1;
+--Testcase 857:
 drop trigger remp2_br_insert_trigger on remp2;
 
 --Testcase 595:
 delete from itrtest;
+--Testcase 858:
 drop table itrtest;
 
 
 -- Test update tuple routing
+--Testcase 859:
 create table utrtest (id serial, a int, b text) partition by list (a);
+--Testcase 860:
 create foreign table remp (id serial, a int check (a in (1)), b text) server griddb_svr options (table_name 'loct12');
 alter foreign table remp alter column id options (rowkey 'true');
+--Testcase 861:
 create table locp (id serial, a int check (a in (2)), b text);
 alter table utrtest attach partition remp for values in (1);
 alter table utrtest attach partition locp for values in (2);
@@ -2547,36 +2756,36 @@ insert into utrtest(a, b) values (1, 'foo');
 insert into utrtest(a, b) values (2, 'qux');
 
 --Testcase 598:
-select tableoid::regclass, * FROM utrtest;
+select tableoid::regclass, a, b FROM utrtest;
 --Testcase 599:
-select tableoid::regclass, * FROM remp;
+select tableoid::regclass, a, b FROM remp;
 --Testcase 600:
-select tableoid::regclass, * FROM locp;
+select tableoid::regclass, a, b FROM locp;
 
+-- GridDB not support
 -- It's not allowed to move a row from a partition that is foreign to another
 --Testcase 601:
-update utrtest set a = 2 where b = 'foo';
---Testcase 602:
-select * from utrtest;
+--update utrtest set a = 2 where b = 'foo' returning *;
 
 -- But the reverse is allowed
 --Testcase 603:
 update utrtest set a = 1 where b = 'qux';
 --Testcase 604:
-select * from utrtest;
+select a, b from utrtest where b = 'qux';
 
 --Testcase 605:
-select tableoid::regclass, * FROM utrtest;
+select tableoid::regclass, a, b FROM utrtest;
 --Testcase 606:
-select tableoid::regclass, * FROM remp;
+select tableoid::regclass, a, b FROM remp;
 --Testcase 607:
-select tableoid::regclass, * FROM locp;
+select tableoid::regclass, a, b FROM locp;
 
 -- The executor should not let unexercised FDWs shut down
 --Testcase 608:
 update utrtest set a = 1 where b = 'foo';
 
 -- Test that remote triggers work with update tuple routing
+--Testcase 862:
 create trigger remp_br_insert_trigger before insert on remp
 	for each row execute procedure br_insert_trigfunc();
 
@@ -2593,7 +2802,7 @@ update utrtest set a = 1 where a = 1 or a = 2;
 --Testcase 612:
 update utrtest set a = 1 where a = 1 or a = 2;
 --Testcase 613:
-select * from utrtest;
+select a, b from utrtest;
 
 --Testcase 614:
 delete from utrtest;
@@ -2608,8 +2817,9 @@ update utrtest set a = 1 where a = 2;
 --Testcase 617:
 update utrtest set a = 1 where a = 2;
 --Testcase 618:
-select * from utrtest;
+select a, b from utrtest;
 
+--Testcase 863:
 drop trigger remp_br_insert_trigger on remp;
 
 -- We can move rows to a foreign partition that has been updated already,
@@ -2630,7 +2840,7 @@ update utrtest set a = 1;
 --Testcase 623:
 update utrtest set a = 1;
 --Testcase 624:
-select * from utrtest;
+select a, b from utrtest;
 
 --Testcase 625:
 delete from utrtest;
@@ -2653,7 +2863,9 @@ select * from utrtest;
 --Testcase 631:
 delete from utrtest;
 alter table utrtest detach partition remp;
+--Testcase 864:
 drop foreign table remp;
+--Testcase 865:
 create foreign table remp (id serial, a int check (a in (3)), b text) server griddb_svr options (table_name 'loct21');
 alter foreign table remp alter column id options (rowkey 'true');
 alter foreign table remp drop constraint remp_a_check;
@@ -2681,12 +2893,16 @@ update utrtest set a = 3 from (values (2), (3)) s(x) where a = s.x;
 
 --Testcase 637:
 delete from utrtest;
+--Testcase 866:
 drop table utrtest;
 --drop table loct;
 
 -- Test copy tuple routing
+--Testcase 867:
 create table ctrtest (id serial, a int, b text) partition by list (a);
+--Testcase 868:
 create foreign table remp1 (id serial, a int, b text) server griddb_svr options (table_name 'loct12');
+--Testcase 869:
 create foreign table remp2 (id serial, a int, b text) server griddb_svr options (table_name 'loct21');
 alter foreign table remp1 alter column id options (rowkey 'true');
 alter foreign table remp2 alter column id options (rowkey 'true');
@@ -2697,51 +2913,55 @@ alter table ctrtest attach partition remp2 for values in (2);
 insert into ctrtest(a, b) values (1, 'foo'), (2, 'qux');
 
 --Testcase 639:
-select tableoid::regclass, * FROM ctrtest;
+select tableoid::regclass, a, b FROM ctrtest;
 --Testcase 640:
-select tableoid::regclass, * FROM remp1;
+select tableoid::regclass, a, b FROM remp1;
 --Testcase 641:
-select tableoid::regclass, * FROM remp2;
+select tableoid::regclass, b, a FROM remp2;
 
+-- GridDB not support partitions by
 -- Copying into foreign partitions directly should work as well
 copy remp1(a, b) from stdin;
 1	bar
 \.
 
 --Testcase 642:
-select tableoid::regclass, * FROM remp1;
+select tableoid::regclass, a, b FROM remp1;
 
 --Testcase 643:
 delete from ctrtest;
+--Testcase 870:
 drop table ctrtest;
 
 -- ===================================================================
 -- test COPY FROM
 -- ===================================================================
 
-create foreign table rem2 (id serial, a int, b text) server griddb_svr options(table_name 'loct12');
+--Testcase 871:
+create foreign table rem2 (id serial, f1 int, f2 text) server griddb_svr options(table_name 'loct12');
 alter foreign table rem2 alter column id options (rowkey 'true');
 
 -- Test basic functionality
 --Testcase 644:
-insert into rem2(a, b) values (1, 'foo'), (2, 'bar');
+insert into rem2(f1, f2) values (1, 'foo'), (2, 'bar');
 --Testcase 645:
-select * from rem2;
+select f1, f2 from rem2;
 
 --Testcase 646:
 delete from rem2;
 
 -- Test check constraints
-alter foreign table rem2 add constraint rem2_f1positive check (a >= 0);
+alter foreign table rem2 add constraint rem2_f1positive check (f1 >= 0);
 
 -- check constraint is enforced on the remote side, not locally
 --Testcase 647:
-insert into rem2(a, b) values (1, 'foo'), (2, 'bar');
+insert into rem2(f1, f2) values (1, 'foo'), (2, 'bar');
+-- GridDB not support constraint
 --Testcase 648:
-insert into rem2(a, b) values (-1, 'xyzzy');
+--insert into rem2(f1, f2) values (-1, 'xyzzy');
 
 --Testcase 649:
-select * from rem2;
+select f1, f2 from rem2;
 
 alter foreign table rem2 drop constraint rem2_f1positive;
 --alter table loc2 drop constraint loc2_f1positive;
@@ -2750,120 +2970,143 @@ alter foreign table rem2 drop constraint rem2_f1positive;
 delete from rem2;
 
 -- Test local triggers
+--Testcase 872:
 create trigger trig_stmt_before before insert on rem2
 	for each statement execute procedure trigger_func();
+--Testcase 873:
 create trigger trig_stmt_after after insert on rem2
 	for each statement execute procedure trigger_func();
+--Testcase 874:
 create trigger trig_row_before before insert on rem2
 	for each row execute procedure trigger_data(23,'skidoo');
+--Testcase 875:
 create trigger trig_row_after after insert on rem2
 	for each row execute procedure trigger_data(23,'skidoo');
 
-copy rem2(a, b) from stdin;
+copy rem2(f1, f2) from stdin;
 1	foo
 2	bar
 \.
 --Testcase 651:
-select * from rem2;
+select f1, f2 from rem2;
 
+--Testcase 876:
 drop trigger trig_row_before on rem2;
+--Testcase 877:
 drop trigger trig_row_after on rem2;
+--Testcase 878:
 drop trigger trig_stmt_before on rem2;
+--Testcase 879:
 drop trigger trig_stmt_after on rem2;
 
 --Testcase 652:
 delete from rem2;
 
+--Testcase 880:
 CREATE FUNCTION trig_row_before_insupdate1() RETURNS TRIGGER AS $$
   BEGIN
-    NEW.b := NEW.b || ' triggered !';
+    NEW.f2 := NEW.f2 || ' triggered !';
     RETURN NEW;
   END
 $$ language plpgsql;
 
 
+--Testcase 881:
 create trigger trig_row_before_insert before insert on rem2
 	for each row execute procedure trig_row_before_insupdate1();
 
 -- The new values are concatenated with ' triggered !'
-copy rem2(a, b) from stdin;
+copy rem2(f1, f2) from stdin;
 1	foo
 2	bar
 \.
 --Testcase 653:
-select * from rem2;
+select f1, f2 from rem2;
 
+--Testcase 882:
 drop trigger trig_row_before_insert on rem2;
 
 --Testcase 654:
 delete from rem2;
 
+--Testcase 883:
 create trigger trig_null before insert on rem2
 	for each row execute procedure trig_null();
 
 -- Nothing happens
-copy rem2(a, b) from stdin;
+copy rem2(f1, f2) from stdin;
 1	foo
 2	bar
 \.
 --Testcase 655:
-select * from rem2;
+select f1, f2 from rem2;
 
+--Testcase 884:
 drop trigger trig_null on rem2;
 
 --Testcase 656:
 delete from rem2;
 
 -- Test remote triggers
+--Testcase 885:
 create trigger trig_row_before_insert before insert on rem2
 	for each row execute procedure trig_row_before_insupdate1();
 
 -- The new values are concatenated with ' triggered !'
-copy rem2(a, b) from stdin;
+copy rem2(f1, f2) from stdin;
 1	foo
 2	bar
 \.
 --Testcase 657:
-select * from rem2;
+select f1, f2 from rem2;
 
+--Testcase 886:
 drop trigger trig_row_before_insert on rem2;
 
 --Testcase 658:
 delete from rem2;
 
+--Testcase 887:
 create trigger trig_null before insert on rem2
 	for each row execute procedure trig_null();
 
 -- Nothing happens
-copy rem2(a, b) from stdin;
+copy rem2(f1, f2) from stdin;
 1	foo
 2	bar
 \.
 --Testcase 659:
-select * from rem2;
+select f1, f2 from rem2;
 
+--Testcase 888:
 drop trigger trig_null on rem2;
 
 --Testcase 660:
 delete from rem2;
 
 -- Test a combination of local and remote triggers
+--Testcase 889:
 create trigger rem2_trig_row_before before insert on rem2
 	for each row execute procedure trigger_data(23,'skidoo');
+--Testcase 890:
 create trigger rem2_trig_row_after after insert on rem2
 	for each row execute procedure trigger_data(23,'skidoo');
+--Testcase 891:
 create trigger loc2_trig_row_before_insert before insert on rem2
 	for each row execute procedure trig_row_before_insupdate1();
 
-copy rem2(a, b) from stdin;
+copy rem2(f1, f2) from stdin;
 1	foo
 2	bar
 \.
 --Testcase 661:
-select * from rem2;
+select f1, f2 from rem2;
 
+--Testcase 892:
 drop trigger rem2_trig_row_before on rem2;
+--Testcase 893:
 drop trigger rem2_trig_row_after on rem2;
+--Testcase 894:
 drop trigger loc2_trig_row_before_insert on rem2;
 
 --Testcase 662:
@@ -2872,6 +3115,7 @@ delete from rem2;
 -- test COPY FROM with foreign table created in the same transaction
 --create table loc3 (f1 int, f2 text);
 begin;
+--Testcase 895:
 create foreign table rem3 (f1 int, f2 text)
 	server griddb_svr options(table_name 'loc3');
 copy rem3(f1, f2) from stdin;
@@ -2881,6 +3125,7 @@ copy rem3(f1, f2) from stdin;
 commit;
 --Testcase 663:
 select * from rem3;
+--Testcase 896:
 drop foreign table rem3;
 --drop table loc3;
 
@@ -2888,6 +3133,7 @@ drop foreign table rem3;
 -- test IMPORT FOREIGN SCHEMA
 -- ===================================================================
 
+--Testcase 897:
 CREATE SCHEMA import_grid1;
 IMPORT FOREIGN SCHEMA "S 1" LIMIT TO
 	("T0", "T1", "T2", "T3", "T4", ft1)
@@ -2922,6 +3168,7 @@ IMPORT FOREIGN SCHEMA "S 1" LIMIT TO
 \d import_grid3.*
 */
 -- Check LIMIT TO and EXCEPT
+--Testcase 898:
 CREATE SCHEMA import_grid4;
 IMPORT FOREIGN SCHEMA griddb_schema LIMIT TO ("T1", nonesuch)
   FROM SERVER griddb_svr INTO import_grid4;
@@ -2941,6 +3188,7 @@ IMPORT FOREIGN SCHEMA nonesuch FROM SERVER nowhere INTO notthere;
 
 -- Check case of a type present only on the remote server.
 -- We can fake this by dropping the type locally in our transaction.
+--Testcase 899:
 CREATE SCHEMA import_grid5;
 BEGIN;
 IMPORT FOREIGN SCHEMA griddb_schema LIMIT TO ("T1")
@@ -2997,10 +3245,15 @@ ROLLBACK;
 */
 -- Drop schemas
 SET client_min_messages to WARNING;
+--Testcase 900:
 DROP SCHEMA import_grid1 CASCADE;
+--Testcase 901:
 DROP SCHEMA import_grid2 CASCADE;
+--Testcase 902:
 DROP SCHEMA import_grid3 CASCADE;
+--Testcase 903:
 DROP SCHEMA import_grid4 CASCADE;
+--Testcase 904:
 DROP SCHEMA import_grid5 CASCADE;
 SET client_min_messages to NOTICE;
 
@@ -3009,27 +3262,37 @@ SET client_min_messages to NOTICE;
 -- ===================================================================
 SET enable_partitionwise_join=on;
 
+--Testcase 905:
 CREATE TABLE fprt1 (a int, b int, c text) PARTITION BY RANGE(a);
 --Testcase 678:
 INSERT INTO "S 1".fprt1_p1 SELECT i, i, to_char(i/50, 'FM0000') FROM generate_series(0, 249, 2) i;
 --Testcase 679:
 INSERT INTO "S 1".fprt1_p2 SELECT i, i, to_char(i/50, 'FM0000') FROM generate_series(250, 499, 2) i;
+--Testcase 906:
 CREATE FOREIGN TABLE ftprt1_p1 PARTITION OF fprt1 FOR VALUES FROM (0) TO (250)
 	SERVER griddb_svr OPTIONS (table_name 'fprt1_p1');
+--Testcase 907:
 CREATE FOREIGN TABLE ftprt1_p2 PARTITION OF fprt1 FOR VALUES FROM (250) TO (500)
 	SERVER griddb_svr OPTIONS (TABLE_NAME 'fprt1_p2');
-
+--ANALYZE fprt1;
+--ANALYZE fprt1_p1;
+--ANALYZE fprt1_p2;
+--Testcase 908:
 CREATE TABLE fprt2 (a int, b int, c text) PARTITION BY RANGE(b);
 --Testcase 680:
 INSERT INTO "S 1".fprt2_p1 SELECT i, i, to_char(i/50, 'FM0000') FROM generate_series(0, 249, 3) i;
 --Testcase 681:
 INSERT INTO "S 1".fprt2_p2 SELECT i, i, to_char(i/50, 'FM0000') FROM generate_series(250, 499, 3) i;
+--Testcase 909:
 CREATE FOREIGN TABLE ftprt2_p1 (a int, b int, c text)
 	SERVER griddb_svr OPTIONS (table_name 'fprt2_p1');
 ALTER TABLE fprt2 ATTACH PARTITION ftprt2_p1 FOR VALUES FROM (0) TO (250);
+--Testcase 910:
 CREATE FOREIGN TABLE ftprt2_p2 PARTITION OF fprt2 FOR VALUES FROM (250) TO (500)
 	SERVER griddb_svr OPTIONS (table_name 'fprt2_p2');
-
+--ANALYZE fprt2;
+--ANALYZE fprt2_p1;
+--ANALYZE fprt2_p2;
 -- inner join three tables
 --Testcase 682:
 EXPLAIN (COSTS OFF)
@@ -3079,6 +3342,7 @@ RESET enable_partitionwise_join;
 -- test partitionwise aggregates
 -- ===================================================================
 
+--Testcase 911:
 CREATE TABLE pagg_tab (t int, a int, b int, c text) PARTITION BY RANGE(a);
 
 --Testcase 694:
@@ -3089,10 +3353,16 @@ INSERT INTO "S 1".pagg_tab_p2 SELECT i, i % 30, i % 50, to_char(i/30, 'FM0000') 
 INSERT INTO "S 1".pagg_tab_p3 SELECT i, i % 30, i % 50, to_char(i/30, 'FM0000') FROM generate_series(1, 3000) i WHERE (i % 30) < 30 and (i % 30) >= 20;
 
 -- Create foreign partitions
+--Testcase 912:
 CREATE FOREIGN TABLE fpagg_tab_p1 PARTITION OF pagg_tab FOR VALUES FROM (0) TO (10) SERVER griddb_svr OPTIONS (table_name 'pagg_tab_p1');
+--Testcase 913:
 CREATE FOREIGN TABLE fpagg_tab_p2 PARTITION OF pagg_tab FOR VALUES FROM (10) TO (20) SERVER griddb_svr OPTIONS (table_name 'pagg_tab_p2');;
+--Testcase 914:
 CREATE FOREIGN TABLE fpagg_tab_p3 PARTITION OF pagg_tab FOR VALUES FROM (20) TO (30) SERVER griddb_svr OPTIONS (table_name 'pagg_tab_p3');;
-
+--ANALYZE pagg_tab;
+--ANALYZE fpagg_tab_p1;
+--ANALYZE fpagg_tab_p2;
+--ANALYZE fpagg_tab_p3;
 -- When GROUP BY clause matches with PARTITION KEY.
 -- Plan with partitionwise aggregates is disabled
 SET enable_partitionwise_aggregate TO false;
@@ -3121,26 +3391,143 @@ SELECT a, count(t1) FROM pagg_tab t1 GROUP BY a HAVING avg(b) < 22 ORDER BY 1;
 EXPLAIN (COSTS OFF)
 SELECT b, avg(a), max(a), count(*) FROM pagg_tab GROUP BY b HAVING sum(a) < 700 ORDER BY 1;
 
+-- Skip test because GridDB not support no super user
+-- ===================================================================
+-- access rights and superuser
+-- ===================================================================
+/*
+-- Non-superuser cannot create a FDW without a password in the connstr
+CREATE ROLE regress_nosuper NOSUPERUSER;
+
+GRANT USAGE ON FOREIGN DATA WRAPPER griddb_fdw TO regress_nosuper;
+
+SET ROLE regress_nosuper;
+
+SHOW is_superuser;
+
+-- This will be OK, we can create the FDW
+DO $d$
+    BEGIN
+        EXECUTE $$CREATE SERVER griddb_fdw_nopw FOREIGN DATA WRAPPER griddb_fdw
+            OPTIONS (host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster')$$;
+    END;
+$d$;
+
+-- But creation of user mappings for non-superusers should fail
+CREATE USER MAPPING FOR public SERVER griddb_fdw_nopw OPTIONS (username 'admin', password 'testadmin');
+CREATE USER MAPPING FOR CURRENT_USER SERVER griddb_fdw_nopw;
+
+CREATE FOREIGN TABLE ft1_nopw (
+	c1 int OPTIONS (rowkey 'true'),
+	c2 int NOT NULL,
+	c3 text,
+	c4 timestamp,
+	c5 timestamp,
+	c6 text,
+	c7 text default 'ft1',
+	c8 text
+) SERVER griddb_fdw_nopw OPTIONS (table_name 'ft1');
+
+SELECT * FROM ft1_nopw LIMIT 1;
+
+-- If we add a password to the connstr it'll fail, because we don't allow passwords
+-- in connstrs only in user mappings.
+
+DO $d$
+    BEGIN
+        EXECUTE $$ALTER SERVER griddb_fdw_nopw OPTIONS (ADD password 'dummypw')$$;
+    END;
+$d$;
+
+-- If we add a password for our user mapping instead, we should get a different
+-- error because the password wasn't actually *used* when we run with trust auth.
+--
+-- This won't work with installcheck, but neither will most of the FDW checks.
+
+ALTER USER MAPPING FOR CURRENT_USER SERVER griddb_fdw_nopw OPTIONS (ADD password 'dummypw');
+
+SELECT * FROM ft1_nopw LIMIT 1;
+
+-- Unpriv user cannot make the mapping passwordless
+ALTER USER MAPPING FOR CURRENT_USER SERVER griddb_fdw_nopw OPTIONS (ADD password_required 'false');
+
+
+SELECT * FROM ft1_nopw LIMIT 1;
+
+RESET ROLE;
+
+-- But the superuser can
+ALTER USER MAPPING FOR regress_nosuper SERVER griddb_fdw_nopw OPTIONS (ADD password_required 'false');
+
+SET ROLE regress_nosuper;
+
+-- Should finally work now
+SELECT * FROM ft1_nopw LIMIT 1;
+
+-- unpriv user also cannot set sslcert / sslkey on the user mapping
+-- first set password_required so we see the right error messages
+ALTER USER MAPPING FOR CURRENT_USER SERVER griddb_fdw_nopw OPTIONS (SET password_required 'true');
+ALTER USER MAPPING FOR CURRENT_USER SERVER griddb_fdw_nopw OPTIONS (ADD sslcert 'foo.crt');
+ALTER USER MAPPING FOR CURRENT_USER SERVER griddb_fdw_nopw OPTIONS (ADD sslkey 'foo.key');
+
+-- We're done with the role named after a specific user and need to check the
+-- changes to the public mapping.
+DROP USER MAPPING FOR CURRENT_USER SERVER griddb_fdw_nopw;
+
+-- This will fail again as it'll resolve the user mapping for public, which
+-- lacks password_required=false
+SELECT * FROM ft1_nopw LIMIT 1;
+
+RESET ROLE;
+
+-- The user mapping for public is passwordless and lacks the password_required=false
+-- mapping option, but will work because the current user is a superuser.
+SELECT * FROM ft1_nopw LIMIT 1;
+
+-- cleanup
+DROP USER MAPPING FOR public SERVER griddb_fdw_nopw;
+DROP OWNED BY regress_nosuper;
+DROP ROLE regress_nosuper;
+*/
 
 -- Clean-up
 RESET enable_partitionwise_aggregate;
+
+-- GridDB has different result because GridDB does not run test check constraints
+-- Two-phase transactions are not supported.
+BEGIN;
+--Testcase 915:
+SELECT count(*) FROM ft1;
+-- error here
+--Testcase 916:
+PREPARE TRANSACTION 'fdw_tpc';
+ROLLBACK;
+
 SET client_min_messages to WARNING;
 
 DO $$ DECLARE
     r RECORD;
 BEGIN
     FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = current_schema()) LOOP
+--Testcase 917:
         EXECUTE 'DROP TABLE IF EXISTS ' || quote_ident(r.tablename);
     END LOOP;
 END $$;
 
 -- Drop all foreign tables
+--Testcase 918:
 DROP USER MAPPING FOR public SERVER griddb_svr;
+--Testcase 919:
 DROP USER MAPPING FOR public SERVER griddb_svr2;
+--Testcase 920:
 DROP USER MAPPING FOR public SERVER testserver1;
+--Testcase 921:
 DROP SERVER griddb_svr CASCADE;
+--Testcase 922:
 DROP SERVER griddb_svr2 CASCADE;
+--Testcase 923:
 DROP SERVER testserver1 CASCADE;
+--Testcase 924:
 DROP EXTENSION griddb_fdw CASCADE;
 SET client_min_messages to NOTICE;
 

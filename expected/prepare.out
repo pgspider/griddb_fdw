@@ -1,9 +1,13 @@
 -- Regression tests for prepareable statements. We query the content
 -- of the pg_prepared_statements view as prepared statements are
 -- created and removed.
+--Testcase 27:
 CREATE EXTENSION griddb_fdw;
+--Testcase 28:
 CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS(host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster');
+--Testcase 29:
 CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS(username 'admin', password 'testadmin');
+--Testcase 30:
 CREATE FOREIGN TABLE tenk1 (
 	unique1		int4,
 	unique2		int4,
@@ -23,10 +27,19 @@ CREATE FOREIGN TABLE tenk1 (
 	string4		text
 ) SERVER griddb_svr;
 --ALTER TABLE tenk1 SET WITH OIDS;
+--Testcase 31:
 CREATE FOREIGN TABLE road (
 	name		text,
 	thepath 	text
 ) SERVER griddb_svr;
+--Testcase 32:
+CREATE FOREIGN TABLE road_tmp (
+	id serial OPTIONS (rowkey 'true'),
+	a int4,
+	b int4
+) SERVER griddb_svr;
+--Testcase 33:
+insert into road_tmp(a, b) values (1, 2);
 --Testcase 1:
 SELECT name, statement, parameter_types FROM pg_prepared_statements;
  name | statement | parameter_types 
@@ -34,53 +47,53 @@ SELECT name, statement, parameter_types FROM pg_prepared_statements;
 (0 rows)
 
 --Testcase 2:
-PREPARE q1 AS SELECT * FROM road LIMIT 1;
+PREPARE q1 AS SELECT a FROM road_tmp;
 --Testcase 3:
 EXECUTE q1;
-                name                |                   thepath                   
-------------------------------------+---------------------------------------------
- A                             St   | [(-122.1172,37.659),(-122.119506,37.65661)]
+ a 
+---
+ 1
 (1 row)
 
 --Testcase 4:
 SELECT name, statement, parameter_types FROM pg_prepared_statements;
- name |                 statement                 | parameter_types 
-------+-------------------------------------------+-----------------
- q1   | PREPARE q1 AS SELECT * FROM road LIMIT 1; | {}
+ name |               statement               | parameter_types 
+------+---------------------------------------+-----------------
+ q1   | PREPARE q1 AS SELECT a FROM road_tmp; | {}
 (1 row)
 
 -- should fail
 --Testcase 5:
-PREPARE q1 AS SELECT * FROM tenk1 LIMIT 1;
+PREPARE q1 AS SELECT b FROM road_tmp;
 ERROR:  prepared statement "q1" already exists
 -- should succeed
 DEALLOCATE q1;
 --Testcase 6:
-PREPARE q1 AS SELECT * FROM tenk1 LIMIT 1;
+PREPARE q1 AS SELECT b FROM road_tmp;
 --Testcase 7:
 EXECUTE q1;
- unique1 | unique2 | two | four | ten | twenty | hundred | thousand | twothousand | fivethous | tenthous | odd | even | stringu1 | stringu2 | string4 
----------+---------+-----+------+-----+--------+---------+----------+-------------+-----------+----------+-----+------+----------+----------+---------
-    8800 |       0 |   0 |    0 |   0 |      0 |       0 |      800 |         800 |      3800 |     8800 |   0 |    1 | MAAAAA   | AAAAAA   | AAAAxx
+ b 
+---
+ 2
 (1 row)
 
 --Testcase 8:
-PREPARE q2 AS SELECT * FROM tenk1 LIMIT 1;
+PREPARE q2 AS SELECT b FROM road_tmp;
 --Testcase 9:
 SELECT name, statement, parameter_types FROM pg_prepared_statements;
- name |                 statement                  | parameter_types 
-------+--------------------------------------------+-----------------
- q1   | PREPARE q1 AS SELECT * FROM tenk1 LIMIT 1; | {}
- q2   | PREPARE q2 AS SELECT * FROM tenk1 LIMIT 1; | {}
+ name |               statement               | parameter_types 
+------+---------------------------------------+-----------------
+ q1   | PREPARE q1 AS SELECT b FROM road_tmp; | {}
+ q2   | PREPARE q2 AS SELECT b FROM road_tmp; | {}
 (2 rows)
 
 -- sql92 syntax
 DEALLOCATE PREPARE q1;
 --Testcase 10:
 SELECT name, statement, parameter_types FROM pg_prepared_statements;
- name |                 statement                  | parameter_types 
-------+--------------------------------------------+-----------------
- q2   | PREPARE q2 AS SELECT * FROM tenk1 LIMIT 1; | {}
+ name |               statement               | parameter_types 
+------+---------------------------------------+-----------------
+ q2   | PREPARE q2 AS SELECT b FROM road_tmp; | {}
 (1 row)
 
 DEALLOCATE PREPARE q2;
@@ -157,6 +170,8 @@ DETAIL:  Expected 5 parameters but got 6.
 --Testcase 18:
 EXECUTE q3(5::smallint, 10.5::float, false, 4::bigint, 'bytea');
 ERROR:  parameter $3 of type boolean cannot be coerced to the expected type double precision
+LINE 1: EXECUTE q3(5::smallint, 10.5::float, false, 4::bigint, 'byte...
+                                             ^
 HINT:  You will need to rewrite or cast the expression.
 -- invalid type
 --Testcase 19:
@@ -169,6 +184,7 @@ LINE 1: PREPARE q4(nonexistenttype) AS SELECT * FROM road WHERE name...
 PREPARE q5(int, text) AS
 	SELECT * FROM tenk1 WHERE unique1 = $1 OR stringu1 = $2
 	ORDER BY unique1;
+--Testcase 34:
 CREATE TEMPORARY TABLE q5_prep_results AS EXECUTE q5(200, 'DTAAAA');
 --Testcase 21:
 SELECT * FROM q5_prep_results;
@@ -192,6 +208,7 @@ SELECT * FROM q5_prep_results;
     9961 |    2058 |   1 |    1 |   1 |      1 |      61 |      961 |        1961 |      4961 |     9961 | 122 |  123 | DTAAAA   | EBDAAA   | OOOOxx
 (16 rows)
 
+--Testcase 35:
 CREATE TEMPORARY TABLE q5_prep_nodata AS EXECUTE q5(200, 'DTAAAA')
     WITH NO DATA;
 --Testcase 22:
@@ -237,8 +254,14 @@ SELECT name, statement, parameter_types FROM pg_prepared_statements
 ------+-----------+-----------------
 (0 rows)
 
+--Testcase 36:
 DROP FOREIGN TABLE tenk1;
+--Testcase 37:
 DROP FOREIGN TABLE road;
+--Testcase 38:
 DROP USER MAPPING FOR public SERVER griddb_svr;
+--Testcase 39:
 DROP SERVER griddb_svr CASCADE;
+NOTICE:  drop cascades to foreign table road_tmp
+--Testcase 40:
 DROP EXTENSION griddb_fdw CASCADE;
