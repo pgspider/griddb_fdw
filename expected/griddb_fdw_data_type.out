@@ -1,5 +1,8 @@
+--Testcase 261:
 CREATE EXTENSION griddb_fdw;
+--Testcase 262:
 CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS(host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster');
+--Testcase 263:
 CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS(username 'admin', password 'testadmin');
 IMPORT FOREIGN SCHEMA griddb_schema FROM SERVER griddb_svr INTO public;
 -- GridDB containers type_XXX must be created for this test on GridDB server
@@ -25,21 +28,25 @@ CREATE TABLE type_double_array (col1 integer primary key, col2 double[])
 CREATE TABLE type_timestamp_array (col1 integer primary key, col2 timestamp[])
 -- CREATE TABLE type_geometry (col1 integer primary key, col2 geometry)
 */
+--Testcase 264:
 CREATE TABLE tbl_string(col1 text);
 --Testcase 1:
 INSERT INTO tbl_string VALUES('stringba');
 --Testcase 2:
 INSERT INTO tbl_string VALUES('stringaaa');
+--Testcase 265:
 CREATE TABLE tbl_integer(col1 integer);
 --Testcase 3:
 INSERT INTO tbl_integer VALUES(32771);
 --Testcase 4:
 INSERT INTO tbl_integer VALUES(32769);
+--Testcase 266:
 CREATE TABLE tbl_long(col1 bigint);
 --Testcase 5:
 INSERT INTO tbl_long VALUES(2147483651);
 --Testcase 6:
 INSERT INTO tbl_long VALUES(2147483648);
+--Testcase 267:
 CREATE TABLE tbl_timestamp(col1 timestamp);
 --Testcase 7:
 INSERT INTO tbl_timestamp VALUES(to_timestamp('2010.07.01 08:15:00.123', 'YYYY.MM.DD HH24:MI:SS.MS'));
@@ -1050,26 +1057,46 @@ DELETE FROM type_double_array;
 --Testcase 259:
 DELETE FROM type_timestamp_array;
 -- DELETE FROM type_geometry;
+--Testcase 268:
 DROP FOREIGN TABLE type_string;
+--Testcase 269:
 DROP FOREIGN TABLE type_boolean;
+--Testcase 270:
 DROP FOREIGN TABLE type_byte;
+--Testcase 271:
 DROP FOREIGN TABLE type_short;
+--Testcase 272:
 DROP FOREIGN TABLE type_integer;
+--Testcase 273:
 DROP FOREIGN TABLE type_long;
+--Testcase 274:
 DROP FOREIGN TABLE type_float;
+--Testcase 275:
 DROP FOREIGN TABLE type_double;
+--Testcase 276:
 DROP FOREIGN TABLE type_timestamp;
+--Testcase 277:
 DROP FOREIGN TABLE type_blob;
+--Testcase 278:
 DROP FOREIGN TABLE type_string_array;
+--Testcase 279:
 DROP FOREIGN TABLE type_bool_array;
+--Testcase 280:
 DROP FOREIGN TABLE type_byte_array;
+--Testcase 281:
 DROP FOREIGN TABLE type_short_array;
+--Testcase 282:
 DROP FOREIGN TABLE type_integer_array;
+--Testcase 283:
 DROP FOREIGN TABLE type_long_array;
+--Testcase 284:
 DROP FOREIGN TABLE type_float_array;
+--Testcase 285:
 DROP FOREIGN TABLE type_double_array;
+--Testcase 286:
 DROP FOREIGN TABLE type_timestamp_array;
 -- DROP FOREIGN TABLE type_geometry;
+--Testcase 287:
 CREATE OR REPLACE FUNCTION drop_all_foreign_tables() RETURNS void AS $$
 DECLARE
   tbl_name varchar;
@@ -1077,6 +1104,7 @@ DECLARE
 BEGIN
   FOR tbl_name IN SELECT foreign_table_name FROM information_schema._pg_foreign_tables LOOP
     cmd := 'DROP FOREIGN TABLE ' || quote_ident(tbl_name);
+--Testcase 288:
     EXECUTE cmd;
   END LOOP;
   RETURN;
@@ -1089,6 +1117,9 @@ SELECT drop_all_foreign_tables();
  
 (1 row)
 
+--Testcase 289:
 DROP USER MAPPING FOR public SERVER griddb_svr;
+--Testcase 290:
 DROP SERVER griddb_svr CASCADE;
+--Testcase 291:
 DROP EXTENSION griddb_fdw CASCADE;

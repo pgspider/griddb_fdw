@@ -1,7 +1,7 @@
 # GridDB Foreign Data Wrapper for PostgreSQL
 
 This PostgreSQL extension is a Foreign Data Wrapper (FDW) for [GridDB][1].  
-This version of griddb_fdw can work for PostgreSQL 9.6, 10 and 11, 12.  
+This version of griddb_fdw can work for PostgreSQL 9.6, 10 and 11, 12, 13.
 
 
 ## 1. Installation

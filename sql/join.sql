@@ -2,10 +2,14 @@
 -- JOIN
 -- Test JOIN clauses
 --
+--Testcase 454:
 CREATE EXTENSION griddb_fdw;
+--Testcase 455:
 CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS(host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster');
+--Testcase 456:
 CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS(username 'admin', password 'testadmin');
 
+--Testcase 457:
 CREATE FOREIGN TABLE J1_TBL (
   id serial OPTIONS (rowkey 'true'),
   i integer,
@@ -13,12 +17,14 @@ CREATE FOREIGN TABLE J1_TBL (
   t text
 ) SERVER griddb_svr; 
 
+--Testcase 458:
 CREATE FOREIGN TABLE J2_TBL (
   id serial OPTIONS (rowkey 'true'),
   i integer,
   k integer
 ) SERVER griddb_svr;
 
+--Testcase 459:
 CREATE FOREIGN TABLE tenk1 (
   unique1   int4,
   unique2   int4,
@@ -38,6 +44,7 @@ CREATE FOREIGN TABLE tenk1 (
   string4   text
 ) SERVER griddb_svr;
 
+--Testcase 460:
 CREATE FOREIGN TABLE tenk2 (
   unique1   int4,
   unique2   int4,
@@ -57,9 +64,13 @@ CREATE FOREIGN TABLE tenk2 (
   string4   text
 ) SERVER griddb_svr;
 
+--Testcase 461:
 CREATE FOREIGN TABLE INT4_TBL(id int4 OPTIONS (rowkey 'true'), f1 int4) SERVER griddb_svr;
+--Testcase 462:
 CREATE FOREIGN TABLE FLOAT8_TBL(id int4 OPTIONS (rowkey 'true'), f1 float8) SERVER griddb_svr;
+--Testcase 463:
 CREATE FOREIGN TABLE INT8_TBL(id int4 OPTIONS (rowkey 'true'), q1 int8, q2 int8) SERVER griddb_svr;
+--Testcase 464:
 CREATE FOREIGN TABLE INT2_TBL(id int4 OPTIONS (rowkey 'true'), f1 int2) SERVER griddb_svr;
 
 --Testcase 1:
@@ -105,6 +116,7 @@ INSERT INTO J2_TBL(i, k) VALUES (NULL, NULL);
 INSERT INTO J2_TBL(i, k) VALUES (NULL, 0);
 
 -- useful in some tests below
+--Testcase 465:
 create temp table onerow();
 --Testcase 21:
 insert into onerow default values;
@@ -115,19 +127,19 @@ insert into onerow default values;
 --
 
 --Testcase 22:
-SELECT '' AS "xxx", *
+SELECT '' AS "xxx", i, j, t
   FROM J1_TBL AS tx;
 
 --Testcase 23:
-SELECT '' AS "xxx", *
+SELECT '' AS "xxx", i, j, t
   FROM J1_TBL tx;
 
 --Testcase 24:
-SELECT '' AS "xxx", *
+SELECT '' AS "xxx", a, b, c
   FROM J1_TBL AS t1 (id, a, b, c);
 
 --Testcase 25:
-SELECT '' AS "xxx", *
+SELECT '' AS "xxx", a, b, c
   FROM J1_TBL t1 (id, a, b, c);
 
 --Testcase 26:
@@ -147,13 +159,13 @@ SELECT '' AS "xxx", t1.a, t2.e
 --
 
 --Testcase 28:
-SELECT '' AS "xxx", i, j, t, i1, k
+SELECT '' AS "xxx", i, j, t, i1 as i, k
   FROM J1_TBL t1 (id, i, j, t) CROSS JOIN J2_TBL t2 (id, i1, k);
 
 -- ambiguous column
 --Testcase 29:
 SELECT '' AS "xxx", i, k, t
-  FROM J1_TBL t1 (id, i, j, t) CROSS JOIN J2_TBL t2 (id, i1, k);
+  FROM J1_TBL t1 (id, i, j, t) CROSS JOIN J2_TBL t2 (id, i, k);
 
 -- resolve previous ambiguity by specifying the table name
 --Testcase 30:
@@ -171,9 +183,8 @@ SELECT '' AS "xxx", tx.ii, tx.jj, tx.kk
     AS tx (id1, ii, jj, tt, id2, ii2, kk);
 
 --Testcase 33:
-SELECT '' AS "xxx", a.i, a.j, a.t, b.i, b.k
-  FROM J1_TBL CROSS JOIN J2_TBL a CROSS JOIN J2_TBL b;
-
+SELECT '' AS "xxx", x.i, x.j, x.t, a.i, a.k, b.i, b.k
+  FROM J1_TBL x CROSS JOIN J2_TBL a CROSS JOIN J2_TBL b;
 
 --
 --
@@ -189,21 +200,21 @@ SELECT '' AS "xxx", a.i, a.j, a.t, b.i, b.k
 
 -- Inner equi-join on specified column
 --Testcase 34:
-SELECT '' AS "xxx", *
+SELECT '' AS "xxx", i, j, t, k
   FROM J1_TBL INNER JOIN J2_TBL USING (i);
 
 -- Same as above, slightly different syntax
 --Testcase 35:
-SELECT '' AS "xxx", *
+SELECT '' AS "xxx", i, j, t, k
   FROM J1_TBL JOIN J2_TBL USING (i);
 
 --Testcase 36:
-SELECT '' AS "xxx", *
+SELECT '' AS "xxx", a, b, c, d
   FROM J1_TBL t1 (id, a, b, c) JOIN J2_TBL t2 (id, a, d) USING (a)
   ORDER BY a, d;
 
 --Testcase 37:
-SELECT '' AS "xxx", *
+SELECT '' AS "xxx", b, t1.a, c, t2.a
   FROM J1_TBL t1 (id, a, b, c) JOIN J2_TBL t2 (id, a, b) USING (b)
   ORDER BY b, t1.a;
 
@@ -228,7 +239,7 @@ SELECT '' AS "xxx", a, b, c, d
 -- mismatch number of columns
 -- currently, Postgres will fill in with underlying names
 --Testcase 41:
-SELECT '' AS "xxx", *
+SELECT '' AS "xxx", a, b, t, k
   FROM J1_TBL t1 (id1, a, b) NATURAL JOIN J2_TBL t2 (id2, a);
 
 
@@ -237,11 +248,11 @@ SELECT '' AS "xxx", *
 --
 
 --Testcase 42:
-SELECT '' AS "xxx", *
+SELECT '' AS "xxx", J1_TBL.i, J1_TBL.j, J1_TBL.t, J2_TBL.i, J2_TBL.k
   FROM J1_TBL JOIN J2_TBL ON (J1_TBL.i = J2_TBL.i);
 
 --Testcase 43:
-SELECT '' AS "xxx", *
+SELECT '' AS "xxx", J1_TBL.i, J1_TBL.j, J1_TBL.t, J2_TBL.i, J2_TBL.k
   FROM J1_TBL JOIN J2_TBL ON (J1_TBL.i = J2_TBL.k);
 
 
@@ -250,7 +261,7 @@ SELECT '' AS "xxx", *
 --
 
 --Testcase 44:
-SELECT '' AS "xxx", *
+SELECT '' AS "xxx", J1_TBL.i, J1_TBL.j, J1_TBL.t, J2_TBL.i, J2_TBL.k
   FROM J1_TBL JOIN J2_TBL ON (J1_TBL.i <= J2_TBL.k);
 
 
@@ -260,39 +271,39 @@ SELECT '' AS "xxx", *
 --
 
 --Testcase 45:
-SELECT '' AS "xxx", *
+SELECT '' AS "xxx", i, j, t, k
   FROM J1_TBL LEFT OUTER JOIN J2_TBL USING (i)
   ORDER BY i, k, t;
 
 --Testcase 46:
-SELECT '' AS "xxx", *
+SELECT '' AS "xxx", i, j, t, k
   FROM J1_TBL LEFT JOIN J2_TBL USING (i)
   ORDER BY i, k, t;
 
 --Testcase 47:
-SELECT '' AS "xxx", *
+SELECT '' AS "xxx", i, j, t, k
   FROM J1_TBL RIGHT OUTER JOIN J2_TBL USING (i);
 
 --Testcase 48:
-SELECT '' AS "xxx", *
+SELECT '' AS "xxx", i, j, t, k
   FROM J1_TBL RIGHT JOIN J2_TBL USING (i);
 
 --Testcase 49:
-SELECT '' AS "xxx", *
+SELECT '' AS "xxx", i, j, t, k
   FROM J1_TBL FULL OUTER JOIN J2_TBL USING (i)
   ORDER BY i, k, t;
 
 --Testcase 50:
-SELECT '' AS "xxx", *
+SELECT '' AS "xxx", i, j, t, k
   FROM J1_TBL FULL JOIN J2_TBL USING (i)
   ORDER BY i, k, t;
 
 --Testcase 51:
-SELECT '' AS "xxx", *
+SELECT '' AS "xxx", i, j, t, k
   FROM J1_TBL LEFT JOIN J2_TBL USING (i) WHERE (k = 1);
 
 --Testcase 52:
-SELECT '' AS "xxx", *
+SELECT '' AS "xxx", i, j, t, k
   FROM J1_TBL LEFT JOIN J2_TBL USING (i) WHERE (i = 1);
 
 --
@@ -314,8 +325,11 @@ where exists(select * from tenk1 b
 -- Multiway full join
 --
 
+--Testcase 466:
 CREATE FOREIGN TABLE t11 (name TEXT, n INTEGER) SERVER griddb_svr;
+--Testcase 467:
 CREATE FOREIGN TABLE t21 (name TEXT, n INTEGER) SERVER griddb_svr;
+--Testcase 468:
 CREATE FOREIGN TABLE t31 (name TEXT, n INTEGER) SERVER griddb_svr;
 
 --Testcase 54:
@@ -429,6 +443,7 @@ ON (s1_n = s2_n);
 
 -- Test for propagation of nullability constraints into sub-joins
 
+--Testcase 469:
 create foreign table x (x1 int, x2 int) server griddb_svr;
 --Testcase 73:
 insert into x values (1,11);
@@ -441,6 +456,7 @@ insert into x values (4,44);
 --Testcase 77:
 insert into x values (5,null);
 
+--Testcase 470:
 create foreign table y (y1 int, y2 int) server griddb_svr;
 --Testcase 78:
 insert into y values (1,111);
@@ -517,6 +533,7 @@ rollback;
 --
 -- regression test: be sure we cope with proven-dummy append rels
 --
+--Testcase 471:
 create foreign table b0 (aa int, bb int) server griddb_svr;
 --Testcase 96:
 explain (costs off)
@@ -539,9 +556,9 @@ select * from int8_tbl i1 left join (int8_tbl i2 join
 order by 2, 3;
 
 --Testcase 99:
-select * from int8_tbl i1 left join (int8_tbl i2 join
+select i1.q1, i1.q2, i2.q1, i2.q2, x from int8_tbl i1 left join (int8_tbl i2 join
   (select 123 as x) ss on i2.q1 = x) on i1.q2 = i2.q2
-order by 2, 3;
+order by 1, 2;
 
 --
 -- regression test: check a case where join_clause_is_movable_into() gives
@@ -589,7 +606,7 @@ select * from
   on j1_tbl.i = j2_tbl.i and j1_tbl.i = j2_tbl.k;
 
 --Testcase 104:
-select * from
+select j1_tbl.i, j1_tbl.j, j1_tbl.t, j2_tbl.i, j2_tbl.k from
   j1_tbl full join
   (select * from j2_tbl order by j2_tbl.i desc, j2_tbl.k asc) j2_tbl
   on j1_tbl.i = j2_tbl.i and j1_tbl.i = j2_tbl.k;
@@ -617,18 +634,26 @@ select count(*) from
 -- Clean up
 --
 
+--Testcase 472:
 DROP FOREIGN TABLE t11;
+--Testcase 473:
 DROP FOREIGN TABLE t21;
+--Testcase 474:
 DROP FOREIGN TABLE t31;
 
+--Testcase 475:
 DROP FOREIGN TABLE J1_TBL;
+--Testcase 476:
 DROP FOREIGN TABLE J2_TBL;
 
 -- Both DELETE and UPDATE allow the specification of additional tables
 -- to "join" against to determine which rows should be modified.
 
+--Testcase 477:
 CREATE FOREIGN TABLE t12 (a int OPTIONS (rowkey 'true'), b int) SERVER griddb_svr;
+--Testcase 478:
 CREATE FOREIGN TABLE t22 (a int OPTIONS (rowkey 'true'), b int) SERVER griddb_svr;
+--Testcase 479:
 CREATE FOREIGN TABLE t32 (x int OPTIONS (rowkey 'true'), y int) SERVER griddb_svr;
 
 --Testcase 107:
@@ -665,6 +690,7 @@ SELECT * FROM t32;
 
 -- Test join against inheritance tree
 
+--Testcase 480:
 create temp table t2a () inherits (t22);
 
 --Testcase 122:
@@ -682,12 +708,14 @@ select t12.x from t12 join t32 on (t12.a = t32.x);
 -- regression test for 8.1 merge right join bug
 --
 
+--Testcase 481:
 CREATE FOREIGN TABLE tt1 ( tt1_id int4, joincol int4 ) SERVER griddb_svr;
 --Testcase 125:
 INSERT INTO tt1 VALUES (1, 11);
 --Testcase 126:
 INSERT INTO tt1 VALUES (2, NULL);
 
+--Testcase 482:
 CREATE FOREIGN TABLE tt2 ( tt2_id int4, joincol int4 ) SERVER griddb_svr;
 --Testcase 127:
 INSERT INTO tt2 VALUES (21, 11);
@@ -730,10 +758,12 @@ reset enable_mergejoin;
 -- regression test for 8.2 bug with improper re-ordering of left joins
 --
 
+--Testcase 483:
 create foreign table tt3(f1 int, f2 text) server griddb_svr;
 --Testcase 133:
 insert into tt3 select x, repeat('xyzzy', 100) from generate_series(1,10000) x;
 
+--Testcase 484:
 create foreign table tt4(f1 int) server griddb_svr;
 --Testcase 134:
 insert into tt4 values (0),(1),(9999);
@@ -752,6 +782,7 @@ WHERE d.f1 IS NULL;
 -- regression test for proper handling of outer joins within antijoins
 --
 
+--Testcase 485:
 create foreign table tt4x(c1 int, c2 int, c3 int) server griddb_svr;
 
 --Testcase 136:
@@ -770,7 +801,9 @@ where not exists (
 -- regression test for problems of the sort depicted in bug #3494
 --
 
+--Testcase 486:
 create foreign table tt5(id serial, f1 int, f2 int) server griddb_svr;
+--Testcase 487:
 create foreign table tt6(id serial, f1 int, f2 int) server griddb_svr;
 
 --Testcase 137:
@@ -786,13 +819,15 @@ insert into tt6(f1, f2) values(1, 2);
 insert into tt6(f1, f2) values(2, 9);
 
 --Testcase 142:
-select * from tt5,tt6 where tt5.f1 = tt6.f1 and tt5.f1 = tt5.f2 - tt6.f2;
+select tt5.f1, tt5.f2, tt6.f1, tt6.f2 from tt5,tt6 where tt5.f1 = tt6.f1 and tt5.f1 = tt5.f2 - tt6.f2;
 
 --
 -- regression test for problems of the sort depicted in bug #3588
 --
 
+--Testcase 488:
 create foreign table xx (pkxx int) server griddb_svr;
+--Testcase 489:
 create foreign table yy (pkyy int, pkxx int) server griddb_svr;
 
 --Testcase 143:
@@ -822,8 +857,11 @@ from yy
 -- (as seen in early 8.2.x releases)
 --
 
+--Testcase 490:
 create foreign table zt1 (f1 int OPTIONS(rowkey 'true')) server griddb_svr;
+--Testcase 491:
 create foreign table zt2 (f2 int OPTIONS(rowkey 'true')) server griddb_svr;
+--Testcase 492:
 create foreign table zt3 (f3 int OPTIONS(rowkey 'true')) server griddb_svr;
 --Testcase 150:
 insert into zt1 values(53);
@@ -836,6 +874,7 @@ select * from
       left join zt1 on (f3 = f1)
 where f2 = 53;
 
+--Testcase 493:
 create temp view zv1 as select *,'dummy'::text AS junk from zt1;
 
 --Testcase 153:
@@ -878,7 +917,9 @@ set enable_mergejoin = 1;
 set enable_hashjoin = 0;
 set enable_nestloop = 0;
 
+--Testcase 494:
 create foreign table a1 (i integer) server griddb_svr;
+--Testcase 495:
 create foreign table b1 (x integer, y integer) server griddb_svr;
 
 --Testcase 158:
@@ -936,14 +977,17 @@ group by t1.q2 order by 1;
 --
 begin;
 
+--Testcase 496:
 create foreign table a2 (
      code text OPTIONS (rowkey 'true')
 ) server griddb_svr;
+--Testcase 497:
 create foreign table b2 (
      id serial OPTIONS (rowkey 'true'),
      a text,
      num integer
 ) server griddb_svr;
+--Testcase 498:
 create foreign table c2 (
      name text OPTIONS (rowkey 'true'),
      a text
@@ -982,7 +1026,9 @@ rollback;
 -- per bug #6154
 --
 begin;
+--Testcase 499:
 create foreign table a1 (i integer) server griddb_svr;
+--Testcase 500:
 create foreign table b1 (x integer, y integer) server griddb_svr;
 
 --Testcase 171:
@@ -1052,17 +1098,20 @@ SELECT qq, unique1
 -- nested nestloops can require nested PlaceHolderVars
 --
 
+--Testcase 501:
 create foreign table nt1 (
   id int OPTIONS (rowkey 'true'),
   a1 boolean,
   a2 boolean
 ) server griddb_svr;
+--Testcase 502:
 create foreign table nt2 (
   id int OPTIONS (rowkey 'true'),
   nt1_id int,
   b1 boolean,
   b2 boolean
 ) server griddb_svr;
+--Testcase 503:
 create foreign table nt3 (
   id int OPTIONS (rowkey 'true'),
   nt2_id int,
@@ -1130,41 +1179,52 @@ where
 order by 2,3;
 
 --Testcase 189:
-select * from
+select q1, q2, x, y from
   int8_tbl t1 left join
   (select q1 as x, 42 as y from int8_tbl t2) ss
   on t1.q2 = ss.x
 where
   1 = (select 1 from int8_tbl t3 where ss.y is not null limit 1)
-order by 2,3;
+order by 1,2;
 
 --
 -- test the corner cases FULL JOIN ON TRUE and FULL JOIN ON FALSE
 --
 --Testcase 190:
-select * from int4_tbl a full join int4_tbl b on true;
+select a.f1, b.f1 from int4_tbl a full join int4_tbl b on true;
 --Testcase 191:
-select * from int4_tbl a full join int4_tbl b on false;
+select a.f1, b.f1 from int4_tbl a full join int4_tbl b on false;
 
 --
 -- test for ability to use a cartesian join when necessary
 --
 
+--Testcase 504:
+create foreign table q1(q1 int OPTIONS (rowkey 'true')) server griddb_svr;
+--Testcase 505:
+create foreign table q2(q2 int OPTIONS (rowkey 'true')) server griddb_svr;
+
+--Testcase 506:
+insert into q1 select 1;
+--Testcase 507:
+insert into q1 select 0;
+
 --Testcase 192:
 explain (costs off)
 select * from
   tenk1 join int4_tbl on f1 = twothousand,
-  int4(sin(1)) q1,
-  int4(sin(0)) q2
+  q1, q2
 where q1 = thousand or q2 = thousand;
 
 --Testcase 193:
 explain (costs off)
 select * from
   tenk1 join int4_tbl on f1 = twothousand,
-  int4(sin(1)) q1,
-  int4(sin(0)) q2
+  q1, q2
 where thousand = (q1 + q2);
+
+--Testcase 508:
+drop foreign table q1, q2;
 
 --
 -- test ability to generate a suitable plan for a star-schema query
@@ -1258,6 +1318,104 @@ select t1.unique2, t1.stringu1, t2.unique1, t2.stringu2 from
   left join tenk1 t2
   on (subq1.y1 = t2.unique1)
 where t1.unique2 < 42 and t1.stringu1 > t2.stringu2;
+
+-- Here's a variant that we can't fold too aggressively, though,
+-- or we end up with noplace to evaluate the lateral PHV
+--Testcase 509:
+explain (verbose, costs off)
+select * from
+  (select 1 as x) ss1 left join (select 2 as y) ss2 on (true),
+  lateral (select ss2.y as z limit 1) ss3;
+--Testcase 510:
+select * from
+  (select 1 as x) ss1 left join (select 2 as y) ss2 on (true),
+  lateral (select ss2.y as z limit 1) ss3;
+
+--
+-- test inlining of immutable functions
+--
+--Testcase 511:
+create function f_immutable_int4(i integer) returns integer as
+$$ begin return i; end; $$ language plpgsql immutable;
+
+-- check optimization of function scan with join
+--Testcase 512:
+explain (costs off)
+select unique1 from tenk1, (select * from f_immutable_int4(1) x) x
+where x = unique1;
+
+--Testcase 513:
+explain (verbose, costs off)
+select unique1, x.*
+from tenk1, (select *, random() from f_immutable_int4(1) x) x
+where x = unique1;
+
+--Testcase 514:
+explain (costs off)
+select unique1 from tenk1, f_immutable_int4(1) x where x = unique1;
+
+--Testcase 515:
+explain (costs off)
+select unique1 from tenk1, lateral f_immutable_int4(1) x where x = unique1;
+
+--Testcase 516:
+explain (costs off)
+select unique1, x from tenk1 join f_immutable_int4(1) x on unique1 = x;
+
+--Testcase 517:
+explain (costs off)
+select unique1, x from tenk1 left join f_immutable_int4(1) x on unique1 = x;
+
+--Testcase 518:
+explain (costs off)
+select unique1, x from tenk1 right join f_immutable_int4(1) x on unique1 = x;
+
+--Testcase 519:
+explain (costs off)
+select unique1, x from tenk1 full join f_immutable_int4(1) x on unique1 = x;
+
+-- check that pullup of a const function allows further const-folding
+--Testcase 520:
+explain (costs off)
+select unique1 from tenk1, f_immutable_int4(1) x where x = 42;
+
+-- test inlining of immutable functions with PlaceHolderVars
+--Testcase 521:
+explain (costs off)
+select nt3.id
+from nt3 as nt3
+  left join
+    (select nt2.*, (nt2.b1 or i4 = 42) AS b3
+     from nt2 as nt2
+       left join
+         f_immutable_int4(0) i4
+         on i4 = nt2.nt1_id
+    ) as ss2
+    on ss2.id = nt3.nt2_id
+where nt3.id = 1 and ss2.b3;
+
+--Testcase 522:
+drop function f_immutable_int4(int);
+
+-- skip test because cannot cast type record to int8_tbl
+-- test inlining when function returns composite
+
+--create function mki8(bigint, bigint) returns int8_tbl as
+--$$select row($1,$2)::int8_tbl$$ language sql;
+
+--create function mki4(int) returns int4_tbl as
+--$$select row($1)::int4_tbl$$ language sql;
+
+--explain (verbose, costs off)
+--select * from mki8(1,2);
+--select * from mki8(1,2);
+
+--explain (verbose, costs off)
+--select * from mki4(42);
+--select * from mki4(42);
+
+--drop function mki8(bigint, bigint);
+--drop function mki4(int);
 
 --
 -- test extraction of restriction OR clauses from join OR clause
@@ -1435,6 +1593,7 @@ using (join_key);
 --
 -- test successful handling of nested outer joins with degenerate join quals
 --
+--Testcase 523:
 create foreign table text_tbl(f1 text) server griddb_svr;
 
 --Testcase 221:
@@ -1526,7 +1685,7 @@ select * from
   on i8.q1 = i4.f1;
 
 --Testcase 228:
-select * from
+select t1.f1, i8.q1, i8.q2, t2.f1, i4.f1 from
   text_tbl t1
   inner join int8_tbl i8
   on i8.q2 = 456
@@ -1549,7 +1708,7 @@ select * from
 where t1.f1 = ss.f1;
 
 --Testcase 230:
-select * from
+select t1.f1, i8.q1, i8.q2, ss.q1, ss.f1 from
   text_tbl t1
   left join int8_tbl i8
   on i8.q2 = 123,
@@ -1567,7 +1726,7 @@ select * from
 where t1.f1 = ss2.f1;
 
 --Testcase 232:
-select * from
+select t1.f1, i8.q1, i8.q2, ss1.q1, ss1.f1, ss2.q1, ss2.f1 from
   text_tbl t1
   left join int8_tbl i8
   on i8.q2 = 123,
@@ -1611,7 +1770,7 @@ select ss2.* from
 where ss1.c2 = 0;
 
 --Testcase 236:
-select ss2.* from
+select ss2.f1, ss2.q1, ss2.q2, ss2.c1, ss2.c2, ss2.c3 from
   int4_tbl i41
   left join int8_tbl i8
     join (select i42.f1 as c1, i43.f1 as c2, 42 as c3
@@ -1680,9 +1839,13 @@ reset enable_nestloop;
 
 begin;
 
+--Testcase 524:
 CREATE FOREIGN TABLE a3 (id int OPTIONS (rowkey 'true'), b_id int) SERVER griddb_svr;
+--Testcase 525:
 CREATE FOREIGN TABLE b3 (id int OPTIONS (rowkey 'true'), c_id int) SERVER griddb_svr;
+--Testcase 526:
 CREATE FOREIGN TABLE c3 (id int OPTIONS (rowkey 'true')) SERVER griddb_svr;
+--Testcase 527:
 CREATE FOREIGN TABLE d3 (a int, b int) SERVER griddb_svr;
 --Testcase 243:
 INSERT INTO a3 VALUES (0, 0), (1, NULL);
@@ -1759,7 +1922,9 @@ select 1 from (select a3.id FROM a3 left join b3 on a3.b_id = b3.id) q,
 
 rollback;
 
+--Testcase 528:
 create foreign table parent (k int options (rowkey 'true'), pd int) server griddb_svr;
+--Testcase 529:
 create foreign table child (k int options (rowkey 'true'), cd int) server griddb_svr;
 --Testcase 258:
 insert into parent values (1, 10), (2, 20), (3, 30);
@@ -1808,7 +1973,9 @@ select p.* from
 -- bug 5255: this is not optimizable by join removal
 begin;
 
+--Testcase 530:
 CREATE FOREIGN TABLE a4 (id int OPTIONS (rowkey 'true')) SERVER griddb_svr;
+--Testcase 531:
 CREATE FOREIGN TABLE b4 (id int OPTIONS (rowkey 'true'), a_id int) SERVER griddb_svr;
 --Testcase 268:
 INSERT INTO a4 VALUES (0), (1);
@@ -1825,6 +1992,7 @@ rollback;
 -- another join removal bug: this is not optimizable, either
 begin;
 
+--Testcase 532:
 create foreign table innertab (id int8 options (rowkey 'true'), dat1 int8) server griddb_svr;
 --Testcase 272:
 insert into innertab values(123, 42);
@@ -1842,6 +2010,7 @@ rollback;
 -- another join removal bug: we must clean up correctly when removing a PHV
 begin;
 
+--Testcase 533:
 create foreign table uniquetbl (f1 text) server griddb_svr;
 
 --Testcase 274:
@@ -1892,7 +2061,7 @@ select * from
   int8_tbl x join (int4_tbl x cross join int4_tbl y) j on q1 = y.f1; -- error
 --Testcase 279:
 select * from
-  int8_tbl x join (int4_tbl x cross join int4_tbl y(ff)) j on q1 = f1; -- ok
+  int8_tbl x join ((SELECT f1 FROM int4_tbl) x cross join (SELECT f1 FROM int4_tbl) y(ff)) j on q1 = f1; -- ok
 
 --
 -- Test hints given on incorrect column references are useful
@@ -1924,14 +2093,14 @@ select atts.relid::regclass, s.* from pg_stats s join
 --
 
 --Testcase 284:
-select unique2, x.*
+select unique2, x.f1
 from tenk1 a, lateral (select * from int4_tbl b where f1 = a.unique1) x;
 --Testcase 285:
 explain (costs off)
   select unique2, x.*
   from tenk1 a, lateral (select * from int4_tbl b where f1 = a.unique1) x;
 --Testcase 286:
-select unique2, x.*
+select unique2, x.f1
 from int4_tbl x, lateral (select unique2 from tenk1 where f1 = unique1) ss;
 --Testcase 287:
 explain (costs off)
@@ -1942,7 +2111,7 @@ explain (costs off)
   select unique2, x.*
   from int4_tbl x cross join lateral (select unique2 from tenk1 where f1 = unique1) ss;
 --Testcase 289:
-select unique2, x.*
+select unique2, x.f1
 from int4_tbl x left join lateral (select unique1, unique2 from tenk1 where f1 = unique1) ss on true;
 --Testcase 290:
 explain (costs off)
@@ -1952,9 +2121,9 @@ explain (costs off)
 -- check scoping of lateral versus parent references
 -- the first of these should return int8_tbl.q2, the second int8_tbl.q1
 --Testcase 291:
-select *, (select r from (select q1 as q2) x, (select q2 as r) y) from int8_tbl;
+select q1, q2, (select r from (select q1 as q2) x, (select q2 as r) y) from int8_tbl;
 --Testcase 292:
-select *, (select r from (select q1 as q2) x, lateral (select q2 as r) y) from int8_tbl;
+select q1, q2, (select r from (select q1 as q2) x, lateral (select q2 as r) y) from int8_tbl;
 
 -- lateral with function in FROM
 --Testcase 293:
@@ -1977,7 +2146,7 @@ explain (costs off)
     lateral (select * from int8_tbl a where g = q1 union all
              select * from int8_tbl b where g = q2) ss;
 --Testcase 298:
-select * from generate_series(100,200) g,
+select g, q1, q2 from generate_series(100,200) g,
   lateral (select * from int8_tbl a where g = q1 union all
            select * from int8_tbl b where g = q2) ss;
 
@@ -2002,25 +2171,25 @@ select count(*) from tenk1 a,
 -- lateral injecting a strange outer join condition
 --Testcase 303:
 explain (costs off)
-  select * from int8_tbl a,
+  select a.q1, a.q2, x.q1, x.q2, ss.z from int8_tbl a,
     int8_tbl x left join lateral (select a.q1 from int4_tbl y) ss(z)
       on x.q2 = ss.z
   order by a.q1, a.q2, x.q1, x.q2, ss.z;
 --Testcase 304:
-select * from int8_tbl a,
+select a.q1, a.q2, x.q1, x.q2, ss.z from int8_tbl a,
   int8_tbl x left join lateral (select a.q1 from int4_tbl y) ss(z)
     on x.q2 = ss.z
   order by a.q1, a.q2, x.q1, x.q2, ss.z;
 
 -- lateral reference to a join alias variable
 --Testcase 305:
-select * from (select f1/2 as x from int4_tbl) ss1 join int4_tbl i4 on x = f1,
+select x, f1, y from (select f1/2 as x from int4_tbl) ss1 join int4_tbl i4 on x = f1,
   lateral (select x) ss2(y);
 --Testcase 306:
-select * from (select f1 as x from int4_tbl) ss1 join int4_tbl i4 on x = f1,
+select x, f1, y from (select f1 as x from int4_tbl) ss1 join int4_tbl i4 on x = f1,
   lateral (values(x)) ss2(y);
 --Testcase 307:
-select * from ((select f1/2 as x from int4_tbl) ss1 join int4_tbl i4 on x = f1) j,
+select x, f1, y from ((select f1/2 as x from int4_tbl) ss1 join int4_tbl i4 on x = f1) j,
   lateral (select x) ss2(y);
 
 -- lateral references requiring pullup
@@ -2037,15 +2206,15 @@ select * from (values(1)) x(lb),
 select * from (values(1)) x(lb),
   lateral (select lb from int4_tbl) y(lbcopy);
 --Testcase 312:
-select * from
+select x.q1, x.q2, y.q1, y.q2, xq1, yq1, yq2 from
   int8_tbl x left join (select q1,coalesce(q2,0) q2 from int8_tbl) y on x.q2 = y.q1,
   lateral (values(x.q1,y.q1,y.q2)) v(xq1,yq1,yq2);
 --Testcase 313:
-select * from
+select x.q1, x.q2, y.q1, y.q2, xq1, yq1, yq2 from
   int8_tbl x left join (select q1,coalesce(q2,0) q2 from int8_tbl) y on x.q2 = y.q1,
   lateral (select x.q1,y.q1,y.q2) v(xq1,yq1,yq2);
 --Testcase 314:
-select x.* from
+select x.q1, x.q2 from
   int8_tbl x left join (select q1,coalesce(q2,0) q2 from int8_tbl) y on x.q2 = y.q1,
   lateral (select x.q1,y.q1,y.q2) v(xq1,yq1,yq2);
 --Testcase 315:
@@ -2066,20 +2235,20 @@ select v.* from
 
 --Testcase 318:
 explain (verbose, costs off)
-select * from
+select a.q1, a.q2, ss.q1, ss.q2, x from
   int8_tbl a left join
   lateral (select *, a.q2 as x from int8_tbl b) ss on a.q2 = ss.q1;
 --Testcase 319:
-select * from
+select a.q1, a.q2, ss.q1, ss.q2, x from
   int8_tbl a left join
   lateral (select *, a.q2 as x from int8_tbl b) ss on a.q2 = ss.q1;
 --Testcase 320:
 explain (verbose, costs off)
-select * from
+select a.q1, a.q2, ss.q1, ss.q2, x from
   int8_tbl a left join
   lateral (select *, coalesce(a.q2, 42) as x from int8_tbl b) ss on a.q2 = ss.q1;
 --Testcase 321:
-select * from
+select a.q1, a.q2, ss.q1, ss.q2, x from
   int8_tbl a left join
   lateral (select *, coalesce(a.q2, 42) as x from int8_tbl b) ss on a.q2 = ss.q1;
 
@@ -2087,26 +2256,26 @@ select * from
 -- real semantic level
 --Testcase 322:
 explain (verbose, costs off)
-select * from int4_tbl i left join
+select i.f1, k.f1 from int4_tbl i left join
   lateral (select * from int2_tbl j where i.f1 = j.f1) k on true;
 --Testcase 323:
-select * from int4_tbl i left join
+select i.f1, k.f1 from int4_tbl i left join
   lateral (select * from int2_tbl j where i.f1 = j.f1) k on true;
 --Testcase 324:
 explain (verbose, costs off)
-select * from int4_tbl i left join
-  lateral (select coalesce(i) from int2_tbl j where i.f1 = j.f1) k on true;
+select f1, coalesce from (SELECT f1 FROM int4_tbl) i left join
+  lateral (select coalesce(i) from (SELECT f1 FROM int2_tbl) j where i.f1 = j.f1) k on true;
 --Testcase 325:
-select * from int4_tbl i left join
-  lateral (select coalesce(i) from int2_tbl j where i.f1 = j.f1) k on true;
+select f1, coalesce from (SELECT f1 FROM int4_tbl) i left join
+  lateral (select coalesce(i) from (SELECT f1 FROM int2_tbl) j where i.f1 = j.f1) k on true;
 --Testcase 326:
 explain (verbose, costs off)
-select * from int4_tbl a,
+select a.f1, ss.f1, q1, q2 from int4_tbl a,
   lateral (
     select * from int4_tbl b left join int8_tbl c on (b.f1 = q1 and a.f1 = q2)
   ) ss;
 --Testcase 327:
-select * from int4_tbl a,
+select a.f1, ss.f1, q1, q2 from int4_tbl a,
   lateral (
     select * from int4_tbl b left join int8_tbl c on (b.f1 = q1 and a.f1 = q2)
   ) ss;
@@ -2114,13 +2283,13 @@ select * from int4_tbl a,
 -- lateral reference in a PlaceHolderVar evaluated at join level
 --Testcase 328:
 explain (verbose, costs off)
-select * from
+select q1, q2, bq1, cq1, least from
   int8_tbl a left join lateral
   (select b.q1 as bq1, c.q1 as cq1, least(a.q1,b.q1,c.q1) from
    int8_tbl b cross join int8_tbl c) ss
   on a.q2 = ss.bq1;
 --Testcase 329:
-select * from
+select q1, q2, bq1, cq1, least from
   int8_tbl a left join lateral
   (select b.q1 as bq1, c.q1 as cq1, least(a.q1,b.q1,c.q1) from
    int8_tbl b cross join int8_tbl c) ss
@@ -2244,6 +2413,7 @@ select 1 from tenk1 a, lateral (select max(a.unique1) from int4_tbl b) ss;
 
 -- check behavior of LATERAL in UPDATE/DELETE
 
+--Testcase 534:
 create temp table xx1 as select f1 as x1, -f1 as x2 from int4_tbl;
 
 -- error, can't do this:
@@ -2270,13 +2440,18 @@ delete from xx1 using lateral (select * from int4_tbl where f1 = x1) ss;
 -- test LATERAL reference propagation down a multi-level inheritance hierarchy
 -- produced for a multi-level partitioned table hierarchy.
 --
+--Testcase 535:
 create table join_pt1 (a int, b int, c text) partition by range(a);
+--Testcase 536:
 create table join_pt1p1 partition of join_pt1 for values from (0) to (100) partition by range(b);
+--Testcase 537:
 create foreign table join_pt1p2 partition of join_pt1 for values from (100) to (200) server griddb_svr;
+--Testcase 538:
 create foreign table join_pt1p1p1 partition of join_pt1p1 for values from (0) to (100) server griddb_svr;
 --Testcase 355:
 insert into join_pt1 values (1, 1, 'x'), (101, 101, 'y');
-create table join_ut1 (a int, b int, c text);
+--Testcase 539:
+create foreign table join_ut1 (a int, b int, c text) server griddb_svr;
 --Testcase 356:
 insert into join_ut1 values (101, 101, 'y'), (2, 2, 'z');
 --Testcase 357:
@@ -2291,15 +2466,21 @@ select t1.b, ss.phv from join_ut1 t1 left join lateral
 					  from join_pt1 t2 join join_ut1 t3 on t2.a = t3.b) ss
               on t1.a = ss.t2a order by t1.a;
 
+--Testcase 540:
+drop table t2a;
+--Testcase 541:
 drop table join_pt1;
-drop table join_ut1;
+--Testcase 542:
+drop foreign table join_ut1;
 --
 -- test that foreign key join estimation performs sanely for outer joins
 --
 
 begin;
 
+--Testcase 543:
 create foreign table fkest (id serial options (rowkey 'true'), a int, b int, c int) server griddb_svr;
+--Testcase 544:
 create foreign table fkest1 (id serial options (rowkey 'true'), a int, b int) server griddb_svr;
 
 --Testcase 359:
@@ -2322,8 +2503,11 @@ rollback;
 -- test planner's ability to mark joins as unique
 --
 
+--Testcase 545:
 create foreign table j11 (idx serial options (rowkey 'true'), id int) server griddb_svr;
+--Testcase 546:
 create foreign table j21 (idx serial options (rowkey 'true'), id int) server griddb_svr;
+--Testcase 547:
 create foreign table j31 (idx serial options (rowkey 'true'), id int) server griddb_svr;
 
 --Testcase 362:
@@ -2387,8 +2571,11 @@ inner join (select id from j31 group by id) j31 on j11.id = j31.id;
 
 -- test more complex permutations of unique joins
 
+--Testcase 548:
 create foreign table j12 (idx serial options (rowkey 'true'), id1 int, id2 int) server griddb_svr;
+--Testcase 549:
 create foreign table j22 (idx serial options (rowkey 'true'), id1 int, id2 int) server griddb_svr;
+--Testcase 550:
 create foreign table j32 (idx serial options (rowkey 'true'), id1 int, id2 int) server griddb_svr;
 
 --Testcase 375:
@@ -2431,21 +2618,60 @@ set enable_nestloop to 0;
 set enable_hashjoin to 0;
 set enable_sort to 0;
 
+-- create indexes that will be preferred over the PKs to perform the join
+--create index j1_id1_idx on j1 (id1) where id1 % 1000 = 1;
+--create index j2_id1_idx on j2 (id1) where id1 % 1000 = 1;
+
+-- need an additional row in j2, if we want j2_id1_idx to be preferred
+--Testcase 551:
+insert into j22(id1,id2) values(1,2);
+--analyze j2;
+
 --Testcase 382:
-explain (costs off) select * from j12 j12
-inner join j12 j22 on j12.id1 = j22.id1 and j12.id2 = j22.id2
+explain (costs off) select j12.id1, j12.id2, j22.id1, j22.id2 from j12
+inner join j22 on j12.id1 = j22.id1 and j12.id2 = j22.id2
 where j12.id1 % 1000 = 1 and j22.id1 % 1000 = 1;
 
 --Testcase 383:
-select * from j12 j12
-inner join j12 j22 on j12.id1 = j22.id1 and j12.id2 = j22.id2
+select j12.id1, j12.id2, j22.id1, j22.id2 from j12
+inner join j22 on j12.id1 = j22.id1 and j12.id2 = j22.id2
 where j12.id1 % 1000 = 1 and j22.id1 % 1000 = 1;
+
+-- Exercise array keys mark/restore B-Tree code
+--Testcase 552:
+explain (costs off) select j12.id1, j12.id2, j22.id1, j22.id2 from j12
+inner join j22 on j12.id1 = j22.id1 and j12.id2 = j22.id2
+where j12.id1 % 1000 = 1 and j22.id1 % 1000 = 1 and j22.id1 = any (array[1]);
+
+--Testcase 553:
+select j12.id1, j12.id2, j22.id1, j22.id2 from j12
+inner join j22 on j12.id1 = j22.id1 and j12.id2 = j22.id2
+where j12.id1 % 1000 = 1 and j22.id1 % 1000 = 1 and j22.id1 = any (array[1]);
+
+-- Exercise array keys "find extreme element" B-Tree code
+--Testcase 554:
+explain (costs off) select j12.id1, j12.id2, j22.id1, j22.id2 from j12
+inner join j22 on j12.id1 = j22.id1 and j12.id2 = j22.id2
+where j12.id1 % 1000 = 1 and j22.id1 % 1000 = 1 and j22.id1 >= any (array[1,5]);
+
+--Testcase 555:
+select j12.id1, j12.id2, j22.id1, j22.id2 from j12
+inner join j22 on j12.id1 = j22.id1 and j12.id2 = j22.id2
+where j12.id1 % 1000 = 1 and j22.id1 % 1000 = 1 and j22.id1 >= any (array[1,5]);
 
 reset enable_nestloop;
 reset enable_hashjoin;
 reset enable_sort;
 
+--Testcase 556:
+drop foreign table j12;
+--Testcase 557:
+drop foreign table j22;
+--Testcase 558:
+drop foreign table j32;
+
 -- check that semijoin inner is not seen as unique for a portion of the outerrel
+--Testcase 559:
 CREATE FOREIGN TABLE onek (
   unique1   int4 OPTIONS (rowkey 'true'),
   unique2   int4,
@@ -2475,8 +2701,10 @@ where exists (select 1 from tenk1 t3
       and t1.unique1 < 1;
 
 -- ... unless it actually is unique
+--Testcase 560:
 create table j3 as select unique1, tenthous from onek;
 vacuum analyze j3;
+--Testcase 561:
 create unique index on j3(unique1, tenthous);
 
 --Testcase 385:
@@ -2487,6 +2715,7 @@ where exists (select 1 from j3
               where j3.unique1 = t1.unique1 and j3.tenthous = t2.hundred)
       and t1.unique1 < 1;
 
+--Testcase 562:
 drop table j3;
 
 --
@@ -2503,6 +2732,7 @@ set enable_mergejoin to 0;
 -- general we can't make assertions about how many batches (or
 -- buckets) will be required because it can vary, but we can in some
 -- special cases and we can check for growth.
+--Testcase 563:
 create or replace function find_hash(node json)
 returns json language plpgsql
 as
@@ -2525,6 +2755,7 @@ begin
   end if;
 end;
 $$;
+--Testcase 564:
 create or replace function hash_join_batches(query text)
 returns table (original int, final int) language plpgsql
 as
@@ -2534,6 +2765,7 @@ declare
   hash_node json;
 begin
   for whole_plan in
+--Testcase 565:
     execute 'explain (analyze, format ''json'') ' || query
   loop
     hash_node := find_hash(json_extract_path(whole_plan, '0', 'Plan'));
@@ -2546,12 +2778,14 @@ $$;
 
 -- Make a simple relation with well distributed keys and correctly
 -- estimated size.
+--Testcase 566:
 create foreign table simple (id int options (rowkey 'true'), t text) server griddb_svr;
 --Testcase 386:
 insert into simple select generate_series(1, 20000) AS id, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
 -- Make a relation whose size we will under-estimate.  We want stats
 -- to say 1000 rows, but actually there are 20,000 rows.
+--Testcase 567:
 create foreign table bigger_than_it_looks (id int options (rowkey 'true'), t text) server griddb_svr;
 --Testcase 387:
 insert into bigger_than_it_looks select generate_series(1, 20000) as id, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -2561,6 +2795,7 @@ update pg_class set reltuples = 1000 where relname = 'bigger_than_it_looks';
 -- Make a relation whose size we underestimate and that also has a
 -- kind of skew that breaks our batching scheme.  We want stats to say
 -- 2 rows, but actually there are 20,000 rows with the same key.
+--Testcase 568:
 create foreign table extremely_skewed (idx int options (rowkey 'true'), id int, t text) server griddb_svr;
 --Testcase 389:
 insert into extremely_skewed
@@ -2573,6 +2808,7 @@ update pg_class
 
 -- Make a relation with a couple of enormous tuples.
 -- System limiting values: with GridDB, when Block size = 64KB, String data size = 31KB
+--Testcase 569:
 create foreign table wide (id int options (rowkey 'true'), t text) server griddb_svr;
 --Testcase 391:
 insert into wide select generate_series(1, 2) as id, rpad('', 31744, 'x') as t;
@@ -2796,10 +3032,12 @@ $$);
 -- Exercise rescans.  We'll turn off parallel_leader_participation so
 -- that we can check that instrumentation comes back correctly.
 
+--Testcase 570:
 create foreign table join_foo (id int options (rowkey 'true'), t text) server griddb_svr;
 --Testcase 429:
 insert into join_foo select generate_series(1, 3) as id, 'xxxxx'::text as t;
 
+--Testcase 571:
 create foreign table join_bar (id int options (rowkey 'true'), t text) server griddb_svr;
 --Testcase 430:
 insert into join_bar select generate_series(1, 10000) as id, 'xxxxx'::text as t;
@@ -2991,6 +3229,9 @@ begin
   end loop;
 end;
 $d$;
+--Testcase 572:
 DROP USER MAPPING FOR public SERVER griddb_svr;
+--Testcase 573:
 DROP SERVER griddb_svr;
+--Testcase 574:
 DROP EXTENSION griddb_fdw CASCADE;

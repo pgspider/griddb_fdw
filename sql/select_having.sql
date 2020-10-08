@@ -2,9 +2,13 @@
 -- SELECT_HAVING
 --
 
+--Testcase 22:
 CREATE EXTENSION griddb_fdw;
+--Testcase 23:
 CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS(host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster');
+--Testcase 24:
 CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS(username 'admin', password 'testadmin');
+--Testcase 25:
 CREATE FOREIGN TABLE test_having(a int OPTIONS (rowkey 'true'), b int, c text, d text) SERVER griddb_svr;
 
 -- load test data
@@ -72,7 +76,11 @@ SELECT 1 AS one FROM test_having HAVING 1 < 2;
 --Testcase 21:
 SELECT 1 AS one FROM test_having WHERE 1/a = 1 HAVING 1 < 2;
 
+--Testcase 26:
 DROP FOREIGN TABLE test_having;
+--Testcase 27:
 DROP USER MAPPING FOR public SERVER griddb_svr;
+--Testcase 28:
 DROP SERVER griddb_svr;
+--Testcase 29:
 DROP EXTENSION griddb_fdw CASCADE;

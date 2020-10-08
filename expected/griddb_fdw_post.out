@@ -1,17 +1,23 @@
 --SET client_min_messages TO WARNING;
+--Testcase 703:
 CREATE EXTENSION IF NOT EXISTS griddb_fdw;
 DO $d$
     BEGIN
-        EXECUTE $$CREATE SERVER IF NOT EXISTS griddb_svr FOREIGN DATA WRAPPER griddb_fdw
+        EXECUTE $$CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw
             OPTIONS (host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster')$$;
         EXECUTE $$CREATE SERVER griddb_svr2 FOREIGN DATA WRAPPER griddb_fdw
             OPTIONS (host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster')$$;
         EXECUTE $$CREATE SERVER testserver1 FOREIGN DATA WRAPPER griddb_fdw$$;
     END;
 $d$;
-CREATE USER MAPPING IF NOT EXISTS FOR public SERVER griddb_svr OPTIONS (username 'admin', password 'testadmin');
+--Testcase 704:
+CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS (username 'admin', password 'testadmin');
+--Testcase 705:
 CREATE USER MAPPING FOR public SERVER griddb_svr2 OPTIONS (username 'admin', password 'testadmin');
+--Testcase 706:
 CREATE USER MAPPING FOR public SERVER testserver1 OPTIONS (username 'value', password 'value');
+CREATE TYPE user_enum AS ENUM ('foo', 'bar', 'buz');
+--Testcase 707:
 CREATE SCHEMA "S 1";
 IMPORT FOREIGN SCHEMA griddb_schema LIMIT TO
 	("T0", "T1", "T2", "T3", "T4", ft1, ft2, ft4, ft5, base_tbl,
@@ -42,6 +48,7 @@ INSERT INTO "S 1"."T3"
 	       id + 1,
 	       'AAA' || to_char(id, 'FM000')
 	FROM generate_series(1, 100) id;
+--Testcase 708:
 DELETE FROM "S 1"."T3" WHERE c1 % 2 != 0;	-- delete for outer join tests
 --Testcase 4:
 INSERT INTO "S 1"."T4"
@@ -49,10 +56,12 @@ INSERT INTO "S 1"."T4"
 	       id + 1,
 	       'AAA' || to_char(id, 'FM000')
 	FROM generate_series(1, 100) id;
+--Testcase 709:
 DELETE FROM "S 1"."T4" WHERE c1 % 3 != 0;	-- delete for outer join tests
 -- ===================================================================
 -- create foreign tables
 -- ===================================================================
+--Testcase 710:
 CREATE FOREIGN TABLE ft1 (
 	-- c0 int,
 	c1 int OPTIONS (rowkey 'true'),
@@ -65,6 +74,7 @@ CREATE FOREIGN TABLE ft1 (
 	c8 text
 ) SERVER griddb_svr;
 -- ALTER FOREIGN TABLE ft1 DROP COLUMN c0;
+--Testcase 711:
 CREATE FOREIGN TABLE ft2 (
 	c1 int OPTIONS (rowkey 'true'),
 	c2 int NOT NULL,
@@ -77,16 +87,19 @@ CREATE FOREIGN TABLE ft2 (
 	c8 text
 ) SERVER griddb_svr;
 -- ALTER FOREIGN TABLE ft2 DROP COLUMN cx;
+--Testcase 712:
 CREATE FOREIGN TABLE ft4 (
 	c1 int OPTIONS (rowkey 'true'),
 	c2 int NOT NULL,
 	c3 text
 ) SERVER griddb_svr OPTIONS (table_name 'T3');
+--Testcase 713:
 CREATE FOREIGN TABLE ft5 (
 	c1 int OPTIONS (rowkey 'true'),
 	c2 int NOT NULL,
 	c3 text
 ) SERVER griddb_svr OPTIONS (table_name 'T4');
+--Testcase 714:
 CREATE FOREIGN TABLE ft6 (
 	c1 int OPTIONS (rowkey 'true'),
 	c2 int NOT NULL,
@@ -100,12 +113,35 @@ CREATE FOREIGN TABLE ft6 (
 -- HINT: valid options in this context are: host, port, clustername, database,
 -- notification_member, updatable, fdw_startup_cost, fdw_tuple_cost
 ALTER SERVER testserver1 OPTIONS (
+	--use_remote_estimate 'false',
 	updatable 'true',
 	fdw_startup_cost '123.456',
 	fdw_tuple_cost '0.123',
+	--service 'value',
+	--connect_timeout 'value',
+	--dbname 'value',
 	host 'value',
+	--hostaddr 'value',
 	port 'value',
 	clustername 'value'
+	--client_encoding 'value',
+	--application_name 'value',
+	--fallback_application_name 'value',
+	--keepalives 'value',
+	--keepalives_idle 'value',
+	--keepalives_interval 'value',
+	--tcp_user_timeout 'value',
+	-- requiressl 'value',
+	--sslcompression 'value',
+	--sslmode 'value',
+	--sslcert 'value',
+	--sslkey 'value',
+	--sslrootcert 'value',
+	--sslcrl 'value',
+	--requirepeer 'value',
+	--krbsrvname 'value',
+	--gsslib 'value'
+	--replication 'value'
 );
 -- GridDB does not support 'extensions' option
 -- Error, invalid list syntax
@@ -714,7 +750,7 @@ EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c1 = ANY(ARRAY[c2, 1, c1
 (4 rows)
 
 --Testcase 48:
-EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c1 = (ARRAY[c1,c2,3])[1]; -- ArrayRef
+EXPLAIN (VERBOSE, COSTS OFF) SELECT * FROM ft1 t1 WHERE c1 = (ARRAY[c1,c2,3])[1]; -- SubscriptingRef
                    QUERY PLAN                    
 -------------------------------------------------
  Foreign Scan on public.ft1 t1
@@ -944,11 +980,13 @@ EXPLAIN (VERBOSE, COSTS OFF)
 (6 rows)
 
 -- user-defined operator/function
+--Testcase 715:
 CREATE FUNCTION griddb_fdw_abs(int) RETURNS int AS $$
 BEGIN
 RETURN abs($1);
 END
 $$ LANGUAGE plpgsql IMMUTABLE;
+--Testcase 716:
 CREATE OPERATOR === (
     LEFTARG = int,
     RIGHTARG = int,
@@ -1242,9 +1280,10 @@ SELECT t1.c1, t2.c1 FROM ft4 t1 LEFT JOIN ft5 t2 ON (t1.c1 = t2.c1) ORDER BY t1.
 ------------------------------------------------------------
  Limit
    Output: t1.c1, t2.c1
-   ->  Sort
+   ->  Incremental Sort
          Output: t1.c1, t2.c1
          Sort Key: t1.c1, t2.c1
+         Presorted Key: t1.c1
          ->  Merge Left Join
                Output: t1.c1, t2.c1
                Merge Cond: (t1.c1 = t2.c1)
@@ -1260,7 +1299,7 @@ SELECT t1.c1, t2.c1 FROM ft4 t1 LEFT JOIN ft5 t2 ON (t1.c1 = t2.c1) ORDER BY t1.
                      ->  Foreign Scan on public.ft5 t2
                            Output: t2.c1
                            Remote SQL: SELECT  *  FROM "T4"
-(20 rows)
+(21 rows)
 
 --Testcase 80:
 SELECT t1.c1, t2.c1 FROM ft4 t1 LEFT JOIN ft5 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c1, t2.c1 OFFSET 10 LIMIT 10;
@@ -1395,9 +1434,10 @@ SELECT t1.c1, t2.c1 FROM ft5 t1 RIGHT JOIN ft4 t2 ON (t1.c1 = t2.c1) ORDER BY t2
 ------------------------------------------------------------
  Limit
    Output: t1.c1, t2.c1
-   ->  Sort
+   ->  Incremental Sort
          Output: t1.c1, t2.c1
          Sort Key: t2.c1, t1.c1
+         Presorted Key: t2.c1
          ->  Merge Left Join
                Output: t1.c1, t2.c1
                Merge Cond: (t2.c1 = t1.c1)
@@ -1413,7 +1453,7 @@ SELECT t1.c1, t2.c1 FROM ft5 t1 RIGHT JOIN ft4 t2 ON (t1.c1 = t2.c1) ORDER BY t2
                      ->  Foreign Scan on public.ft5 t1
                            Output: t1.c1
                            Remote SQL: SELECT  *  FROM "T4"
-(20 rows)
+(21 rows)
 
 --Testcase 88:
 SELECT t1.c1, t2.c1 FROM ft5 t1 RIGHT JOIN ft4 t2 ON (t1.c1 = t2.c1) ORDER BY t2.c1, t1.c1 OFFSET 10 LIMIT 10;
@@ -2158,9 +2198,28 @@ SELECT t1.c1, t2.c2, t1.c3 FROM ft1 t1 FULL JOIN ft2 t2 ON (t1.c1 = t2.c1) WHERE
 
 --ALTER SERVER griddb_svr OPTIONS (DROP extensions);
 -- full outer join + WHERE clause with shippable extensions not set
---EXPLAIN (VERBOSE, COSTS OFF)
---SELECT t1.c1, t2.c2, t1.c3 FROM ft1 t1 FULL JOIN ft2 t2 ON (t1.c1 = t2.c1) WHERE postgres_fdw_abs(t1.c1) > 0 OFFSET 10 LIMIT 10;
---ALTER SERVER griddb_svr OPTIONS (ADD extensions 'postgres_fdw');
+--Testcase 717:
+EXPLAIN (VERBOSE, COSTS OFF)
+SELECT t1.c1, t2.c2, t1.c3 FROM ft1 t1 FULL JOIN ft2 t2 ON (t1.c1 = t2.c1) WHERE griddb_fdw_abs(t1.c1) > 0 OFFSET 10 LIMIT 10;
+                                  QUERY PLAN                                  
+------------------------------------------------------------------------------
+ Limit
+   Output: t1.c1, t2.c2, t1.c3
+   ->  Hash Full Join
+         Output: t1.c1, t2.c2, t1.c3
+         Hash Cond: (t2.c1 = t1.c1)
+         Filter: (griddb_fdw_abs(t1.c1) > 0)
+         ->  Foreign Scan on public.ft2 t2
+               Output: t2.c1, t2.c2, t2.c3, t2.c4, t2.c5, t2.c6, t2.c7, t2.c8
+               Remote SQL: SELECT  *  FROM "T1"
+         ->  Hash
+               Output: t1.c1, t1.c3
+               ->  Foreign Scan on public.ft1 t1
+                     Output: t1.c1, t1.c3
+                     Remote SQL: SELECT  *  FROM "T1"
+(14 rows)
+
+--ALTER SERVER griddb_svr OPTIONS (ADD extensions 'griddb_fdw');
 -- join two tables with FOR UPDATE clause
 -- tests whole-row reference for row marks
 --Testcase 122:
@@ -2229,7 +2288,7 @@ SELECT t1.c1, t2.c1 FROM ft1 t1 JOIN ft2 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c3, t
                                  Remote SQL: SELECT  *  FROM "T1"
 (18 rows)
 
--- Skip test case: (Related to https://tccloud2.toshiba.co.jp/accio/redmine/issues/112):
+-- Skip test case: Relate #112
 --SELECT t1.c1, t2.c1 FROM ft1 t1 JOIN ft2 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c3, t1.c1 OFFSET 100 LIMIT 10 FOR UPDATE;
 -- join two tables with FOR SHARE clause
 --Testcase 125:
@@ -2298,7 +2357,7 @@ SELECT t1.c1, t2.c1 FROM ft1 t1 JOIN ft2 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c3, t
                                  Remote SQL: SELECT  *  FROM "T1"
 (18 rows)
 
--- Skip test case: (Related to https://tccloud2.toshiba.co.jp/accio/redmine/issues/112):
+-- Skip test case: Relate #112
 --SELECT t1.c1, t2.c1 FROM ft1 t1 JOIN ft2 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c3, t1.c1 OFFSET 100 LIMIT 10 FOR SHARE;
 -- join in CTE
 --Testcase 128:
@@ -2876,6 +2935,7 @@ SELECT ft5, ft5.c1, ft5.c2, ft5.c3, ft4.c1, ft4.c2 FROM ft5 left join ft4 on ft5
 
 -- multi-way join involving multiple merge joins
 -- (this case used to have EPQ-related planning problems)
+--Testcase 718:
 CREATE FOREIGN TABLE local_tbl (c1 int OPTIONS(rowkey 'true'), c2 int, c3 text) SERVER griddb_svr;
 --Testcase 156:
 INSERT INTO local_tbl(c1, c2, c3) SELECT id, id % 10, to_char(id, 'FM0000') FROM generate_series(1, 1000) id;
@@ -2937,17 +2997,22 @@ SELECT * FROM ft1, ft2, ft4, ft5, local_tbl WHERE ft1.c1 = ft2.c1 AND ft1.c2 = f
                      Remote SQL: SELECT  *  FROM local_tbl
 (47 rows)
 
--- Skip test case: (Related to https://tccloud2.toshiba.co.jp/accio/redmine/issues/112):
+-- Skip test case: Relate #112
 --SELECT * FROM ft1, ft2, ft4, ft5, local_tbl WHERE ft1.c1 = ft2.c1 AND ft1.c2 = ft4.c1
 --  AND ft1.c2 = ft5.c1 AND ft1.c2 = local_tbl.c1 AND ft1.c1 < 100 AND ft2.c1 < 100 FOR UPDATE;
 RESET enable_nestloop;
 RESET enable_hashjoin;
+DROP FOREIGN TABLE local_tbl;
 -- check join pushdown in situations where multiple userids are involved
+--Testcase 719:
 CREATE ROLE regress_view_owner SUPERUSER;
+--Testcase 720:
 CREATE USER MAPPING FOR regress_view_owner SERVER griddb_svr OPTIONS (username 'admin', password 'testadmin');
 GRANT SELECT ON ft4 TO regress_view_owner;
 GRANT SELECT ON ft5 TO regress_view_owner;
+--Testcase 721:
 CREATE VIEW v4 AS SELECT * FROM ft4;
+--Testcase 722:
 CREATE VIEW v5 AS SELECT * FROM ft5;
 ALTER VIEW v5 OWNER TO regress_view_owner;
 --Testcase 158:
@@ -2957,25 +3022,26 @@ SELECT t1.c1, t2.c2 FROM v4 t1 LEFT JOIN v5 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c1
 ------------------------------------------------------------
  Limit
    Output: ft4.c1, ft5.c2, ft5.c1
-   ->  Sort
+   ->  Incremental Sort
          Output: ft4.c1, ft5.c2, ft5.c1
          Sort Key: ft4.c1, ft5.c1
-         ->  Merge Right Join
+         Presorted Key: ft4.c1
+         ->  Merge Left Join
                Output: ft4.c1, ft5.c2, ft5.c1
-               Merge Cond: (ft5.c1 = ft4.c1)
-               ->  Sort
-                     Output: ft5.c2, ft5.c1
-                     Sort Key: ft5.c1
-                     ->  Foreign Scan on public.ft5
-                           Output: ft5.c2, ft5.c1
-                           Remote SQL: SELECT  *  FROM "T4"
+               Merge Cond: (ft4.c1 = ft5.c1)
                ->  Sort
                      Output: ft4.c1
                      Sort Key: ft4.c1
                      ->  Foreign Scan on public.ft4
                            Output: ft4.c1
                            Remote SQL: SELECT  *  FROM "T3"
-(20 rows)
+               ->  Sort
+                     Output: ft5.c2, ft5.c1
+                     Sort Key: ft5.c1
+                     ->  Foreign Scan on public.ft5
+                           Output: ft5.c2, ft5.c1
+                           Remote SQL: SELECT  *  FROM "T4"
+(21 rows)
 
 --Testcase 159:
 SELECT t1.c1, t2.c2 FROM v4 t1 LEFT JOIN v5 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c1, t2.c1 OFFSET 10 LIMIT 10;
@@ -3001,25 +3067,26 @@ SELECT t1.c1, t2.c2 FROM v4 t1 LEFT JOIN v5 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c1
 ------------------------------------------------------------
  Limit
    Output: ft4.c1, ft5.c2, ft5.c1
-   ->  Sort
+   ->  Incremental Sort
          Output: ft4.c1, ft5.c2, ft5.c1
          Sort Key: ft4.c1, ft5.c1
-         ->  Merge Right Join
+         Presorted Key: ft4.c1
+         ->  Merge Left Join
                Output: ft4.c1, ft5.c2, ft5.c1
-               Merge Cond: (ft5.c1 = ft4.c1)
-               ->  Sort
-                     Output: ft5.c2, ft5.c1
-                     Sort Key: ft5.c1
-                     ->  Foreign Scan on public.ft5
-                           Output: ft5.c2, ft5.c1
-                           Remote SQL: SELECT  *  FROM "T4"
+               Merge Cond: (ft4.c1 = ft5.c1)
                ->  Sort
                      Output: ft4.c1
                      Sort Key: ft4.c1
                      ->  Foreign Scan on public.ft4
                            Output: ft4.c1
                            Remote SQL: SELECT  *  FROM "T3"
-(20 rows)
+               ->  Sort
+                     Output: ft5.c2, ft5.c1
+                     Sort Key: ft5.c1
+                     ->  Foreign Scan on public.ft5
+                           Output: ft5.c2, ft5.c1
+                           Remote SQL: SELECT  *  FROM "T4"
+(21 rows)
 
 --Testcase 161:
 SELECT t1.c1, t2.c2 FROM v4 t1 LEFT JOIN v5 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c1, t2.c1 OFFSET 10 LIMIT 10;
@@ -3044,25 +3111,26 @@ SELECT t1.c1, t2.c2 FROM v4 t1 LEFT JOIN ft5 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c
 ------------------------------------------------------------
  Limit
    Output: ft4.c1, t2.c2, t2.c1
-   ->  Sort
+   ->  Incremental Sort
          Output: ft4.c1, t2.c2, t2.c1
          Sort Key: ft4.c1, t2.c1
-         ->  Merge Right Join
+         Presorted Key: ft4.c1
+         ->  Merge Left Join
                Output: ft4.c1, t2.c2, t2.c1
-               Merge Cond: (t2.c1 = ft4.c1)
-               ->  Sort
-                     Output: t2.c2, t2.c1
-                     Sort Key: t2.c1
-                     ->  Foreign Scan on public.ft5 t2
-                           Output: t2.c2, t2.c1
-                           Remote SQL: SELECT  *  FROM "T4"
+               Merge Cond: (ft4.c1 = t2.c1)
                ->  Sort
                      Output: ft4.c1
                      Sort Key: ft4.c1
                      ->  Foreign Scan on public.ft4
                            Output: ft4.c1
                            Remote SQL: SELECT  *  FROM "T3"
-(20 rows)
+               ->  Sort
+                     Output: t2.c2, t2.c1
+                     Sort Key: t2.c1
+                     ->  Foreign Scan on public.ft5 t2
+                           Output: t2.c2, t2.c1
+                           Remote SQL: SELECT  *  FROM "T4"
+(21 rows)
 
 --Testcase 163:
 SELECT t1.c1, t2.c2 FROM v4 t1 LEFT JOIN ft5 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c1, t2.c1 OFFSET 10 LIMIT 10;
@@ -3088,25 +3156,26 @@ SELECT t1.c1, t2.c2 FROM v4 t1 LEFT JOIN ft5 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c
 ------------------------------------------------------------
  Limit
    Output: ft4.c1, t2.c2, t2.c1
-   ->  Sort
+   ->  Incremental Sort
          Output: ft4.c1, t2.c2, t2.c1
          Sort Key: ft4.c1, t2.c1
-         ->  Merge Right Join
+         Presorted Key: ft4.c1
+         ->  Merge Left Join
                Output: ft4.c1, t2.c2, t2.c1
-               Merge Cond: (t2.c1 = ft4.c1)
-               ->  Sort
-                     Output: t2.c2, t2.c1
-                     Sort Key: t2.c1
-                     ->  Foreign Scan on public.ft5 t2
-                           Output: t2.c2, t2.c1
-                           Remote SQL: SELECT  *  FROM "T4"
+               Merge Cond: (ft4.c1 = t2.c1)
                ->  Sort
                      Output: ft4.c1
                      Sort Key: ft4.c1
                      ->  Foreign Scan on public.ft4
                            Output: ft4.c1
                            Remote SQL: SELECT  *  FROM "T3"
-(20 rows)
+               ->  Sort
+                     Output: t2.c2, t2.c1
+                     Sort Key: t2.c1
+                     ->  Foreign Scan on public.ft5 t2
+                           Output: t2.c2, t2.c1
+                           Remote SQL: SELECT  *  FROM "T4"
+(21 rows)
 
 --Testcase 165:
 SELECT t1.c1, t2.c2 FROM v4 t1 LEFT JOIN ft5 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c1, t2.c1 OFFSET 10 LIMIT 10;
@@ -3126,7 +3195,9 @@ SELECT t1.c1, t2.c2 FROM v4 t1 LEFT JOIN ft5 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c
 
 ALTER VIEW v4 OWNER TO regress_view_owner;
 -- cleanup
+--Testcase 723:
 DROP OWNED BY regress_view_owner;
+--Testcase 724:
 DROP ROLE regress_view_owner;
 -- ===================================================================
 -- Aggregate and grouping queries
@@ -3146,7 +3217,7 @@ select count(c6), sum(c1), avg(c1), min(c2), max(c1), stddev(c2), sum(c1) * (ran
                Output: count(c6), sum(c1), avg(c1), min(c2), max(c1), stddev(c2), c2
                Group Key: ft1.c2
                ->  Foreign Scan on public.ft1
-                     Output: c1, c2, c3, c4, c5, c6, c7, c8
+                     Output: c2, c6, c1
                      Remote SQL: SELECT  *  FROM "T1" WHERE ((c2 < 5))
 (11 rows)
 
@@ -3177,7 +3248,7 @@ select count(c6), sum(c1), avg(c1), min(c2), max(c1), stddev(c2), sum(c1) * (ran
                      Output: count(c6), sum(c1), avg(c1), min(c2), max(c1), stddev(c2), c2
                      Group Key: ft1.c2
                      ->  Foreign Scan on public.ft1
-                           Output: c1, c2, c3, c4, c5, c6, c7, c8
+                           Output: c2, c6, c1
                            Remote SQL: SELECT  *  FROM "T1" WHERE ((c2 < 5))
 (13 rows)
 
@@ -3321,7 +3392,7 @@ select c2 * (random() <= 1)::int as sum1, sum(c1) * c2 as sum2 from ft1 group by
          Output: (c2 * ((random() <= '1'::double precision))::integer), (sum(c1) * c2), c2
          Group Key: ft1.c2
          ->  Foreign Scan on public.ft1
-               Output: c1, c2, c3, c4, c5, c6, c7, c8
+               Output: c2, c1
                Remote SQL: SELECT  *  FROM "T1"
 (9 rows)
 
@@ -3432,7 +3503,7 @@ select c2, sum(c1) from ft2 group by c2 having avg(c1) < 500 and sum(c1) < 49800
          Group Key: ft2.c2
          Filter: ((avg(ft2.c1) < '500'::numeric) AND (sum(ft2.c1) < 49800))
          ->  Foreign Scan on public.ft2
-               Output: c1, c2, c3, c4, c5, c6, c7, c8
+               Output: c2, c1
                Remote SQL: SELECT  *  FROM "T1"
 (10 rows)
 
@@ -3482,10 +3553,11 @@ select sum(c1) from ft1 group by c2 having avg(c1 * (random() <= 1)::int) > 100 
          Group Key: ft1.c2
          Filter: (avg((ft1.c1 * ((random() <= '1'::double precision))::integer)) > '100'::numeric)
          ->  Foreign Scan on public.ft1
-               Output: c1, c2, c3, c4, c5, c6, c7, c8
+               Output: c2, c1
                Remote SQL: SELECT  *  FROM "T1"
 (10 rows)
 
+-- GridDB does not create type user_enum so pg_enum table has no record.
 -- Remote aggregate in combination with a local Param (for the output
 -- of an initplan) can be trouble, per bug #15781
 --Testcase 190:
@@ -3506,7 +3578,7 @@ select exists(select 1 from pg_enum), sum(c1) from ft1;
 select exists(select 1 from pg_enum), sum(c1) from ft1;
  exists |  sum   
 --------+--------
- f      | 500500
+ t      | 500500
 (1 row)
 
 --Testcase 192:
@@ -3528,7 +3600,7 @@ select exists(select 1 from pg_enum), sum(c1) from ft1 group by 1;
 select exists(select 1 from pg_enum), sum(c1) from ft1 group by 1;
  exists |  sum   
 --------+--------
- f      | 500500
+ t      | 500500
 (1 row)
 
 -- Testing ORDER BY, DISTINCT, FILTER, Ordered-sets and VARIADIC within aggregates
@@ -3723,7 +3795,7 @@ select sum(c1) filter (where c1 < 100 and c2 > 5) from ft1 group by c2 order by 
          Output: sum(c1) FILTER (WHERE ((c1 < 100) AND (c2 > 5))), c2
          Group Key: ft1.c2
          ->  Foreign Scan on public.ft1
-               Output: c1, c2, c3, c4, c5, c6, c7, c8
+               Output: c2, c1
                Remote SQL: SELECT  *  FROM "T1"
 (9 rows)
 
@@ -3836,7 +3908,7 @@ select sum(c1) filter (where (c1 / c1) * random() <= 1) from ft1 group by c2 ord
          Output: sum(c1) FILTER (WHERE ((((c1 / c1))::double precision * random()) <= '1'::double precision)), c2
          Group Key: ft1.c2
          ->  Foreign Scan on public.ft1
-               Output: c1, c2, c3, c4, c5, c6, c7, c8
+               Output: c2, c1
                Remote SQL: SELECT  *  FROM "T1"
 (9 rows)
 
@@ -3910,9 +3982,11 @@ select c1, rank(c1, c2) within group (order by c1, c2) from ft1 group by c1, c2 
 (1 row)
 
 -- User defined function for user defined aggregate, VARIADIC
+--Testcase 725:
 create function least_accum(anyelement, variadic anyarray)
 returns anyelement language sql as
   'select least($1, min($2[i])) from generate_subscripts($2,1) g(i)';
+--Testcase 726:
 create aggregate least_agg(variadic items anyarray) (
   stype = anyelement, sfunc = least_accum
 );
@@ -3995,31 +4069,39 @@ select c2, least_agg(c1) from ft1 group by c2 order by c2;
 
 -- Cleanup
 reset enable_hashagg;
+--Testcase 727:
 drop aggregate least_agg(variadic items anyarray);
+--Testcase 728:
 drop function least_accum(anyelement, variadic anyarray);
 -- Testing USING OPERATOR() in ORDER BY within aggregate.
 -- For this, we need user defined operators along with operator family and
 -- operator class.  Create those and then add them in extension.  Note that
 -- user defined objects are considered unshippable unless they are part of
 -- the extension.
+--Testcase 729:
 create operator public.<^ (
  leftarg = int4,
  rightarg = int4,
  procedure = int4eq
 );
+--Testcase 730:
 create operator public.=^ (
  leftarg = int4,
  rightarg = int4,
  procedure = int4lt
 );
+--Testcase 731:
 create operator public.>^ (
  leftarg = int4,
  rightarg = int4,
  procedure = int4gt
 );
+--Testcase 732:
 create operator family my_op_family using btree;
+--Testcase 733:
 create function my_op_cmp(a int, b int) returns int as
   $$begin return btint4cmp(a, b); end $$ language plpgsql;
+--Testcase 734:
 create operator class my_op_class for type int using btree family my_op_family as
  operator 1 public.<^,
  operator 3 public.=^,
@@ -4093,11 +4175,17 @@ select array_agg(c1 order by c1 using operator(public.<^)) from ft2 where c2 = 6
 (6 rows)
 
 -- Cleanup
+--Testcase 735:
 drop operator class my_op_class using btree;
+--Testcase 736:
 drop function my_op_cmp(a int, b int);
+--Testcase 737:
 drop operator family my_op_family using btree;
+--Testcase 738:
 drop operator public.>^(int, int);
+--Testcase 739:
 drop operator public.=^(int, int);
+--Testcase 740:
 drop operator public.<^(int, int);
 -- Input relation to aggregate push down hook is not safe to pushdown and thus
 -- the aggregate cannot be pushed down to foreign server.
@@ -4125,8 +4213,8 @@ select count(t1.c3) from ft2 t1 left join ft2 t2 on (t1.c1 = random() * t2.c2);
 --Testcase 227:
 explain (verbose, costs off)
 select count(*), x.b from ft1, (select c2 a, sum(c1) b from ft1 group by c2) x where ft1.c2 = x.a group by x.b order by 1, 2;
-                                                          QUERY PLAN                                                          
-------------------------------------------------------------------------------------------------------------------------------
+                                         QUERY PLAN                                         
+--------------------------------------------------------------------------------------------
  Sort
    Output: (count(*)), x.b
    Sort Key: (count(*)), x.b
@@ -4148,7 +4236,7 @@ select count(*), x.b from ft1, (select c2 a, sum(c1) b from ft1 group by c2) x w
                                  Output: ft1_1.c2, sum(ft1_1.c1)
                                  Group Key: ft1_1.c2
                                  ->  Foreign Scan on public.ft1 ft1_1
-                                       Output: ft1_1.c1, ft1_1.c2, ft1_1.c3, ft1_1.c4, ft1_1.c5, ft1_1.c6, ft1_1.c7, ft1_1.c8
+                                       Output: ft1_1.c2, ft1_1.c1
                                        Remote SQL: SELECT  *  FROM "T1"
 (23 rows)
 
@@ -4473,7 +4561,7 @@ select c2, c6, sum(c1) from ft1 where c2 < 3 group by grouping sets(c2, c6) orde
          Hash Key: ft1.c2
          Hash Key: ft1.c6
          ->  Foreign Scan on public.ft1
-               Output: c1, c2, c3, c4, c5, c6, c7, c8
+               Output: c2, c6, c1
                Remote SQL: SELECT  *  FROM "T1" WHERE ((c2 < 3))
 (10 rows)
 
@@ -4501,7 +4589,7 @@ select c2, sum(c1), grouping(c2) from ft1 where c2 < 3 group by c2 order by 1 nu
          Output: c2, sum(c1), GROUPING(c2)
          Group Key: ft1.c2
          ->  Foreign Scan on public.ft1
-               Output: c1, c2, c3, c4, c5, c6, c7, c8
+               Output: c2, c1
                Remote SQL: SELECT  *  FROM "T1" WHERE ((c2 < 3))
 (9 rows)
 
@@ -4529,7 +4617,7 @@ select distinct sum(c1)/1000 s from ft2 where c2 < 6 group by c2 order by 1;
                Output: (sum(c1) / 1000), c2
                Group Key: ft2.c2
                ->  Foreign Scan on public.ft2
-                     Output: c1, c2, c3, c4, c5, c6, c7, c8
+                     Output: c2, c1
                      Remote SQL: SELECT  *  FROM "T1" WHERE ((c2 < 6))
 (11 rows)
 
@@ -4559,7 +4647,7 @@ select c2, sum(c2), count(c2) over (partition by c2%2) from ft2 where c2 < 10 gr
                      Output: c2, (c2 % 2), sum(c2)
                      Group Key: ft2.c2
                      ->  Foreign Scan on public.ft2
-                           Output: c1, c2, c3, c4, c5, c6, c7, c8
+                           Output: c2
                            Remote SQL: SELECT  *  FROM "T1" WHERE ((c2 < 10))
 (14 rows)
 
@@ -4596,7 +4684,7 @@ select c2, array_agg(c2) over (partition by c2%2 order by c2 desc) from ft1 wher
                      Output: c2, (c2 % 2)
                      Group Key: ft1.c2
                      ->  Foreign Scan on public.ft1
-                           Output: c1, c2, c3, c4, c5, c6, c7, c8
+                           Output: c2
                            Remote SQL: SELECT  *  FROM "T1" WHERE ((c2 < 10))
 (14 rows)
 
@@ -4633,7 +4721,7 @@ select c2, array_agg(c2) over (partition by c2%2 order by c2 range between curre
                      Output: c2, (c2 % 2)
                      Group Key: ft1.c2
                      ->  Foreign Scan on public.ft1
-                           Output: c1, c2, c3, c4, c5, c6, c7, c8
+                           Output: c2
                            Remote SQL: SELECT  *  FROM "T1" WHERE ((c2 < 10))
 (14 rows)
 
@@ -4909,8 +4997,9 @@ EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st7;
          Output: 1001, 101, 'foo'::text, NULL::timestamp without time zone, NULL::timestamp without time zone, NULL::text, 'ft1'::text, NULL::text
 (3 rows)
 
--- T0 has no data, after execute st6 the result is empty
-ALTER FOREIGN TABLE ft1 OPTIONS (SET table_name 'T0');  -- Modified the link to 'T0'
+--Testcase 741:
+INSERT INTO "S 1"."T0" SELECT * FROM "S 1"."T1";
+ALTER FOREIGN TABLE ft1 OPTIONS (SET table_name 'T0');
 --Testcase 288:
 EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st6;
                       QUERY PLAN                      
@@ -4921,31 +5010,6 @@ EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st6;
 (3 rows)
 
 --Testcase 289:
-EXECUTE st6;
- c1 | c2 | c3 | c4 | c5 | c6 | c7 | c8 
-----+----+----+----+----+----+----+----
-(0 rows)
-
---Testcase 290:
-EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st7;
-                                                                    QUERY PLAN                                                                     
----------------------------------------------------------------------------------------------------------------------------------------------------
- Insert on public.ft1
-   ->  Result
-         Output: 1001, 101, 'foo'::text, NULL::timestamp without time zone, NULL::timestamp without time zone, NULL::text, 'ft1'::text, NULL::text
-(3 rows)
-
-ALTER FOREIGN TABLE ft1 OPTIONS (SET table_name 'T1');  -- Re-modified the link to 'T1'
---Testcase 291:
-EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st6;
-                      QUERY PLAN                      
-------------------------------------------------------
- Foreign Scan on public.ft1 t1
-   Output: c1, c2, c3, c4, c5, c6, c7, c8
-   Remote SQL: SELECT  *  FROM "T1" WHERE ((c1 = c2))
-(3 rows)
-
---Testcase 292:
 EXECUTE st6;
  c1 | c2 |  c3   |            c4            |            c5            | c6 | c7 | c8  
 ----+----+-------+--------------------------+--------------------------+----+----+-----
@@ -4960,7 +5024,7 @@ EXECUTE st6;
   9 |  9 | 00009 | Sat Jan 10 00:00:00 1970 | Sat Jan 10 00:00:00 1970 | 9  | 9  | foo
 (9 rows)
 
---Testcase 293:
+--Testcase 290:
 EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st7;
                                                                     QUERY PLAN                                                                     
 ---------------------------------------------------------------------------------------------------------------------------------------------------
@@ -4969,6 +5033,9 @@ EXPLAIN (VERBOSE, COSTS OFF) EXECUTE st7;
          Output: 1001, 101, 'foo'::text, NULL::timestamp without time zone, NULL::timestamp without time zone, NULL::text, 'ft1'::text, NULL::text
 (3 rows)
 
+--Testcase 742:
+DELETE FROM "S 1"."T0";
+ALTER FOREIGN TABLE ft1 OPTIONS (SET table_name 'T1');
 --Testcase 294:
 PREPARE st8 AS SELECT count(c3) FROM ft1 t1 WHERE t1.c1 === t1.c2;
 --ALTER SERVER loopback OPTIONS (DROP extensions);
@@ -4991,7 +5058,7 @@ EXECUTE st8;
      9
 (1 row)
 
---ALTER SERVER loopback OPTIONS (ADD extensions 'postgres_fdw');
+--ALTER SERVER loopback OPTIONS (ADD extensions 'griddb_fdw');
 -- cleanup
 DEALLOCATE st1;
 DEALLOCATE st2;
@@ -5081,10 +5148,12 @@ SELECT ctid, * FROM ft1 t1 LIMIT 1;
 -- ===================================================================
 -- used in PL/pgSQL function
 -- ===================================================================
+--Testcase 743:
 CREATE OR REPLACE FUNCTION f_test(p_c1 int) RETURNS int AS $$
 DECLARE
 	v_c1 int;
 BEGIN
+--Testcase 744:
     SELECT c1 INTO v_c1 FROM ft1 WHERE c1 = p_c1 LIMIT 1;
     PERFORM c1 FROM ft1 WHERE c1 = p_c1 AND p_c1 = v_c1 LIMIT 1;
     RETURN v_c1;
@@ -5097,6 +5166,7 @@ SELECT f_test(100);
     100
 (1 row)
 
+--Testcase 745:
 DROP FUNCTION f_test(int);
 -- ===================================================================
 -- conversion error
@@ -5149,8 +5219,9 @@ WARNING:  Subtransaction is not supported. So griddb_fdw do nothing.
 --Testcase 312:
 SELECT * FROM ft1 WHERE 1 / (c1 - 1) > 0;  -- ERROR
 WARNING:  Subtransaction is not supported. So griddb_fdw do nothing.
-ERROR:  GridDB-API is failed by 150016 at griddb_fdw.c: 2632
-  Divide by 0 detected.
+ERROR:  GridDB-API is failed by 150016 at griddb_fdw.c: 2636
+  [150016:TQ_DIVIDE_BY_ZERO] Divide by 0 detected. (address=127.0.0.1:10001, partition=55)
+  [150016:TQ_DIVIDE_BY_ZERO] Divide by 0 detected.
 
 ROLLBACK TO s;
 WARNING:  Subtransaction is not supported. So griddb_fdw do nothing.
@@ -5176,6 +5247,13 @@ WARNING:  Subtransaction is not supported. So griddb_fdw do nothing.
 -- ===================================================================
 -- test handling of collations
 -- ===================================================================
+--Testcase 746:
+create foreign table loct3 (
+	f1 text OPTIONS (rowkey 'true'), 
+	f2 text, 
+	f3 text OPTIONS (rowkey 'true'))
+  server griddb_svr;
+--Testcase 747:
 create foreign table ft3 (
 	f1 text OPTIONS (rowkey 'true'), 
 	f2 text, 
@@ -5190,6 +5268,16 @@ explain (verbose, costs off) select * from ft3 where f1 = 'foo';
    Output: f1, f2, f3
    Remote SQL: SELECT  *  FROM loct3 WHERE ((f1 = 'foo'))
 (3 rows)
+
+--Testcase 748:
+explain (verbose, costs off) select * from ft3 where f1 COLLATE "C" = 'foo';
+                QUERY PLAN                
+------------------------------------------
+ Foreign Scan on public.ft3
+   Output: f1, f2, f3
+   Filter: ((ft3.f1)::text = 'foo'::text)
+   Remote SQL: SELECT  *  FROM loct3
+(4 rows)
 
 --Testcase 316:
 explain (verbose, costs off) select * from ft3 where f2 = 'foo';
@@ -5209,19 +5297,25 @@ explain (verbose, costs off) select * from ft3 where f3 = 'foo';
    Remote SQL: SELECT  *  FROM loct3 WHERE ((f3 = 'foo'))
 (3 rows)
 
---explain (verbose, costs off) select * from ft3 f, loct3 l
---  where f.f3 = l.f3 and l.f1 = 'foo';
--- can't be sent to remote
---Testcase 318:
-explain (verbose, costs off) select * from ft3 where f1 COLLATE "C" = 'foo';
-                QUERY PLAN                
-------------------------------------------
- Foreign Scan on public.ft3
-   Output: f1, f2, f3
-   Filter: ((ft3.f1)::text = 'foo'::text)
-   Remote SQL: SELECT  *  FROM loct3
-(4 rows)
+--Testcase 749:
+explain (verbose, costs off) select * from ft3 f, loct3 l
+  where f.f3 = l.f3 and l.f1 = 'foo';
+                              QUERY PLAN                              
+----------------------------------------------------------------------
+ Hash Join
+   Output: f.f1, f.f2, f.f3, l.f1, l.f2, l.f3
+   Hash Cond: (f.f3 = l.f3)
+   ->  Foreign Scan on public.ft3 f
+         Output: f.f1, f.f2, f.f3
+         Remote SQL: SELECT  *  FROM loct3
+   ->  Hash
+         Output: l.f1, l.f2, l.f3
+         ->  Foreign Scan on public.loct3 l
+               Output: l.f1, l.f2, l.f3
+               Remote SQL: SELECT  *  FROM loct3 WHERE ((f1 = 'foo'))
+(11 rows)
 
+-- can't be sent to remote
 --Testcase 319:
 explain (verbose, costs off) select * from ft3 where f1 COLLATE "POSIX" = 'foo';
                 QUERY PLAN                
@@ -5262,8 +5356,24 @@ explain (verbose, costs off) select * from ft3 where f2 = 'foo' COLLATE "C";
    Remote SQL: SELECT  *  FROM loct3
 (4 rows)
 
---explain (verbose, costs off) select * from ft3 f, loct3 l
---  where f.f3 = l.f3 COLLATE "POSIX" and l.f1 = 'foo';
+--Testcase 750:
+explain (verbose, costs off) select * from ft3 f, loct3 l
+  where f.f3 = l.f3 COLLATE "POSIX" and l.f1 = 'foo';
+                              QUERY PLAN                              
+----------------------------------------------------------------------
+ Hash Join
+   Output: f.f1, f.f2, f.f3, l.f1, l.f2, l.f3
+   Hash Cond: ((f.f3)::text = (l.f3)::text)
+   ->  Foreign Scan on public.ft3 f
+         Output: f.f1, f.f2, f.f3
+         Remote SQL: SELECT  *  FROM loct3
+   ->  Hash
+         Output: l.f1, l.f2, l.f3
+         ->  Foreign Scan on public.loct3 l
+               Output: l.f1, l.f2, l.f3
+               Remote SQL: SELECT  *  FROM loct3 WHERE ((f1 = 'foo'))
+(11 rows)
+
 -- ===================================================================
 -- test writable foreign table stuff
 -- ===================================================================
@@ -5467,8 +5577,6 @@ EXPLAIN (verbose, costs off)
          Remote SQL: SELECT  *  FROM "T1" WHERE (((c1 % 10) = 5))
 (4 rows)
 
--- DELETE RETURNING means returning rows which are deleted
--- GridDB does not support DELETE RETURNING
 --Testcase 336:
 SELECT c1,c4 FROM ft2 WHERE c1 % 10 = 5;
   c1  |            c4            
@@ -6477,13 +6585,14 @@ DELETE FROM ft2 WHERE c1 = 1200;                                                
 (4 rows)
 
 --Testcase 348:
-DELETE FROM ft2 WHERE c1 = 1200;
---Testcase 349:
 SELECT tableoid::regclass FROM ft2 WHERE c1 = 1200;
  tableoid 
 ----------
-(0 rows)
+ ft2
+(1 row)
 
+--Testcase 349:
+DELETE FROM ft2 WHERE c1 = 1200;
 -- Test UPDATE/DELETE with RETURNING on a three-table join
 --Testcase 350:
 INSERT INTO ft2 (c1,c2,c3)
@@ -6578,19 +6687,19 @@ DELETE FROM ft2
 (20 rows)
 
 --Testcase 355:
-SELECT * FROM ft2, ft4 WHERE ft2.c1 > 1200 AND ft2.c1 % 10 = 0 AND ft2.c2 = ft4.c1;
-  c1  | c2  |  c3   | c4 | c5 | c6 | c7  | c8 | c1  | c2  |   c3   
-------+-----+-------+----+----+----+-----+----+-----+-----+--------
- 1210 |  10 | 01210 |    |    |    | ft2 |    |  10 |  11 | AAA010
- 1220 |  20 | 01220 |    |    |    | ft2 |    |  20 |  21 | AAA020
- 1230 |  30 | foo   |    |    |    | ft2 |    |  30 |  31 | AAA030
- 1240 |  40 | 01240 |    |    |    | ft2 |    |  40 |  41 | AAA040
- 1250 |  50 | 01250 |    |    |    | ft2 |    |  50 |  51 | AAA050
- 1260 |  60 | foo   |    |    |    | ft2 |    |  60 |  61 | AAA060
- 1270 |  70 | 01270 |    |    |    | ft2 |    |  70 |  71 | AAA070
- 1280 |  80 | 01280 |    |    |    | ft2 |    |  80 |  81 | AAA080
- 1290 |  90 | foo   |    |    |    | ft2 |    |  90 |  91 | AAA090
- 1300 | 100 | 01300 |    |    |    | ft2 |    | 100 | 101 | AAA100
+SELECT 100 FROM ft2, ft4 WHERE ft2.c1 > 1200 AND ft2.c1 % 10 = 0 AND ft2.c2 = ft4.c1;
+ ?column? 
+----------
+      100
+      100
+      100
+      100
+      100
+      100
+      100
+      100
+      100
+      100
 (10 rows)
 
 --Testcase 356:
@@ -6599,6 +6708,40 @@ DELETE FROM ft2
   WHERE ft2.c1 > 1200 AND ft2.c1 % 10 = 0 AND ft2.c2 = ft4.c1;
 --Testcase 357:
 DELETE FROM ft2 WHERE ft2.c1 > 1200;
+-- Test UPDATE with a MULTIEXPR sub-select
+-- (maybe someday this'll be remotely executable, but not today)
+--Testcase 751:
+EXPLAIN (verbose, costs off)
+UPDATE ft2 AS target SET (c2, c7) = (
+    SELECT c2 * 10, c7
+        FROM ft2 AS src
+        WHERE target.c1 = src.c1
+) WHERE c1 > 1100;
+                                                            QUERY PLAN                                                            
+----------------------------------------------------------------------------------------------------------------------------------
+ Update on public.ft2 target
+   ->  Foreign Scan on public.ft2 target
+         Output: target.c1, $1, target.c3, target.c4, target.c5, target.c6, $2, target.c8, (SubPlan 1 (returns $1,$2)), target.c1
+         Remote SQL: SELECT  *  FROM "T1" WHERE ((c1 > 1100))
+         SubPlan 1 (returns $1,$2)
+           ->  Foreign Scan on public.ft2 src
+                 Output: (src.c2 * 10), src.c7
+                 Filter: (target.c1 = src.c1)
+                 Remote SQL: SELECT  *  FROM "T1"
+(9 rows)
+
+--Testcase 752:
+UPDATE ft2 AS target SET (c2, c7) = (
+    SELECT c2 * 10, c7
+        FROM ft2 AS src
+        WHERE target.c1 = src.c1
+) WHERE c1 > 1100;
+--Testcase 753:
+UPDATE ft2 AS target SET (c2) = (
+    SELECT c2 / 10
+        FROM ft2 AS src
+        WHERE target.c1 = src.c1
+) WHERE c1 > 1100;
 -- Test UPDATE/DELETE with WHERE or JOIN/ON conditions containing
 -- user-defined operators/functions
 --ALTER SERVER loopback OPTIONS (DROP extensions);
@@ -6721,14 +6864,16 @@ DELETE FROM ft2
   WHERE ft2.c1 > 2000 AND ft2.c2 = ft4.c1;
 --Testcase 368:
 DELETE FROM ft2 WHERE ft2.c1 > 2000;
---ALTER SERVER loopback OPTIONS (ADD extensions 'postgres_fdw');
+--ALTER SERVER loopback OPTIONS (ADD extensions 'griddb_fdw');
 -- Test that trigger on remote table works as expected
+--Testcase 754:
 CREATE OR REPLACE FUNCTION "S 1".F_BRTRIG() RETURNS trigger AS $$
 BEGIN
     NEW.c3 = NEW.c3 || '_trig_update';
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+--Testcase 755:
 CREATE TRIGGER t1_br_insert BEFORE INSERT OR UPDATE
     ON "S 1"."T1" FOR EACH ROW EXECUTE PROCEDURE "S 1".F_BRTRIG();
 --Testcase 369:
@@ -6863,10 +7008,10 @@ SELECT * FROM "S 1"."T1" WHERE c1 % 10 = 8 AND c1 < 1200;
 ALTER FOREIGN TABLE ft1 ADD CONSTRAINT c2positive CHECK (c2 >= 0);
 -- row was updated instead of insert because same row key has already existed.
 --Testcase 375:
-INSERT INTO ft1(c1, c2) VALUES(1228, 12);
+--INSERT INTO ft1(c1, c2) VALUES(11, 12);
 -- ON CONFLICT is not suported
 --Testcase 376:
-INSERT INTO ft1(c1, c2) VALUES(11, 12) ON CONFLICT DO NOTHING; -- works
+INSERT INTO ft1(c1, c2) VALUES(11, 12) ON CONFLICT DO NOTHING; -- not supported
 ERROR:  ON CONFLICT is not supported
 --Testcase 377:
 INSERT INTO ft1(c1, c2) VALUES(11, 12) ON CONFLICT (c1, c2) DO NOTHING; -- unsupported
@@ -6874,22 +7019,20 @@ ERROR:  there is no unique or exclusion constraint matching the ON CONFLICT spec
 --Testcase 378:
 INSERT INTO ft1(c1, c2) VALUES(11, 12) ON CONFLICT (c1, c2) DO UPDATE SET c3 = 'ffg'; -- unsupported
 ERROR:  there is no unique or exclusion constraint matching the ON CONFLICT specification
+-- GridDB not support constraints
 --Testcase 379:
-INSERT INTO ft1(c1, c2) VALUES(1111, -2);  -- c2positive
+--INSERT INTO ft1(c1, c2) VALUES(1111, -2);  -- c2positive
 --Testcase 380:
-UPDATE ft1 SET c2 = -c2 WHERE c1 = 1;  -- c2positive
+--UPDATE ft1 SET c2 = -c2 WHERE c1 = 1;  -- c2positive
 -- Test savepoint/rollback behavior
 --Testcase 381:
 select c2, count(*) from ft2 where c2 < 500 group by 1 order by 1;
  c2  | count 
 -----+-------
-  -2 |     1
-  -1 |     1
    0 |   100
-   1 |    99
+   1 |   100
    4 |   100
    6 |   100
-  12 |     1
  100 |     2
  101 |     2
  104 |     2
@@ -6899,19 +7042,16 @@ select c2, count(*) from ft2 where c2 < 500 group by 1 order by 1;
  303 |   100
  403 |     2
  407 |   100
-(16 rows)
+(13 rows)
 
 --Testcase 382:
 select c2, count(*) from "S 1"."T1" where c2 < 500 group by 1 order by 1;
  c2  | count 
 -----+-------
-  -2 |     1
-  -1 |     1
    0 |   100
-   1 |    99
+   1 |   100
    4 |   100
    6 |   100
-  12 |     1
  100 |     2
  101 |     2
  104 |     2
@@ -6921,7 +7061,7 @@ select c2, count(*) from "S 1"."T1" where c2 < 500 group by 1 order by 1;
  303 |   100
  403 |     2
  407 |   100
-(16 rows)
+(13 rows)
 
 begin;
 --Testcase 383:
@@ -6930,12 +7070,9 @@ update ft2 set c2 = 42 where c2 = 0;
 select c2, count(*) from ft2 where c2 < 500 group by 1 order by 1;
  c2  | count 
 -----+-------
-  -2 |     1
-  -1 |     1
-   1 |    99
+   1 |   100
    4 |   100
    6 |   100
-  12 |     1
   42 |   100
  100 |     2
  101 |     2
@@ -6946,7 +7083,7 @@ select c2, count(*) from ft2 where c2 < 500 group by 1 order by 1;
  303 |   100
  403 |     2
  407 |   100
-(16 rows)
+(13 rows)
 
 savepoint s1;
 WARNING:  Subtransaction is not supported. So griddb_fdw do nothing.
@@ -6956,11 +7093,8 @@ update ft2 set c2 = 44 where c2 = 4;
 select c2, count(*) from ft2 where c2 < 500 group by 1 order by 1;
  c2  | count 
 -----+-------
-  -2 |     1
-  -1 |     1
-   1 |    99
+   1 |   100
    6 |   100
-  12 |     1
   42 |   100
   44 |   100
  100 |     2
@@ -6972,7 +7106,7 @@ select c2, count(*) from ft2 where c2 < 500 group by 1 order by 1;
  303 |   100
  403 |     2
  407 |   100
-(16 rows)
+(13 rows)
 
 release savepoint s1;
 WARNING:  Subtransaction is not supported. So griddb_fdw do nothing.
@@ -6981,11 +7115,8 @@ WARNING:  Subtransaction is not supported. So griddb_fdw do nothing.
 select c2, count(*) from ft2 where c2 < 500 group by 1 order by 1;
  c2  | count 
 -----+-------
-  -2 |     1
-  -1 |     1
-   1 |    99
+   1 |   100
    6 |   100
-  12 |     1
   42 |   100
   44 |   100
  100 |     2
@@ -6997,7 +7128,7 @@ select c2, count(*) from ft2 where c2 < 500 group by 1 order by 1;
  303 |   100
  403 |     2
  407 |   100
-(16 rows)
+(13 rows)
 
 savepoint s2;
 WARNING:  Subtransaction is not supported. So griddb_fdw do nothing.
@@ -7007,10 +7138,7 @@ update ft2 set c2 = 46 where c2 = 6;
 select c2, count(*) from ft2 where c2 < 500 group by 1 order by 1;
  c2  | count 
 -----+-------
-  -2 |     1
-  -1 |     1
-   1 |    99
-  12 |     1
+   1 |   100
   42 |   100
   44 |   100
   46 |   100
@@ -7023,22 +7151,22 @@ select c2, count(*) from ft2 where c2 < 500 group by 1 order by 1;
  303 |   100
  403 |     2
  407 |   100
-(16 rows)
+(13 rows)
 
 rollback to savepoint s2;
 WARNING:  Subtransaction is not supported. So griddb_fdw do nothing.
 WARNING:  Subtransaction is not supported. So griddb_fdw do nothing.
+-- savepoint not supported.
+--Testcase 756:
+update ft2 set c2 = 6 where c2 = 46;
 --Testcase 390:
 select c2, count(*) from ft2 where c2 < 500 group by 1 order by 1;
  c2  | count 
 -----+-------
-  -2 |     1
-  -1 |     1
-   1 |    99
-  12 |     1
+   1 |   100
+   6 |   100
   42 |   100
   44 |   100
-  46 |   100
  100 |     2
  101 |     2
  104 |     2
@@ -7048,7 +7176,7 @@ select c2, count(*) from ft2 where c2 < 500 group by 1 order by 1;
  303 |   100
  403 |     2
  407 |   100
-(16 rows)
+(13 rows)
 
 release savepoint s2;
 WARNING:  Subtransaction is not supported. So griddb_fdw do nothing.
@@ -7057,13 +7185,10 @@ WARNING:  Subtransaction is not supported. So griddb_fdw do nothing.
 select c2, count(*) from ft2 where c2 < 500 group by 1 order by 1;
  c2  | count 
 -----+-------
-  -2 |     1
-  -1 |     1
-   1 |    99
-  12 |     1
+   1 |   100
+   6 |   100
   42 |   100
   44 |   100
-  46 |   100
  100 |     2
  101 |     2
  104 |     2
@@ -7073,12 +7198,13 @@ select c2, count(*) from ft2 where c2 < 500 group by 1 order by 1;
  303 |   100
  403 |     2
  407 |   100
-(16 rows)
+(13 rows)
 
 savepoint s3;
 WARNING:  Subtransaction is not supported. So griddb_fdw do nothing.
 --Testcase 392:
-update ft2 set c2 = -2 where c2 = 42 and c1 = 10; -- fail on remote side
+-- GridDB not support constraints
+--update ft2 set c2 = -2 where c2 = 42 and c1 = 10; -- fail on remote side
 rollback to savepoint s3;
 WARNING:  Subtransaction is not supported. So griddb_fdw do nothing.
 WARNING:  Subtransaction is not supported. So griddb_fdw do nothing.
@@ -7086,13 +7212,10 @@ WARNING:  Subtransaction is not supported. So griddb_fdw do nothing.
 select c2, count(*) from ft2 where c2 < 500 group by 1 order by 1;
  c2  | count 
 -----+-------
-  -2 |     2
-  -1 |     1
-   1 |    99
-  12 |     1
-  42 |    99
+   1 |   100
+   6 |   100
+  42 |   100
   44 |   100
-  46 |   100
  100 |     2
  101 |     2
  104 |     2
@@ -7102,7 +7225,7 @@ select c2, count(*) from ft2 where c2 < 500 group by 1 order by 1;
  303 |   100
  403 |     2
  407 |   100
-(16 rows)
+(13 rows)
 
 release savepoint s3;
 WARNING:  Subtransaction is not supported. So griddb_fdw do nothing.
@@ -7111,13 +7234,10 @@ WARNING:  Subtransaction is not supported. So griddb_fdw do nothing.
 select c2, count(*) from ft2 where c2 < 500 group by 1 order by 1;
  c2  | count 
 -----+-------
-  -2 |     2
-  -1 |     1
-   1 |    99
-  12 |     1
-  42 |    99
+   1 |   100
+   6 |   100
+  42 |   100
   44 |   100
-  46 |   100
  100 |     2
  101 |     2
  104 |     2
@@ -7127,20 +7247,17 @@ select c2, count(*) from ft2 where c2 < 500 group by 1 order by 1;
  303 |   100
  403 |     2
  407 |   100
-(16 rows)
+(13 rows)
 
 -- none of the above is committed yet remotely
 --Testcase 395:
 select c2, count(*) from "S 1"."T1" where c2 < 500 group by 1 order by 1;
  c2  | count 
 -----+-------
-  -2 |     1
-  -1 |     1
    0 |   100
-   1 |    99
+   1 |   100
    4 |   100
    6 |   100
-  12 |     1
  100 |     2
  101 |     2
  104 |     2
@@ -7150,20 +7267,17 @@ select c2, count(*) from "S 1"."T1" where c2 < 500 group by 1 order by 1;
  303 |   100
  403 |     2
  407 |   100
-(16 rows)
+(13 rows)
 
 commit;
 --Testcase 396:
 select c2, count(*) from ft2 where c2 < 500 group by 1 order by 1;
  c2  | count 
 -----+-------
-  -2 |     2
-  -1 |     1
-   1 |    99
-  12 |     1
-  42 |    99
+   1 |   100
+   6 |   100
+  42 |   100
   44 |   100
-  46 |   100
  100 |     2
  101 |     2
  104 |     2
@@ -7173,19 +7287,16 @@ select c2, count(*) from ft2 where c2 < 500 group by 1 order by 1;
  303 |   100
  403 |     2
  407 |   100
-(16 rows)
+(13 rows)
 
 --Testcase 397:
 select c2, count(*) from "S 1"."T1" where c2 < 500 group by 1 order by 1;
  c2  | count 
 -----+-------
-  -2 |     2
-  -1 |     1
-   1 |    99
-  12 |     1
-  42 |    99
+   1 |   100
+   6 |   100
+  42 |   100
   44 |   100
-  46 |   100
  100 |     2
  101 |     2
  104 |     2
@@ -7195,7 +7306,7 @@ select c2, count(*) from "S 1"."T1" where c2 < 500 group by 1 order by 1;
  303 |   100
  403 |     2
  407 |   100
-(16 rows)
+(13 rows)
 
 --VACUUM ANALYZE "S 1"."T 1";
 -- Above DMLs add data with c6 as NULL in ft1, so test ORDER BY NULLS LAST and NULLs
@@ -7254,12 +7365,12 @@ SELECT * FROM ft1 ORDER BY c6 DESC NULLS FIRST, c1 OFFSET 15 LIMIT 10;
  1101 | 201 | aaa             |                          |                          |    | ft2 | 
  1103 | 503 | ccc_update3     |                          |                          |    | ft2 | 
  1104 | 204 | ddd             |                          |                          |    | ft2 | 
- 1111 |  -2 |                 |                          |                          |    | ft1 | 
  1208 | 818 | fff_trig_update |                          |                          |    | ft2 | 
- 1228 |  12 |                 |                          |                          |    | ft1 | 
     9 | 509 | 00009_update9   | Sat Jan 10 00:00:00 1970 | Sat Jan 10 00:00:00 1970 | 9  | ft2 | foo
    19 | 509 | 00019_update9   | Tue Jan 20 00:00:00 1970 | Tue Jan 20 00:00:00 1970 | 9  | ft2 | foo
    29 | 509 | 00029_update9   | Fri Jan 30 00:00:00 1970 | Fri Jan 30 00:00:00 1970 | 9  | ft2 | foo
+   39 | 509 | 00039_update9   | Mon Feb 09 00:00:00 1970 | Mon Feb 09 00:00:00 1970 | 9  | ft2 | foo
+   49 | 509 | 00049_update9   | Thu Feb 19 00:00:00 1970 | Thu Feb 19 00:00:00 1970 | 9  | ft2 | foo
 (10 rows)
 
 -- ORDER BY ASC NULLS FIRST options
@@ -7285,18 +7396,19 @@ SELECT * FROM ft1 ORDER BY c6 ASC NULLS FIRST, c1 OFFSET 15 LIMIT 10;
  1101 | 201 | aaa             |                          |                          |      | ft2 | 
  1103 | 503 | ccc_update3     |                          |                          |      | ft2 | 
  1104 | 204 | ddd             |                          |                          |      | ft2 | 
- 1111 |  -2 |                 |                          |                          |      | ft1 | 
  1208 | 818 | fff_trig_update |                          |                          |      | ft2 | 
- 1228 |  12 |                 |                          |                          |      | ft1 | 
  1218 | 818 | ggg_trig_update |                          |                          | (--; | ft2 | 
-   10 |  -2 | 00010           | Sun Jan 11 00:00:00 1970 | Sun Jan 11 00:00:00 1970 | 0    | 0   | foo
+   10 |  42 | 00010           | Sun Jan 11 00:00:00 1970 | Sun Jan 11 00:00:00 1970 | 0    | 0   | foo
    20 |  42 | 00020           | Wed Jan 21 00:00:00 1970 | Wed Jan 21 00:00:00 1970 | 0    | 0   | foo
+   30 |  42 | 00030           | Sat Jan 31 00:00:00 1970 | Sat Jan 31 00:00:00 1970 | 0    | 0   | foo
+   40 |  42 | 00040           | Tue Feb 10 00:00:00 1970 | Tue Feb 10 00:00:00 1970 | 0    | 0   | foo
 (10 rows)
 
+/*
+-- GridDB not support constraints
 -- ===================================================================
 -- test check constraints
 -- ===================================================================
-/*
 -- Consistent check constraints provide consistent results
 ALTER FOREIGN TABLE ft1 ADD CONSTRAINT ft1_c2positive CHECK (c2 >= 0);
 --Testcase 404:
@@ -7338,20 +7450,27 @@ ALTER FOREIGN TABLE ft1 DROP CONSTRAINT ft1_c2negative;
 -- ===================================================================
 -- test WITH CHECK OPTION constraints
 -- ===================================================================
+--Testcase 757:
 CREATE FUNCTION row_before_insupd_trigfunc() RETURNS trigger AS $$BEGIN NEW.a := NEW.a + 10; RETURN NEW; END$$ LANGUAGE plpgsql;
-CREATE FOREIGN TABLE foreign_tbl (a int OPTIONS (rowkey 'true'), b int)
+--Testcase 758:
+CREATE FOREIGN TABLE foreign_tbl (id serial OPTIONS (rowkey 'true'), a int, b int)
   SERVER griddb_svr OPTIONS(table_name 'base_tbl');
+--Testcase 759:
 CREATE TRIGGER row_before_insupd_trigger BEFORE INSERT OR UPDATE ON foreign_tbl FOR EACH ROW EXECUTE PROCEDURE row_before_insupd_trigfunc();
+--Testcase 760:
 CREATE VIEW rw_view AS SELECT * FROM foreign_tbl
   WHERE a < b WITH CHECK OPTION;
+--Testcase 761:
 \d+ rw_view
                            View "public.rw_view"
  Column |  Type   | Collation | Nullable | Default | Storage | Description 
 --------+---------+-----------+----------+---------+---------+-------------
+ id     | integer |           |          |         | plain   | 
  a      | integer |           |          |         | plain   | 
  b      | integer |           |          |         | plain   | 
 View definition:
- SELECT foreign_tbl.a,
+ SELECT foreign_tbl.id,
+    foreign_tbl.a,
     foreign_tbl.b
    FROM foreign_tbl
   WHERE foreign_tbl.a < foreign_tbl.b;
@@ -7359,32 +7478,32 @@ Options: check_option=cascaded
 
 --Testcase 416:
 EXPLAIN (VERBOSE, COSTS OFF)
-INSERT INTO rw_view VALUES (0, 5);
-          QUERY PLAN          
-------------------------------
+INSERT INTO rw_view(a, b) VALUES (0, 5);
+                          QUERY PLAN                           
+---------------------------------------------------------------
  Insert on public.foreign_tbl
    ->  Result
-         Output: 0, 5
+         Output: nextval('foreign_tbl_id_seq'::regclass), 0, 5
 (3 rows)
 
 --Testcase 417:
-INSERT INTO rw_view VALUES (0, 5); -- should fail
+INSERT INTO rw_view(a, b) VALUES (0, 5); -- should fail
 ERROR:  new row violates check option for view "rw_view"
-DETAIL:  Failing row contains (10, 5).
+DETAIL:  Failing row contains (1, 10, 5).
 --Testcase 418:
 EXPLAIN (VERBOSE, COSTS OFF)
-INSERT INTO rw_view VALUES (0, 15);
-          QUERY PLAN          
-------------------------------
+INSERT INTO rw_view(a, b) VALUES (0, 15);
+                           QUERY PLAN                           
+----------------------------------------------------------------
  Insert on public.foreign_tbl
    ->  Result
-         Output: 0, 15
+         Output: nextval('foreign_tbl_id_seq'::regclass), 0, 15
 (3 rows)
 
 --Testcase 419:
-INSERT INTO rw_view VALUES (0, 15); -- ok
+INSERT INTO rw_view(a, b) VALUES (0, 15); -- ok
 --Testcase 420:
-SELECT * FROM foreign_tbl;
+SELECT a, b FROM foreign_tbl;
  a  | b  
 ----+----
  10 | 15
@@ -7393,59 +7512,66 @@ SELECT * FROM foreign_tbl;
 --Testcase 421:
 EXPLAIN (VERBOSE, COSTS OFF)
 UPDATE rw_view SET b = b + 5;
-                                    QUERY PLAN                                    
-----------------------------------------------------------------------------------
+                                            QUERY PLAN                                             
+---------------------------------------------------------------------------------------------------
  Update on public.foreign_tbl
    ->  Foreign Scan on public.foreign_tbl
-         Output: foreign_tbl.a, (foreign_tbl.b + 5), foreign_tbl.a, foreign_tbl.*
+         Output: foreign_tbl.id, foreign_tbl.a, (foreign_tbl.b + 5), foreign_tbl.id, foreign_tbl.*
          Remote SQL: SELECT  *  FROM base_tbl WHERE ((a < b))
 (4 rows)
 
 --Testcase 422:
 UPDATE rw_view SET b = b + 5; -- should fail
 ERROR:  new row violates check option for view "rw_view"
-DETAIL:  Failing row contains (20, 20).
+DETAIL:  Failing row contains (2, 20, 20).
 --Testcase 423:
 EXPLAIN (VERBOSE, COSTS OFF)
 UPDATE rw_view SET b = b + 15;
-                                    QUERY PLAN                                     
------------------------------------------------------------------------------------
+                                             QUERY PLAN                                             
+----------------------------------------------------------------------------------------------------
  Update on public.foreign_tbl
    ->  Foreign Scan on public.foreign_tbl
-         Output: foreign_tbl.a, (foreign_tbl.b + 15), foreign_tbl.a, foreign_tbl.*
+         Output: foreign_tbl.id, foreign_tbl.a, (foreign_tbl.b + 15), foreign_tbl.id, foreign_tbl.*
          Remote SQL: SELECT  *  FROM base_tbl WHERE ((a < b))
 (4 rows)
 
 --Testcase 424:
 UPDATE rw_view SET b = b + 15; -- ok
 --Testcase 425:
-SELECT * FROM foreign_tbl;
+SELECT a, b FROM foreign_tbl;
  a  | b  
 ----+----
- 10 | 30
+ 20 | 30
 (1 row)
 
+--Testcase 762:
 DROP TRIGGER row_before_insupd_trigger ON foreign_tbl;
+--Testcase 763:
 DROP FOREIGN TABLE foreign_tbl CASCADE;
 NOTICE:  drop cascades to view rw_view
 -- test WCO for partitions
---CREATE TABLE child_tbl (a int, b int);
---ALTER TABLE child_tbl SET (autovacuum_enabled = 'false');
-CREATE FOREIGN TABLE foreign_tbl (a int OPTIONS (rowkey 'true'), b int)
+--Testcase 764:
+CREATE FOREIGN TABLE foreign_tbl (id serial OPTIONS (rowkey 'true'), a int, b int)
   SERVER griddb_svr OPTIONS (table_name 'child_tbl');
+--Testcase 765:
 CREATE TRIGGER row_before_insupd_trigger BEFORE INSERT OR UPDATE ON foreign_tbl FOR EACH ROW EXECUTE PROCEDURE row_before_insupd_trigfunc();
-CREATE TABLE parent_tbl (a int, b int) PARTITION BY RANGE(a);
+--Testcase 766:
+CREATE TABLE parent_tbl (id serial, a int, b int) PARTITION BY RANGE(a);
 ALTER TABLE parent_tbl ATTACH PARTITION foreign_tbl FOR VALUES FROM (0) TO (100);
+--Testcase 767:
 CREATE VIEW rw_view AS SELECT * FROM parent_tbl
   WHERE a < b WITH CHECK OPTION;
+--Testcase 768:
 \d+ rw_view
                            View "public.rw_view"
  Column |  Type   | Collation | Nullable | Default | Storage | Description 
 --------+---------+-----------+----------+---------+---------+-------------
+ id     | integer |           |          |         | plain   | 
  a      | integer |           |          |         | plain   | 
  b      | integer |           |          |         | plain   | 
 View definition:
- SELECT parent_tbl.a,
+ SELECT parent_tbl.id,
+    parent_tbl.a,
     parent_tbl.b
    FROM parent_tbl
   WHERE parent_tbl.a < parent_tbl.b;
@@ -7453,32 +7579,32 @@ Options: check_option=cascaded
 
 --Testcase 426:
 EXPLAIN (VERBOSE, COSTS OFF)
-INSERT INTO rw_view VALUES (0, 5);
-         QUERY PLAN          
------------------------------
+INSERT INTO rw_view(a, b) VALUES (0, 5);
+                          QUERY PLAN                          
+--------------------------------------------------------------
  Insert on public.parent_tbl
    ->  Result
-         Output: 0, 5
+         Output: nextval('parent_tbl_id_seq'::regclass), 0, 5
 (3 rows)
 
 --Testcase 427:
-INSERT INTO rw_view VALUES (0, 5); -- should fail
+INSERT INTO rw_view(a, b) VALUES (0, 5); -- should fail
 ERROR:  new row violates check option for view "rw_view"
-DETAIL:  Failing row contains (10, 5).
+DETAIL:  Failing row contains (1, 10, 5).
 --Testcase 428:
 EXPLAIN (VERBOSE, COSTS OFF)
-INSERT INTO rw_view VALUES (0, 15);
-         QUERY PLAN          
------------------------------
+INSERT INTO rw_view(a, b) VALUES (0, 15);
+                          QUERY PLAN                           
+---------------------------------------------------------------
  Insert on public.parent_tbl
    ->  Result
-         Output: 0, 15
+         Output: nextval('parent_tbl_id_seq'::regclass), 0, 15
 (3 rows)
 
 --Testcase 429:
-INSERT INTO rw_view VALUES (0, 15); -- ok
+INSERT INTO rw_view(a, b) VALUES (0, 15); -- ok
 --Testcase 430:
-SELECT * FROM foreign_tbl;
+SELECT a, b FROM foreign_tbl;
  a  | b  
 ----+----
  10 | 15
@@ -7487,48 +7613,53 @@ SELECT * FROM foreign_tbl;
 --Testcase 431:
 EXPLAIN (VERBOSE, COSTS OFF)
 UPDATE rw_view SET b = b + 5;
-                                    QUERY PLAN                                    
-----------------------------------------------------------------------------------
+                                               QUERY PLAN                                               
+--------------------------------------------------------------------------------------------------------
  Update on public.parent_tbl
-   Foreign Update on public.foreign_tbl
-   ->  Foreign Scan on public.foreign_tbl
-         Output: foreign_tbl.a, (foreign_tbl.b + 5), foreign_tbl.a, foreign_tbl.*
+   Foreign Update on public.foreign_tbl parent_tbl_1
+   ->  Foreign Scan on public.foreign_tbl parent_tbl_1
+         Output: parent_tbl_1.id, parent_tbl_1.a, (parent_tbl_1.b + 5), parent_tbl_1.id, parent_tbl_1.*
          Remote SQL: SELECT  *  FROM child_tbl WHERE ((a < b))
 (5 rows)
 
 --Testcase 432:
 UPDATE rw_view SET b = b + 5; -- should fail
 ERROR:  new row violates check option for view "rw_view"
-DETAIL:  Failing row contains (20, 20).
+DETAIL:  Failing row contains (2, 20, 20).
 --Testcase 433:
 EXPLAIN (VERBOSE, COSTS OFF)
 UPDATE rw_view SET b = b + 15;
-                                    QUERY PLAN                                     
------------------------------------------------------------------------------------
+                                               QUERY PLAN                                                
+---------------------------------------------------------------------------------------------------------
  Update on public.parent_tbl
-   Foreign Update on public.foreign_tbl
-   ->  Foreign Scan on public.foreign_tbl
-         Output: foreign_tbl.a, (foreign_tbl.b + 15), foreign_tbl.a, foreign_tbl.*
+   Foreign Update on public.foreign_tbl parent_tbl_1
+   ->  Foreign Scan on public.foreign_tbl parent_tbl_1
+         Output: parent_tbl_1.id, parent_tbl_1.a, (parent_tbl_1.b + 15), parent_tbl_1.id, parent_tbl_1.*
          Remote SQL: SELECT  *  FROM child_tbl WHERE ((a < b))
 (5 rows)
 
 --Testcase 434:
 UPDATE rw_view SET b = b + 15; -- ok
 --Testcase 435:
-SELECT * FROM foreign_tbl;
+SELECT a, b FROM foreign_tbl;
  a  | b  
 ----+----
- 10 | 30
+ 20 | 30
 (1 row)
 
+--Testcase 769:
 DROP TRIGGER row_before_insupd_trigger ON foreign_tbl;
+--Testcase 770:
 DROP FOREIGN TABLE foreign_tbl CASCADE;
+--Testcase 771:
 DROP TABLE parent_tbl CASCADE;
 NOTICE:  drop cascades to view rw_view
+--Testcase 772:
 DROP FUNCTION row_before_insupd_trigfunc;
 -- ===================================================================
 -- test serial columns (ie, sequence-based defaults)
 -- ===================================================================
+--Testcase 773:
 create foreign table rem1 (id serial OPTIONS (rowkey 'true'), f1 serial, f2 text)
   server griddb_svr options(table_name 'loct13');
 --Testcase 436:
@@ -7547,13 +7678,13 @@ insert into rem1(f2) values('hi remote');
 --Testcase 440:
 insert into rem1(f2) values('bye remote');
 --Testcase 441:
-select * from rem1;
- id | f1 |     f2     
-----+----+------------
-  1 |  1 | hi
-  2 |  2 | bye
-  3 | 10 | hi remote
-  4 | 11 | bye remote
+select f1, f2 from rem1;
+ f1 |     f2     
+----+------------
+  1 | hi
+  2 | bye
+ 10 | hi remote
+ 11 | bye remote
 (4 rows)
 
 -- ===================================================================
@@ -7561,6 +7692,7 @@ select * from rem1;
 -- ===================================================================
 --create table gloc1 (a int, b int);
 --alter table gloc1 set (autovacuum_enabled = 'false');
+--Testcase 774:
 create foreign table grem1 (
   id serial OPTIONS (rowkey 'true'),
   a int,
@@ -7570,29 +7702,32 @@ create foreign table grem1 (
 insert into grem1 (a) values (1), (2);
 --Testcase 443:
 update grem1 set a = 22 where a = 2;
---select * from gloc1;
 --Testcase 444:
-select * from grem1;
- id | a  | b  
-----+----+----
-  1 |  1 |  2
-  2 | 22 | 44
+select a, b from grem1;
+ a  | b  
+----+----
+  1 |  2
+ 22 | 44
 (2 rows)
 
 -- ===================================================================
 -- test local triggers
 -- ===================================================================
 -- Trigger functions "borrowed" from triggers regress test.
+--Testcase 775:
 CREATE FUNCTION trigger_func() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
 	RAISE NOTICE 'trigger_func(%) called: action = %, when = %, level = %',
 		TG_ARGV[0], TG_OP, TG_WHEN, TG_LEVEL;
 	RETURN NULL;
 END;$$;
+--Testcase 776:
 CREATE TRIGGER trig_stmt_before BEFORE DELETE OR INSERT OR UPDATE ON rem1
 	FOR EACH STATEMENT EXECUTE PROCEDURE trigger_func();
+--Testcase 777:
 CREATE TRIGGER trig_stmt_after AFTER DELETE OR INSERT OR UPDATE ON rem1
 	FOR EACH STATEMENT EXECUTE PROCEDURE trigger_func();
+--Testcase 778:
 CREATE OR REPLACE FUNCTION trigger_data()  RETURNS trigger
 LANGUAGE plpgsql AS $$
 
@@ -7632,9 +7767,11 @@ begin
 end;
 $$;
 -- Test basic functionality
+--Testcase 779:
 CREATE TRIGGER trig_row_before
 BEFORE INSERT OR UPDATE OR DELETE ON rem1
 FOR EACH ROW EXECUTE PROCEDURE trigger_data(23,'skidoo');
+--Testcase 780:
 CREATE TRIGGER trig_row_after
 AFTER INSERT OR UPDATE OR DELETE ON rem1
 FOR EACH ROW EXECUTE PROCEDURE trigger_data(23,'skidoo');
@@ -7683,24 +7820,66 @@ NOTICE:  trig_row_after(23, skidoo) AFTER ROW UPDATE ON rem1
 NOTICE:  OLD: (5,1,update),NEW: (5,1,updateupdate)
 NOTICE:  trigger_func(<NULL>) called: action = UPDATE, when = AFTER, level = STATEMENT
 -- cleanup
+--Testcase 781:
 DROP TRIGGER trig_row_before ON rem1;
+--Testcase 782:
 DROP TRIGGER trig_row_after ON rem1;
+--Testcase 783:
 DROP TRIGGER trig_stmt_before ON rem1;
+--Testcase 784:
 DROP TRIGGER trig_stmt_after ON rem1;
 --Testcase 449:
 DELETE from rem1;
+-- Test multiple AFTER ROW triggers on a foreign table
+--Testcase 785:
+CREATE TRIGGER trig_row_after1
+AFTER INSERT OR UPDATE OR DELETE ON rem1
+FOR EACH ROW EXECUTE PROCEDURE trigger_data(23,'skidoo');
+--Testcase 786:
+CREATE TRIGGER trig_row_after2
+AFTER INSERT OR UPDATE OR DELETE ON rem1
+FOR EACH ROW EXECUTE PROCEDURE trigger_data(23,'skidoo');
+--Testcase 787:
+insert into rem1(f1, f2) values(1,'insert');
+NOTICE:  trig_row_after1(23, skidoo) AFTER ROW INSERT ON rem1
+NOTICE:  NEW: (6,1,insert)
+NOTICE:  trig_row_after2(23, skidoo) AFTER ROW INSERT ON rem1
+NOTICE:  NEW: (6,1,insert)
+--Testcase 788:
+update rem1 set f2  = 'update' where f1 = 1;
+NOTICE:  trig_row_after1(23, skidoo) AFTER ROW UPDATE ON rem1
+NOTICE:  OLD: (6,1,insert),NEW: (6,1,update)
+NOTICE:  trig_row_after2(23, skidoo) AFTER ROW UPDATE ON rem1
+NOTICE:  OLD: (6,1,insert),NEW: (6,1,update)
+--Testcase 789:
+update rem1 set f2 = f2 || f2;
+NOTICE:  trig_row_after1(23, skidoo) AFTER ROW UPDATE ON rem1
+NOTICE:  OLD: (6,1,update),NEW: (6,1,updateupdate)
+NOTICE:  trig_row_after2(23, skidoo) AFTER ROW UPDATE ON rem1
+NOTICE:  OLD: (6,1,update),NEW: (6,1,updateupdate)
+--Testcase 790:
+delete from rem1;
+NOTICE:  trig_row_after1(23, skidoo) AFTER ROW DELETE ON rem1
+NOTICE:  OLD: (6,1,updateupdate)
+NOTICE:  trig_row_after2(23, skidoo) AFTER ROW DELETE ON rem1
+NOTICE:  OLD: (6,1,updateupdate)
+-- cleanup
+--Testcase 791:
+DROP TRIGGER trig_row_after1 ON rem1;
+--Testcase 792:
+DROP TRIGGER trig_row_after2 ON rem1;
 -- Test WHEN conditions
+--Testcase 793:
 CREATE TRIGGER trig_row_before_insupd
 BEFORE INSERT OR UPDATE ON rem1
 FOR EACH ROW
 WHEN (NEW.f2 like '%update%')
---Testcase 450:
 EXECUTE PROCEDURE trigger_data(23,'skidoo');
+--Testcase 794:
 CREATE TRIGGER trig_row_after_insupd
 AFTER INSERT OR UPDATE ON rem1
 FOR EACH ROW
 WHEN (NEW.f2 like '%update%')
---Testcase 451:
 EXECUTE PROCEDURE trigger_data(23,'skidoo');
 -- Insert or update not matching: nothing happens
 --Testcase 452:
@@ -7711,46 +7890,52 @@ UPDATE rem1 set f2 = 'test';
 --Testcase 454:
 INSERT INTO rem1(f1, f2) values(2, 'update');
 NOTICE:  trig_row_before_insupd(23, skidoo) BEFORE ROW INSERT ON rem1
-NOTICE:  NEW: (7,2,update)
+NOTICE:  NEW: (8,2,update)
 NOTICE:  trig_row_after_insupd(23, skidoo) AFTER ROW INSERT ON rem1
-NOTICE:  NEW: (7,2,update)
+NOTICE:  NEW: (8,2,update)
 --Testcase 455:
 UPDATE rem1 set f2 = 'update update' where f1 = '2';
 NOTICE:  trig_row_before_insupd(23, skidoo) BEFORE ROW UPDATE ON rem1
-NOTICE:  OLD: (7,2,update),NEW: (7,2,"update update")
+NOTICE:  OLD: (8,2,update),NEW: (8,2,"update update")
 NOTICE:  trig_row_after_insupd(23, skidoo) AFTER ROW UPDATE ON rem1
-NOTICE:  OLD: (7,2,update),NEW: (7,2,"update update")
+NOTICE:  OLD: (8,2,update),NEW: (8,2,"update update")
+--Testcase 795:
 CREATE TRIGGER trig_row_before_delete
 BEFORE DELETE ON rem1
 FOR EACH ROW
 WHEN (OLD.f2 like '%update%')
---Testcase 456:
 EXECUTE PROCEDURE trigger_data(23,'skidoo');
+--Testcase 796:
 CREATE TRIGGER trig_row_after_delete
 AFTER DELETE ON rem1
 FOR EACH ROW
 WHEN (OLD.f2 like '%update%')
---Testcase 457:
 EXECUTE PROCEDURE trigger_data(23,'skidoo');
 -- Trigger is fired for f1=2, not for f1=1
 --Testcase 458:
 DELETE FROM rem1;
 NOTICE:  trig_row_before_delete(23, skidoo) BEFORE ROW DELETE ON rem1
-NOTICE:  OLD: (7,2,"update update")
+NOTICE:  OLD: (8,2,"update update")
 NOTICE:  trig_row_after_delete(23, skidoo) AFTER ROW DELETE ON rem1
-NOTICE:  OLD: (7,2,"update update")
+NOTICE:  OLD: (8,2,"update update")
 -- cleanup
+--Testcase 797:
 DROP TRIGGER trig_row_before_insupd ON rem1;
+--Testcase 798:
 DROP TRIGGER trig_row_after_insupd ON rem1;
+--Testcase 799:
 DROP TRIGGER trig_row_before_delete ON rem1;
+--Testcase 800:
 DROP TRIGGER trig_row_after_delete ON rem1;
 -- Test various RETURN statements in BEFORE triggers.
+--Testcase 801:
 CREATE FUNCTION trig_row_before_insupdate() RETURNS TRIGGER AS $$
   BEGIN
     NEW.f2 := NEW.f2 || ' triggered !';
     RETURN NEW;
   END
 $$ language plpgsql;
+--Testcase 802:
 CREATE TRIGGER trig_row_before_insupd
 BEFORE INSERT OR UPDATE ON rem1
 FOR EACH ROW EXECUTE PROCEDURE trig_row_before_insupdate();
@@ -7758,40 +7943,40 @@ FOR EACH ROW EXECUTE PROCEDURE trig_row_before_insupdate();
 --Testcase 459:
 INSERT INTO rem1(f1, f2) values(1, 'insert');
 --Testcase 460:
-SELECT * from rem1;
- id | f1 |         f2         
-----+----+--------------------
-  8 |  1 | insert triggered !
+SELECT f1, f2 from rem1;
+ f1 |         f2         
+----+--------------------
+  1 | insert triggered !
 (1 row)
 
 --Testcase 461:
 INSERT INTO rem1(f1, f2) values(2, 'insert');
 --Testcase 462:
-SELECT * from rem1;
- id | f1 |         f2         
-----+----+--------------------
-  8 |  1 | insert triggered !
-  9 |  2 | insert triggered !
+SELECT f1, f2 from rem1;
+ f1 |         f2         
+----+--------------------
+  1 | insert triggered !
+  2 | insert triggered !
 (2 rows)
 
 --Testcase 463:
 UPDATE rem1 set f2 = '';
 --Testcase 464:
-SELECT * from rem1;
- id | f1 |      f2      
-----+----+--------------
-  8 |  1 |  triggered !
-  9 |  2 |  triggered !
+SELECT f1, f2 from rem1;
+ f1 |      f2      
+----+--------------
+  1 |  triggered !
+  2 |  triggered !
 (2 rows)
 
 --Testcase 465:
 UPDATE rem1 set f2 = 'skidoo';
 --Testcase 466:
-SELECT * from rem1;
- id | f1 |         f2         
-----+----+--------------------
-  8 |  1 | skidoo triggered !
-  9 |  2 | skidoo triggered !
+SELECT f1, f2 from rem1;
+ f1 |         f2         
+----+--------------------
+  1 | skidoo triggered !
+  2 | skidoo triggered !
 (2 rows)
 
 --Testcase 467:
@@ -7808,71 +7993,76 @@ UPDATE rem1 set f1 = 10;          -- all columns should be transmitted
 --Testcase 468:
 UPDATE rem1 set f1 = 10;
 --Testcase 469:
-SELECT * from rem1;
- id | f1 |               f2               
-----+----+--------------------------------
-  8 | 10 | skidoo triggered ! triggered !
-  9 | 10 | skidoo triggered ! triggered !
+SELECT f1, f2 from rem1;
+ f1 |               f2               
+----+--------------------------------
+ 10 | skidoo triggered ! triggered !
+ 10 | skidoo triggered ! triggered !
 (2 rows)
 
 --Testcase 470:
 DELETE FROM rem1;
 -- Add a second trigger, to check that the changes are propagated correctly
 -- from trigger to trigger
+--Testcase 803:
 CREATE TRIGGER trig_row_before_insupd2
 BEFORE INSERT OR UPDATE ON rem1
 FOR EACH ROW EXECUTE PROCEDURE trig_row_before_insupdate();
 --Testcase 471:
 INSERT INTO rem1(f1, f2) values(1, 'insert');
 --Testcase 472:
-SELECT * from rem1;
- id | f1 |               f2               
-----+----+--------------------------------
- 10 |  1 | insert triggered ! triggered !
+SELECT f1, f2 from rem1;
+ f1 |               f2               
+----+--------------------------------
+  1 | insert triggered ! triggered !
 (1 row)
 
 --Testcase 473:
 INSERT INTO rem1(f1, f2) values(2, 'insert');
 --Testcase 474:
-SELECT * from rem1;
- id | f1 |               f2               
-----+----+--------------------------------
- 10 |  1 | insert triggered ! triggered !
- 11 |  2 | insert triggered ! triggered !
+SELECT f1, f2 from rem1;
+ f1 |               f2               
+----+--------------------------------
+  1 | insert triggered ! triggered !
+  2 | insert triggered ! triggered !
 (2 rows)
 
 --Testcase 475:
 UPDATE rem1 set f2 = '';
 --Testcase 476:
-SELECT * from rem1;
- id | f1 |            f2            
-----+----+--------------------------
- 10 |  1 |  triggered ! triggered !
- 11 |  2 |  triggered ! triggered !
+SELECT f1, f2 from rem1;
+ f1 |            f2            
+----+--------------------------
+  1 |  triggered ! triggered !
+  2 |  triggered ! triggered !
 (2 rows)
 
 --Testcase 477:
 UPDATE rem1 set f2 = 'skidoo';
 --Testcase 478:
-SELECT * from rem1;
- id | f1 |               f2               
-----+----+--------------------------------
- 10 |  1 | skidoo triggered ! triggered !
- 11 |  2 | skidoo triggered ! triggered !
+SELECT f1, f2 from rem1;
+ f1 |               f2               
+----+--------------------------------
+  1 | skidoo triggered ! triggered !
+  2 | skidoo triggered ! triggered !
 (2 rows)
 
+--Testcase 804:
 DROP TRIGGER trig_row_before_insupd ON rem1;
+--Testcase 805:
 DROP TRIGGER trig_row_before_insupd2 ON rem1;
 --Testcase 479:
 DELETE from rem1;
 --Testcase 480:
 INSERT INTO rem1(f1, f2) VALUES (1, 'test');
 -- Test with a trigger returning NULL
+--Testcase 806:
 CREATE FUNCTION trig_null() RETURNS TRIGGER AS $$
   BEGIN
     RETURN NULL;
   END
 $$ language plpgsql;
+--Testcase 807:
 CREATE TRIGGER trig_null
 BEFORE INSERT OR UPDATE OR DELETE ON rem1
 FOR EACH ROW EXECUTE PROCEDURE trig_null();
@@ -7880,62 +8070,66 @@ FOR EACH ROW EXECUTE PROCEDURE trig_null();
 --Testcase 481:
 INSERT INTO rem1(f1, f2) VALUES (2, 'test2');
 --Testcase 482:
-SELECT * from rem1;
- id | f1 |  f2  
-----+----+------
- 12 |  1 | test
+SELECT f1, f2 from rem1;
+ f1 |  f2  
+----+------
+  1 | test
 (1 row)
 
 --Testcase 483:
 UPDATE rem1 SET f2 = 'test2';
 --Testcase 484:
-SELECT * from rem1;
- id | f1 |  f2  
-----+----+------
- 12 |  1 | test
+SELECT f1, f2 from rem1;
+ f1 |  f2  
+----+------
+  1 | test
 (1 row)
 
 --Testcase 485:
 DELETE from rem1;
 --Testcase 486:
-SELECT * from rem1;
- id | f1 |  f2  
-----+----+------
- 12 |  1 | test
+SELECT f1, f2 from rem1;
+ f1 |  f2  
+----+------
+  1 | test
 (1 row)
 
+--Testcase 808:
 DROP TRIGGER trig_null ON rem1;
 --Testcase 487:
 DELETE from rem1;
 -- Test a combination of local and remote triggers
+--Testcase 809:
 CREATE TRIGGER trig_row_before
 BEFORE INSERT OR UPDATE OR DELETE ON rem1
 FOR EACH ROW EXECUTE PROCEDURE trigger_data(23,'skidoo');
+--Testcase 810:
 CREATE TRIGGER trig_row_after
 AFTER INSERT OR UPDATE OR DELETE ON rem1
 FOR EACH ROW EXECUTE PROCEDURE trigger_data(23,'skidoo');
+--Testcase 811:
 CREATE TRIGGER trig_local_before 
 BEFORE INSERT OR UPDATE ON rem1
 FOR EACH ROW EXECUTE PROCEDURE trig_row_before_insupdate();
 --Testcase 488:
 INSERT INTO rem1(f2) VALUES ('test');
 NOTICE:  trig_row_before(23, skidoo) BEFORE ROW INSERT ON rem1
-NOTICE:  NEW: (14,12,"test triggered !")
+NOTICE:  NEW: (15,12,"test triggered !")
 NOTICE:  trig_row_after(23, skidoo) AFTER ROW INSERT ON rem1
-NOTICE:  NEW: (14,12,"test triggered !")
+NOTICE:  NEW: (15,12,"test triggered !")
 --Testcase 489:
 UPDATE rem1 SET f2 = 'testo';
 NOTICE:  trig_row_before(23, skidoo) BEFORE ROW UPDATE ON rem1
-NOTICE:  OLD: (14,12,"test triggered !"),NEW: (14,12,"testo triggered !")
+NOTICE:  OLD: (15,12,"test triggered !"),NEW: (15,12,"testo triggered !")
 NOTICE:  trig_row_after(23, skidoo) AFTER ROW UPDATE ON rem1
-NOTICE:  OLD: (14,12,"test triggered !"),NEW: (14,12,"testo triggered !")
+NOTICE:  OLD: (15,12,"test triggered !"),NEW: (15,12,"testo triggered !")
 -- Test returning a system attribute
 --Testcase 490:
 INSERT INTO rem1(f2) VALUES ('test');
 NOTICE:  trig_row_before(23, skidoo) BEFORE ROW INSERT ON rem1
-NOTICE:  NEW: (15,13,"test triggered !")
+NOTICE:  NEW: (16,13,"test triggered !")
 NOTICE:  trig_row_after(23, skidoo) AFTER ROW INSERT ON rem1
-NOTICE:  NEW: (15,13,"test triggered !")
+NOTICE:  NEW: (16,13,"test triggered !")
 --Testcase 491:
 SELECT ctid FROM rem1 WHERE f2 = 'test triggered !';
       ctid      
@@ -7944,11 +8138,15 @@ SELECT ctid FROM rem1 WHERE f2 = 'test triggered !';
 (1 row)
 
 -- cleanup
+--Testcase 812:
 DROP TRIGGER trig_row_before ON rem1;
+--Testcase 813:
 DROP TRIGGER trig_row_after ON rem1;
+--Testcase 814:
 DROP TRIGGER trig_local_before ON rem1;
 -- Test direct foreign table modification functionality
 -- Test with statement-level triggers
+--Testcase 815:
 CREATE TRIGGER trig_stmt_before
 	BEFORE DELETE OR INSERT OR UPDATE ON rem1
 	FOR EACH STATEMENT EXECUTE PROCEDURE trigger_func();
@@ -7974,7 +8172,9 @@ DELETE FROM rem1;                 -- can be pushed down
          Remote SQL: SELECT  *  FROM loct13
 (4 rows)
 
+--Testcase 816:
 DROP TRIGGER trig_stmt_before ON rem1;
+--Testcase 817:
 CREATE TRIGGER trig_stmt_after
 	AFTER DELETE OR INSERT OR UPDATE ON rem1
 	FOR EACH STATEMENT EXECUTE PROCEDURE trigger_func();
@@ -8000,8 +8200,10 @@ DELETE FROM rem1;                 -- can be pushed down
          Remote SQL: SELECT  *  FROM loct13
 (4 rows)
 
+--Testcase 818:
 DROP TRIGGER trig_stmt_after ON rem1;
 -- Test with row-level ON INSERT triggers
+--Testcase 819:
 CREATE TRIGGER trig_row_before_insert
 BEFORE INSERT ON rem1
 FOR EACH ROW EXECUTE PROCEDURE trigger_data(23,'skidoo');
@@ -8027,7 +8229,9 @@ DELETE FROM rem1;                 -- can be pushed down
          Remote SQL: SELECT  *  FROM loct13
 (4 rows)
 
+--Testcase 820:
 DROP TRIGGER trig_row_before_insert ON rem1;
+--Testcase 821:
 CREATE TRIGGER trig_row_after_insert
 AFTER INSERT ON rem1
 FOR EACH ROW EXECUTE PROCEDURE trigger_data(23,'skidoo');
@@ -8053,8 +8257,10 @@ DELETE FROM rem1;                 -- can be pushed down
          Remote SQL: SELECT  *  FROM loct13
 (4 rows)
 
+--Testcase 822:
 DROP TRIGGER trig_row_after_insert ON rem1;
 -- Test with row-level ON UPDATE triggers
+--Testcase 823:
 CREATE TRIGGER trig_row_before_update
 BEFORE UPDATE ON rem1
 FOR EACH ROW EXECUTE PROCEDURE trigger_data(23,'skidoo');
@@ -8080,7 +8286,9 @@ DELETE FROM rem1;                 -- can be pushed down
          Remote SQL: SELECT  *  FROM loct13
 (4 rows)
 
+--Testcase 824:
 DROP TRIGGER trig_row_before_update ON rem1;
+--Testcase 825:
 CREATE TRIGGER trig_row_after_update
 AFTER UPDATE ON rem1
 FOR EACH ROW EXECUTE PROCEDURE trigger_data(23,'skidoo');
@@ -8106,8 +8314,10 @@ DELETE FROM rem1;                 -- can be pushed down
          Remote SQL: SELECT  *  FROM loct13
 (4 rows)
 
+--Testcase 826:
 DROP TRIGGER trig_row_after_update ON rem1;
 -- Test with row-level ON DELETE triggers
+--Testcase 827:
 CREATE TRIGGER trig_row_before_delete
 BEFORE DELETE ON rem1
 FOR EACH ROW EXECUTE PROCEDURE trigger_data(23,'skidoo');
@@ -8133,7 +8343,9 @@ DELETE FROM rem1;                 -- can't be pushed down
          Remote SQL: SELECT  *  FROM loct13
 (4 rows)
 
+--Testcase 828:
 DROP TRIGGER trig_row_before_delete ON rem1;
+--Testcase 829:
 CREATE TRIGGER trig_row_after_delete
 AFTER DELETE ON rem1
 FOR EACH ROW EXECUTE PROCEDURE trigger_data(23,'skidoo');
@@ -8159,12 +8371,15 @@ DELETE FROM rem1;                 -- can't be pushed down
          Remote SQL: SELECT  *  FROM loct13
 (4 rows)
 
+--Testcase 830:
 DROP TRIGGER trig_row_after_delete ON rem1;
 -- ===================================================================
 -- test inheritance features
 -- ===================================================================
+--Testcase 831:
 CREATE TABLE a (id serial, aa TEXT);
 ALTER TABLE a SET (autovacuum_enabled = 'false');
+--Testcase 832:
 CREATE FOREIGN TABLE b (bb TEXT) INHERITS (a)
   SERVER griddb_svr OPTIONS (table_name 'loct');
 ALTER FOREIGN TABLE b ALTER COLUMN id OPTIONS (rowkey 'true');
@@ -8181,158 +8396,163 @@ INSERT INTO b(aa) VALUES('bbbb');
 --Testcase 513:
 INSERT INTO b(aa) VALUES('bbbbb');
 --Testcase 514:
-SELECT tableoid::regclass, * FROM a;
- tableoid | id |  aa   
-----------+----+-------
- a        |  1 | aaa
- a        |  2 | aaaa
- a        |  3 | aaaaa
- b        |  4 | bbb
- b        |  5 | bbbb
- b        |  6 | bbbbb
+SELECT tableoid::regclass, aa FROM a;
+ tableoid |  aa   
+----------+-------
+ a        | aaa
+ a        | aaaa
+ a        | aaaaa
+ b        | bbb
+ b        | bbbb
+ b        | bbbbb
 (6 rows)
 
 --Testcase 515:
-SELECT tableoid::regclass, * FROM b;
- tableoid | id |  aa   | bb 
-----------+----+-------+----
- b        |  4 | bbb   | 
- b        |  5 | bbbb  | 
- b        |  6 | bbbbb | 
+SELECT tableoid::regclass, aa, bb FROM b;
+ tableoid |  aa   | bb 
+----------+-------+----
+ b        | bbb   | 
+ b        | bbbb  | 
+ b        | bbbbb | 
 (3 rows)
 
 --Testcase 516:
-SELECT tableoid::regclass, * FROM ONLY a;
- tableoid | id |  aa   
-----------+----+-------
- a        |  1 | aaa
- a        |  2 | aaaa
- a        |  3 | aaaaa
+SELECT tableoid::regclass, aa FROM ONLY a;
+ tableoid |  aa   
+----------+-------
+ a        | aaa
+ a        | aaaa
+ a        | aaaaa
 (3 rows)
 
 --Testcase 517:
 UPDATE a SET aa = 'zzzzzz' WHERE aa LIKE 'aaaa%'; -- limitation
 --Testcase 518:
-SELECT tableoid::regclass, * FROM a;
- tableoid | id |   aa   
-----------+----+--------
- a        |  1 | aaa
- a        |  2 | zzzzzz
- a        |  3 | zzzzzz
- b        |  4 | bbb
- b        |  5 | bbbb
- b        |  6 | bbbbb
+SELECT tableoid::regclass, aa FROM a;
+ tableoid |   aa   
+----------+--------
+ a        | aaa
+ a        | zzzzzz
+ a        | zzzzzz
+ b        | bbb
+ b        | bbbb
+ b        | bbbbb
 (6 rows)
 
 --Testcase 519:
-SELECT tableoid::regclass, * FROM b;
- tableoid | id |  aa   | bb 
-----------+----+-------+----
- b        |  4 | bbb   | 
- b        |  5 | bbbb  | 
- b        |  6 | bbbbb | 
+SELECT tableoid::regclass, aa, bb FROM b;
+ tableoid |  aa   | bb 
+----------+-------+----
+ b        | bbb   | 
+ b        | bbbb  | 
+ b        | bbbbb | 
 (3 rows)
 
 --Testcase 520:
-SELECT tableoid::regclass, * FROM ONLY a;
- tableoid | id |   aa   
-----------+----+--------
- a        |  1 | aaa
- a        |  2 | zzzzzz
- a        |  3 | zzzzzz
+SELECT tableoid::regclass, aa FROM ONLY a;
+ tableoid |   aa   
+----------+--------
+ a        | aaa
+ a        | zzzzzz
+ a        | zzzzzz
 (3 rows)
 
 --Testcase 521:
 UPDATE b SET aa = 'new';
 --Testcase 522:
-SELECT tableoid::regclass, * FROM a;
- tableoid | id |   aa   
-----------+----+--------
- a        |  1 | aaa
- a        |  2 | zzzzzz
- a        |  3 | zzzzzz
- b        |  4 | new
- b        |  5 | new
- b        |  6 | new
+SELECT tableoid::regclass, aa FROM a;
+ tableoid |   aa   
+----------+--------
+ a        | aaa
+ a        | zzzzzz
+ a        | zzzzzz
+ b        | new
+ b        | new
+ b        | new
 (6 rows)
 
 --Testcase 523:
-SELECT tableoid::regclass, * FROM b;
- tableoid | id | aa  | bb 
-----------+----+-----+----
- b        |  4 | new | 
- b        |  5 | new | 
- b        |  6 | new | 
+SELECT tableoid::regclass, aa, bb FROM b;
+ tableoid | aa  | bb 
+----------+-----+----
+ b        | new | 
+ b        | new | 
+ b        | new | 
 (3 rows)
 
 --Testcase 524:
-SELECT tableoid::regclass, * FROM ONLY a;
- tableoid | id |   aa   
-----------+----+--------
- a        |  1 | aaa
- a        |  2 | zzzzzz
- a        |  3 | zzzzzz
+SELECT tableoid::regclass, aa FROM ONLY a;
+ tableoid |   aa   
+----------+--------
+ a        | aaa
+ a        | zzzzzz
+ a        | zzzzzz
 (3 rows)
 
 --Testcase 525:
 UPDATE a SET aa = 'newtoo';
 --Testcase 526:
-SELECT tableoid::regclass, * FROM a;
- tableoid | id |   aa   
-----------+----+--------
- a        |  1 | newtoo
- a        |  2 | newtoo
- a        |  3 | newtoo
- b        |  4 | newtoo
- b        |  5 | newtoo
- b        |  6 | newtoo
+SELECT tableoid::regclass, aa FROM a;
+ tableoid |   aa   
+----------+--------
+ a        | newtoo
+ a        | newtoo
+ a        | newtoo
+ b        | newtoo
+ b        | newtoo
+ b        | newtoo
 (6 rows)
 
 --Testcase 527:
-SELECT tableoid::regclass, * FROM b;
- tableoid | id |   aa   | bb 
-----------+----+--------+----
- b        |  4 | newtoo | 
- b        |  5 | newtoo | 
- b        |  6 | newtoo | 
+SELECT tableoid::regclass, aa, bb FROM b;
+ tableoid |   aa   | bb 
+----------+--------+----
+ b        | newtoo | 
+ b        | newtoo | 
+ b        | newtoo | 
 (3 rows)
 
 --Testcase 528:
-SELECT tableoid::regclass, * FROM ONLY a;
- tableoid | id |   aa   
-----------+----+--------
- a        |  1 | newtoo
- a        |  2 | newtoo
- a        |  3 | newtoo
+SELECT tableoid::regclass, aa FROM ONLY a;
+ tableoid |   aa   
+----------+--------
+ a        | newtoo
+ a        | newtoo
+ a        | newtoo
 (3 rows)
 
 --Testcase 529:
 DELETE FROM a;
 --Testcase 530:
-SELECT tableoid::regclass, * FROM a;
- tableoid | id | aa 
-----------+----+----
+SELECT tableoid::regclass, aa FROM a;
+ tableoid | aa 
+----------+----
 (0 rows)
 
 --Testcase 531:
-SELECT tableoid::regclass, * FROM b;
- tableoid | id | aa | bb 
-----------+----+----+----
-(0 rows)
-
---Testcase 532:
-SELECT tableoid::regclass, * FROM ONLY a;
- tableoid | id | aa 
+SELECT tableoid::regclass, aa, bb FROM b;
+ tableoid | aa | bb 
 ----------+----+----
 (0 rows)
 
+--Testcase 532:
+SELECT tableoid::regclass, aa FROM ONLY a;
+ tableoid | aa 
+----------+----
+(0 rows)
+
+--Testcase 833:
 DROP TABLE a CASCADE;
 NOTICE:  drop cascades to foreign table b
 -- Check SELECT FOR UPDATE/SHARE with an inherited source table
+--Testcase 834:
 create table foo (f1 int, f2 int);
+--Testcase 835:
 create foreign table foo2 (f3 int) inherits (foo)
   server griddb_svr options (table_name 'loct1');
+--Testcase 836:
 create table bar (f1 int, f2 int);
+--Testcase 837:
 create foreign table bar2 (f3 int) inherits (bar)
   server griddb_svr options (table_name 'loct2');
 alter table foo set (autovacuum_enabled = 'false');
@@ -8371,10 +8591,10 @@ select * from bar where f1 in (select f1 from foo) for update;
          Inner Unique: true
          Hash Cond: (bar.f1 = foo.f1)
          ->  Append
-               ->  Seq Scan on public.bar
-                     Output: bar.f1, bar.f2, bar.ctid, bar.*, bar.tableoid
-               ->  Foreign Scan on public.bar2
-                     Output: bar2.f1, bar2.f2, bar2.ctid, bar2.*, bar2.tableoid
+               ->  Seq Scan on public.bar bar_1
+                     Output: bar_1.f1, bar_1.f2, bar_1.ctid, bar_1.*, bar_1.tableoid
+               ->  Foreign Scan on public.bar2 bar_2
+                     Output: bar_2.f1, bar_2.f2, bar_2.ctid, bar_2.*, bar_2.tableoid
                      Remote SQL: SELECT  *  FROM loct2
          ->  Hash
                Output: foo.ctid, foo.f1, foo.*, foo.tableoid
@@ -8382,10 +8602,10 @@ select * from bar where f1 in (select f1 from foo) for update;
                      Output: foo.ctid, foo.f1, foo.*, foo.tableoid
                      Group Key: foo.f1
                      ->  Append
-                           ->  Seq Scan on public.foo
-                                 Output: foo.ctid, foo.f1, foo.*, foo.tableoid
-                           ->  Foreign Scan on public.foo2
-                                 Output: foo2.ctid, foo2.f1, foo2.*, foo2.tableoid
+                           ->  Seq Scan on public.foo foo_1
+                                 Output: foo_1.ctid, foo_1.f1, foo_1.*, foo_1.tableoid
+                           ->  Foreign Scan on public.foo2 foo_2
+                                 Output: foo_2.ctid, foo_2.f1, foo_2.*, foo_2.tableoid
                                  Remote SQL: SELECT  *  FROM loct1
 (23 rows)
 
@@ -8399,37 +8619,6 @@ select * from bar where f1 in (select f1 from foo) for update;
   4 | 44
 (4 rows)
 
---Testcase 545:
-explain (verbose, costs off)
-select * from bar2 where f1 in (select f1 from foo2) for update;
-                         QUERY PLAN                          
--------------------------------------------------------------
- LockRows
-   Output: bar2.f1, bar2.f2, bar2.f3, bar2.*, foo2.*
-   ->  Hash Join
-         Output: bar2.f1, bar2.f2, bar2.f3, bar2.*, foo2.*
-         Inner Unique: true
-         Hash Cond: (bar2.f1 = foo2.f1)
-         ->  Foreign Scan on public.bar2
-               Output: bar2.f1, bar2.f2, bar2.f3, bar2.*
-               Remote SQL: SELECT  *  FROM loct2
-         ->  Hash
-               Output: foo2.*, foo2.f1
-               ->  HashAggregate
-                     Output: foo2.*, foo2.f1
-                     Group Key: foo2.f1
-                     ->  Foreign Scan on public.foo2
-                           Output: foo2.*, foo2.f1
-                           Remote SQL: SELECT  *  FROM loct1
-(17 rows)
-
---Testcase 546:
-select * from bar2 where f1 in (select f1 from foo2) for update;
- f1 | f2 | f3 
-----+----+----
-  4 | 44 | 44
-(1 row)
-
 --Testcase 547:
 explain (verbose, costs off)
 select * from bar where f1 in (select f1 from foo) for share;
@@ -8442,10 +8631,10 @@ select * from bar where f1 in (select f1 from foo) for share;
          Inner Unique: true
          Hash Cond: (bar.f1 = foo.f1)
          ->  Append
-               ->  Seq Scan on public.bar
-                     Output: bar.f1, bar.f2, bar.ctid, bar.*, bar.tableoid
-               ->  Foreign Scan on public.bar2
-                     Output: bar2.f1, bar2.f2, bar2.ctid, bar2.*, bar2.tableoid
+               ->  Seq Scan on public.bar bar_1
+                     Output: bar_1.f1, bar_1.f2, bar_1.ctid, bar_1.*, bar_1.tableoid
+               ->  Foreign Scan on public.bar2 bar_2
+                     Output: bar_2.f1, bar_2.f2, bar_2.ctid, bar_2.*, bar_2.tableoid
                      Remote SQL: SELECT  *  FROM loct2
          ->  Hash
                Output: foo.ctid, foo.f1, foo.*, foo.tableoid
@@ -8453,10 +8642,10 @@ select * from bar where f1 in (select f1 from foo) for share;
                      Output: foo.ctid, foo.f1, foo.*, foo.tableoid
                      Group Key: foo.f1
                      ->  Append
-                           ->  Seq Scan on public.foo
-                                 Output: foo.ctid, foo.f1, foo.*, foo.tableoid
-                           ->  Foreign Scan on public.foo2
-                                 Output: foo2.ctid, foo2.f1, foo2.*, foo2.tableoid
+                           ->  Seq Scan on public.foo foo_1
+                                 Output: foo_1.ctid, foo_1.f1, foo_1.*, foo_1.tableoid
+                           ->  Foreign Scan on public.foo2 foo_2
+                                 Output: foo_2.ctid, foo_2.f1, foo_2.*, foo_2.tableoid
                                  Remote SQL: SELECT  *  FROM loct1
 (23 rows)
 
@@ -8474,11 +8663,11 @@ select * from bar where f1 in (select f1 from foo) for share;
 --Testcase 549:
 explain (verbose, costs off)
 update bar set f2 = f2 + 100 where f1 in (select f1 from foo);
-                                        QUERY PLAN                                         
--------------------------------------------------------------------------------------------
+                                          QUERY PLAN                                           
+-----------------------------------------------------------------------------------------------
  Update on public.bar
    Update on public.bar
-   Foreign Update on public.bar2
+   Foreign Update on public.bar2 bar_1
    ->  Hash Join
          Output: bar.f1, (bar.f2 + 100), bar.ctid, foo.ctid, foo.*, foo.tableoid
          Inner Unique: true
@@ -8491,17 +8680,17 @@ update bar set f2 = f2 + 100 where f1 in (select f1 from foo);
                      Output: foo.ctid, foo.f1, foo.*, foo.tableoid
                      Group Key: foo.f1
                      ->  Append
-                           ->  Seq Scan on public.foo
-                                 Output: foo.ctid, foo.f1, foo.*, foo.tableoid
-                           ->  Foreign Scan on public.foo2
-                                 Output: foo2.ctid, foo2.f1, foo2.*, foo2.tableoid
+                           ->  Seq Scan on public.foo foo_1
+                                 Output: foo_1.ctid, foo_1.f1, foo_1.*, foo_1.tableoid
+                           ->  Foreign Scan on public.foo2 foo_2
+                                 Output: foo_2.ctid, foo_2.f1, foo_2.*, foo_2.tableoid
                                  Remote SQL: SELECT  *  FROM loct1
    ->  Hash Join
-         Output: bar2.f1, (bar2.f2 + 100), bar2.f3, bar2.f1, foo.ctid, foo.*, foo.tableoid
+         Output: bar_1.f1, (bar_1.f2 + 100), bar_1.f3, bar_1.f1, foo.ctid, foo.*, foo.tableoid
          Inner Unique: true
-         Hash Cond: (bar2.f1 = foo.f1)
-         ->  Foreign Scan on public.bar2
-               Output: bar2.f1, bar2.f2, bar2.f3
+         Hash Cond: (bar_1.f1 = foo.f1)
+         ->  Foreign Scan on public.bar2 bar_1
+               Output: bar_1.f1, bar_1.f2, bar_1.f3
                Remote SQL: SELECT  *  FROM loct2
          ->  Hash
                Output: foo.ctid, foo.f1, foo.*, foo.tableoid
@@ -8509,10 +8698,10 @@ update bar set f2 = f2 + 100 where f1 in (select f1 from foo);
                      Output: foo.ctid, foo.f1, foo.*, foo.tableoid
                      Group Key: foo.f1
                      ->  Append
-                           ->  Seq Scan on public.foo
-                                 Output: foo.ctid, foo.f1, foo.*, foo.tableoid
-                           ->  Foreign Scan on public.foo2
-                                 Output: foo2.ctid, foo2.f1, foo2.*, foo2.tableoid
+                           ->  Seq Scan on public.foo foo_1
+                                 Output: foo_1.ctid, foo_1.f1, foo_1.*, foo_1.tableoid
+                           ->  Foreign Scan on public.foo2 foo_2
+                                 Output: foo_2.ctid, foo_2.f1, foo_2.*, foo_2.tableoid
                                  Remote SQL: SELECT  *  FROM loct1
 (38 rows)
 
@@ -8537,37 +8726,37 @@ update bar set f2 = f2 + 100
 from
   ( select f1 from foo union all select f1+3 from foo ) ss
 where bar.f1 = ss.f1;
-                                QUERY PLAN                                 
----------------------------------------------------------------------------
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
  Update on public.bar
    Update on public.bar
-   Foreign Update on public.bar2
+   Foreign Update on public.bar2 bar_1
    ->  Hash Join
          Output: bar.f1, (bar.f2 + 100), bar.ctid, (ROW(foo.f1))
          Hash Cond: (foo.f1 = bar.f1)
          ->  Append
                ->  Seq Scan on public.foo
                      Output: ROW(foo.f1), foo.f1
-               ->  Foreign Scan on public.foo2
-                     Output: ROW(foo2.f1), foo2.f1
+               ->  Foreign Scan on public.foo2 foo_1
+                     Output: ROW(foo_1.f1), foo_1.f1
                      Remote SQL: SELECT  *  FROM loct1
-               ->  Seq Scan on public.foo foo_1
-                     Output: ROW((foo_1.f1 + 3)), (foo_1.f1 + 3)
-               ->  Foreign Scan on public.foo2 foo2_1
-                     Output: ROW((foo2_1.f1 + 3)), (foo2_1.f1 + 3)
+               ->  Seq Scan on public.foo foo_2
+                     Output: ROW((foo_2.f1 + 3)), (foo_2.f1 + 3)
+               ->  Foreign Scan on public.foo2 foo_3
+                     Output: ROW((foo_3.f1 + 3)), (foo_3.f1 + 3)
                      Remote SQL: SELECT  *  FROM loct1
          ->  Hash
                Output: bar.f1, bar.f2, bar.ctid
                ->  Seq Scan on public.bar
                      Output: bar.f1, bar.f2, bar.ctid
    ->  Merge Join
-         Output: bar2.f1, (bar2.f2 + 100), bar2.f3, bar2.f1, (ROW(foo.f1))
-         Merge Cond: (bar2.f1 = foo.f1)
+         Output: bar_1.f1, (bar_1.f2 + 100), bar_1.f3, bar_1.f1, (ROW(foo.f1))
+         Merge Cond: (bar_1.f1 = foo.f1)
          ->  Sort
-               Output: bar2.f1, bar2.f2, bar2.f3
-               Sort Key: bar2.f1
-               ->  Foreign Scan on public.bar2
-                     Output: bar2.f1, bar2.f2, bar2.f3
+               Output: bar_1.f1, bar_1.f2, bar_1.f3
+               Sort Key: bar_1.f1
+               ->  Foreign Scan on public.bar2 bar_1
+                     Output: bar_1.f1, bar_1.f2, bar_1.f3
                      Remote SQL: SELECT  *  FROM loct2
          ->  Sort
                Output: (ROW(foo.f1)), foo.f1
@@ -8575,13 +8764,13 @@ where bar.f1 = ss.f1;
                ->  Append
                      ->  Seq Scan on public.foo
                            Output: ROW(foo.f1), foo.f1
-                     ->  Foreign Scan on public.foo2
-                           Output: ROW(foo2.f1), foo2.f1
+                     ->  Foreign Scan on public.foo2 foo_1
+                           Output: ROW(foo_1.f1), foo_1.f1
                            Remote SQL: SELECT  *  FROM loct1
-                     ->  Seq Scan on public.foo foo_1
-                           Output: ROW((foo_1.f1 + 3)), (foo_1.f1 + 3)
-                     ->  Foreign Scan on public.foo2 foo2_1
-                           Output: ROW((foo2_1.f1 + 3)), (foo2_1.f1 + 3)
+                     ->  Seq Scan on public.foo foo_2
+                           Output: ROW((foo_2.f1 + 3)), (foo_2.f1 + 3)
+                     ->  Foreign Scan on public.foo2 foo_3
+                           Output: ROW((foo_3.f1 + 3)), (foo_3.f1 + 3)
                            Remote SQL: SELECT  *  FROM loct1
 (44 rows)
 
@@ -8646,10 +8835,10 @@ explain (verbose, costs off)
                      Output: foo.f1, foo.f2
                      Sort Key: foo.f1
                      ->  Append
-                           ->  Seq Scan on public.foo
-                                 Output: foo.f1, foo.f2
-                           ->  Foreign Scan on public.foo2
-                                 Output: foo2.f1, foo2.f2
+                           ->  Seq Scan on public.foo foo_1
+                                 Output: foo_1.f1, foo_1.f2
+                           ->  Foreign Scan on public.foo2 foo_2
+                                 Output: foo_2.f1, foo_2.f2
                                  Remote SQL: SELECT  *  FROM loct1
 (23 rows)
 
@@ -8694,10 +8883,10 @@ explain (verbose, costs off)
                      Output: foo.f1, foo.f2
                      Sort Key: foo.f1
                      ->  Append
-                           ->  Seq Scan on public.foo
-                                 Output: foo.f1, foo.f2
-                           ->  Foreign Scan on public.foo2
-                                 Output: foo2.f1, foo2.f2
+                           ->  Seq Scan on public.foo foo_1
+                                 Output: foo_1.f1, foo_1.f2
+                           ->  Foreign Scan on public.foo2 foo_2
+                                 Output: foo_2.f1, foo_2.f2
                                  Remote SQL: SELECT  *  FROM loct1
 (23 rows)
 
@@ -8740,12 +8929,12 @@ delete from foo where f1 < 5;
 ------------------------------------------------------------
  Delete on public.foo
    Delete on public.foo
-   Foreign Delete on public.foo2
+   Foreign Delete on public.foo2 foo_1
    ->  Seq Scan on public.foo
          Output: foo.ctid
          Filter: (foo.f1 < 5)
-   ->  Foreign Scan on public.foo2
-         Output: foo2.f1
+   ->  Foreign Scan on public.foo2 foo_1
+         Output: foo_1.f1
          Remote SQL: SELECT  *  FROM loct1 WHERE ((f1 < 5))
 (9 rows)
 
@@ -8765,15 +8954,15 @@ delete from foo where f1 < 5;
 --Testcase 567:
 explain (verbose, costs off)
 update bar set f2 = f2 + 100;
-                         QUERY PLAN                         
-------------------------------------------------------------
+                           QUERY PLAN                           
+----------------------------------------------------------------
  Update on public.bar
    Update on public.bar
-   Foreign Update on public.bar2
+   Foreign Update on public.bar2 bar_1
    ->  Seq Scan on public.bar
          Output: bar.f1, (bar.f2 + 100), bar.ctid
-   ->  Foreign Scan on public.bar2
-         Output: bar2.f1, (bar2.f2 + 100), bar2.f3, bar2.f1
+   ->  Foreign Scan on public.bar2 bar_1
+         Output: bar_1.f1, (bar_1.f2 + 100), bar_1.f3, bar_1.f1
          Remote SQL: SELECT  *  FROM loct2
 (8 rows)
 
@@ -8792,24 +8981,26 @@ select * from bar;
 (6 rows)
 
 -- Test that UPDATE/DELETE with inherited target works with row-level triggers
+--Testcase 838:
 CREATE TRIGGER trig_row_before
 BEFORE UPDATE OR DELETE ON bar2
 FOR EACH ROW EXECUTE PROCEDURE trigger_data(23,'skidoo');
+--Testcase 839:
 CREATE TRIGGER trig_row_after
 AFTER UPDATE OR DELETE ON bar2
 FOR EACH ROW EXECUTE PROCEDURE trigger_data(23,'skidoo');
 --Testcase 570:
 explain (verbose, costs off)
 update bar set f2 = f2 + 100;
-                             QUERY PLAN                             
---------------------------------------------------------------------
+                               QUERY PLAN                                
+-------------------------------------------------------------------------
  Update on public.bar
    Update on public.bar
-   Foreign Update on public.bar2
+   Foreign Update on public.bar2 bar_1
    ->  Seq Scan on public.bar
          Output: bar.f1, (bar.f2 + 100), bar.ctid
-   ->  Foreign Scan on public.bar2
-         Output: bar2.f1, (bar2.f2 + 100), bar2.f3, bar2.f1, bar2.*
+   ->  Foreign Scan on public.bar2 bar_1
+         Output: bar_1.f1, (bar_1.f2 + 100), bar_1.f3, bar_1.f1, bar_1.*
          Remote SQL: SELECT  *  FROM loct2
 (8 rows)
 
@@ -8834,12 +9025,12 @@ delete from bar where f2 < 400;
 --------------------------------------------------------------
  Delete on public.bar
    Delete on public.bar
-   Foreign Delete on public.bar2
+   Foreign Delete on public.bar2 bar_1
    ->  Seq Scan on public.bar
          Output: bar.ctid
          Filter: (bar.f2 < 400)
-   ->  Foreign Scan on public.bar2
-         Output: bar2.f1, bar2.*
+   ->  Foreign Scan on public.bar2 bar_1
+         Output: bar_1.f1, bar_1.*
          Remote SQL: SELECT  *  FROM loct2 WHERE ((f2 < 400))
 (9 rows)
 
@@ -8850,14 +9041,19 @@ NOTICE:  OLD: (7,377,77)
 NOTICE:  trig_row_after(23, skidoo) AFTER ROW DELETE ON bar2
 NOTICE:  OLD: (7,377,77)
 -- cleanup
+--Testcase 840:
 drop table foo cascade;
 NOTICE:  drop cascades to foreign table foo2
+--Testcase 841:
 drop table bar cascade;
 NOTICE:  drop cascades to foreign table bar2
 -- Test pushing down UPDATE/DELETE joins to the remote server
+--Testcase 842:
 create table parent (a int, b text);
+--Testcase 843:
 create foreign table remt1 (a int, b text)
   server griddb_svr options (table_name 'loct11');
+--Testcase 844:
 create foreign table remt2 (a int, b text)
   server griddb_svr options (table_name 'loct22');
 alter foreign table remt1 inherit parent;
@@ -8874,11 +9070,11 @@ insert into remt2 values (2, 'bar');
 --Testcase 578:
 explain (verbose, costs off)
 update parent set b = parent.b || remt2.b from remt2 where parent.a = remt2.a;
-                              QUERY PLAN                               
------------------------------------------------------------------------
+                                QUERY PLAN                                
+--------------------------------------------------------------------------
  Update on public.parent
    Update on public.parent
-   Foreign Update on public.remt1
+   Foreign Update on public.remt1 parent_1
    ->  Hash Join
          Output: parent.a, (parent.b || remt2.b), parent.ctid, remt2.*
          Hash Cond: (remt2.a = parent.a)
@@ -8890,10 +9086,10 @@ update parent set b = parent.b || remt2.b from remt2 where parent.a = remt2.a;
                ->  Seq Scan on public.parent
                      Output: parent.a, parent.b, parent.ctid
    ->  Hash Join
-         Output: remt1.a, (remt1.b || remt2.b), remt1.a, remt2.*
-         Hash Cond: (remt1.a = remt2.a)
-         ->  Foreign Scan on public.remt1
-               Output: remt1.a, remt1.b
+         Output: parent_1.a, (parent_1.b || remt2.b), parent_1.a, remt2.*
+         Hash Cond: (parent_1.a = remt2.a)
+         ->  Foreign Scan on public.remt1 parent_1
+               Output: parent_1.a, parent_1.b
                Remote SQL: SELECT  *  FROM loct11
          ->  Hash
                Output: remt2.b, remt2.*, remt2.a
@@ -8904,14 +9100,22 @@ update parent set b = parent.b || remt2.b from remt2 where parent.a = remt2.a;
 
 --Testcase 579:
 update parent set b = parent.b || remt2.b from remt2 where parent.a = remt2.a;
+--Testcase 845:
+select * from parent, remt2 where parent.a = remt2.a;
+ a |   b    | a |  b  
+---+--------+---+-----
+ 1 | foofoo | 1 | foo
+ 2 | barbar | 2 | bar
+(2 rows)
+
 --Testcase 580:
 explain (verbose, costs off)
 delete from parent using remt2 where parent.a = remt2.a;
-                       QUERY PLAN                       
---------------------------------------------------------
+                       QUERY PLAN                        
+---------------------------------------------------------
  Delete on public.parent
    Delete on public.parent
-   Foreign Delete on public.remt1
+   Foreign Delete on public.remt1 parent_1
    ->  Hash Join
          Output: parent.ctid, remt2.*
          Hash Cond: (remt2.a = parent.a)
@@ -8923,8 +9127,8 @@ delete from parent using remt2 where parent.a = remt2.a;
                ->  Seq Scan on public.parent
                      Output: parent.ctid, parent.a
    ->  Merge Join
-         Output: remt1.a, remt2.*
-         Merge Cond: (remt2.a = remt1.a)
+         Output: parent_1.a, remt2.*
+         Merge Cond: (remt2.a = parent_1.a)
          ->  Sort
                Output: remt2.*, remt2.a
                Sort Key: remt2.a
@@ -8932,15 +9136,15 @@ delete from parent using remt2 where parent.a = remt2.a;
                      Output: remt2.*, remt2.a
                      Remote SQL: SELECT  *  FROM loct22
          ->  Sort
-               Output: remt1.a
-               Sort Key: remt1.a
-               ->  Foreign Scan on public.remt1
-                     Output: remt1.a
+               Output: parent_1.a
+               Sort Key: parent_1.a
+               ->  Foreign Scan on public.remt1 parent_1
+                     Output: parent_1.a
                      Remote SQL: SELECT  *  FROM loct11
 (28 rows)
 
 --Testcase 581:
-select parent.a, parent.b from parent, remt2 where parent.a = remt2.a;
+select parent.* from parent, remt2 where parent.a = remt2.a;
  a |   b    
 ---+--------
  1 | foofoo
@@ -8950,15 +9154,21 @@ select parent.a, parent.b from parent, remt2 where parent.a = remt2.a;
 --Testcase 582:
 delete from parent using remt2 where parent.a = remt2.a;
 -- cleanup
+--Testcase 846:
 drop foreign table remt1;
+--Testcase 847:
 drop foreign table remt2;
+--Testcase 848:
 drop table parent;
 -- ===================================================================
 -- test tuple routing for foreign-table partitions
 -- ===================================================================
 -- Test insert tuple routing
+--Testcase 849:
 create table itrtest (id serial, a int, b text) partition by list (a);
+--Testcase 850:
 create foreign table remp1 (id serial, a int, b text) server griddb_svr options (table_name 'loct12');
+--Testcase 851:
 create foreign table remp2 (id serial, a int, b text) server griddb_svr options (table_name 'loct21');
 alter foreign table remp1 alter column id options (rowkey 'true');
 alter foreign table remp2 alter column id options (rowkey 'true');
@@ -8975,33 +9185,33 @@ insert into itrtest(a, b) values (2, 'qux');
 --Testcase 587:
 insert into itrtest(a, b) values (1, 'test1'), (2, 'test2');
 --Testcase 588:
-select tableoid::regclass, * FROM itrtest;
- tableoid | id | a |   b   
-----------+----+---+-------
- remp1    |  1 | 1 | foo
- remp1    |  2 | 1 | bar
- remp1    |  5 | 1 | test1
- remp2    |  3 | 2 | baz
- remp2    |  4 | 2 | qux
- remp2    |  6 | 2 | test2
+select tableoid::regclass, a, b FROM itrtest;
+ tableoid | a |   b   
+----------+---+-------
+ remp1    | 1 | foo
+ remp1    | 1 | bar
+ remp1    | 1 | test1
+ remp2    | 2 | baz
+ remp2    | 2 | qux
+ remp2    | 2 | test2
 (6 rows)
 
 --Testcase 589:
-select tableoid::regclass, * FROM remp1;
- tableoid | id | a |   b   
-----------+----+---+-------
- remp1    |  1 | 1 | foo
- remp1    |  2 | 1 | bar
- remp1    |  5 | 1 | test1
+select tableoid::regclass, a, b FROM remp1;
+ tableoid | a |   b   
+----------+---+-------
+ remp1    | 1 | foo
+ remp1    | 1 | bar
+ remp1    | 1 | test1
 (3 rows)
 
 --Testcase 590:
-select tableoid::regclass, * FROM remp2;
- tableoid | id | a |   b   
-----------+----+---+-------
- remp2    |  3 | 2 | baz
- remp2    |  4 | 2 | qux
- remp2    |  6 | 2 | test2
+select tableoid::regclass, b, a FROM remp2;
+ tableoid |   b   | a 
+----------+-------+---
+ remp2    | baz   | 2
+ remp2    | qux   | 2
+ remp2    | test2 | 2
 (3 rows)
 
 --Testcase 591:
@@ -9018,14 +9228,17 @@ delete from itrtest;
 --delete from itrtest;
 --drop index loct1_idx;
 -- Test that remote triggers work with insert tuple routing
+--Testcase 852:
 create function br_insert_trigfunc() returns trigger as $$
 begin
 	new.b := new.b || ' triggered !';
 	return new;
 end
 $$ language plpgsql;
+--Testcase 853:
 create trigger remp1_br_insert_trigger before insert on remp1
 	for each row execute procedure br_insert_trigfunc();
+--Testcase 854:
 create trigger remp2_br_insert_trigger before insert on remp2
 	for each row execute procedure br_insert_trigfunc();
 -- The new values are concatenated with ' triggered !'
@@ -9035,22 +9248,29 @@ insert into itrtest(a, b) values (1, 'foo');
 insert into itrtest(a, b) values (2, 'qux');
 --Testcase 594:
 insert into itrtest(a, b) values (1, 'test1'), (2, 'test2');
-with result as (insert into itrtest(a ,b) values (1, 'test1'), (2, 'test2') returning *) select * from result;
- id | a |         b         
-----+---+-------------------
- 11 | 1 | test1 triggered !
- 12 | 2 | test2 triggered !
+--Testcase 855:
+with result as (insert into itrtest(a ,b) values (1, 'test1'), (2, 'test2') returning *) select a, b from result;
+ a |         b         
+---+-------------------
+ 1 | test1 triggered !
+ 2 | test2 triggered !
 (2 rows)
 
+--Testcase 856:
 drop trigger remp1_br_insert_trigger on remp1;
+--Testcase 857:
 drop trigger remp2_br_insert_trigger on remp2;
 --Testcase 595:
 delete from itrtest;
+--Testcase 858:
 drop table itrtest;
 -- Test update tuple routing
+--Testcase 859:
 create table utrtest (id serial, a int, b text) partition by list (a);
+--Testcase 860:
 create foreign table remp (id serial, a int check (a in (1)), b text) server griddb_svr options (table_name 'loct12');
 alter foreign table remp alter column id options (rowkey 'true');
+--Testcase 861:
 create table locp (id serial, a int check (a in (2)), b text);
 alter table utrtest attach partition remp for values in (1);
 alter table utrtest attach partition locp for values in (2);
@@ -9059,75 +9279,68 @@ insert into utrtest(a, b) values (1, 'foo');
 --Testcase 597:
 insert into utrtest(a, b) values (2, 'qux');
 --Testcase 598:
-select tableoid::regclass, * FROM utrtest;
- tableoid | id | a |  b  
-----------+----+---+-----
- remp     |  1 | 1 | foo
- locp     |  2 | 2 | qux
+select tableoid::regclass, a, b FROM utrtest;
+ tableoid | a |  b  
+----------+---+-----
+ remp     | 1 | foo
+ locp     | 2 | qux
 (2 rows)
 
 --Testcase 599:
-select tableoid::regclass, * FROM remp;
- tableoid | id | a |  b  
-----------+----+---+-----
- remp     |  1 | 1 | foo
+select tableoid::regclass, a, b FROM remp;
+ tableoid | a |  b  
+----------+---+-----
+ remp     | 1 | foo
 (1 row)
 
 --Testcase 600:
-select tableoid::regclass, * FROM locp;
- tableoid | id | a |  b  
-----------+----+---+-----
- locp     |  2 | 2 | qux
+select tableoid::regclass, a, b FROM locp;
+ tableoid | a |  b  
+----------+---+-----
+ locp     | 2 | qux
 (1 row)
 
+-- GridDB not support
 -- It's not allowed to move a row from a partition that is foreign to another
 --Testcase 601:
-update utrtest set a = 2 where b = 'foo';
---Testcase 602:
-select * from utrtest;
- id | a |  b  
-----+---+-----
-  1 | 2 | foo
-  2 | 2 | qux
-(2 rows)
-
+--update utrtest set a = 2 where b = 'foo' returning *;
 -- But the reverse is allowed
 --Testcase 603:
 update utrtest set a = 1 where b = 'qux';
 --Testcase 604:
-select * from utrtest;
- id | a |  b  
-----+---+-----
-  1 | 2 | foo
-  2 | 1 | qux
-(2 rows)
+select a, b from utrtest where b = 'qux';
+ a |  b  
+---+-----
+ 1 | qux
+(1 row)
 
 --Testcase 605:
-select tableoid::regclass, * FROM utrtest;
- tableoid | id | a |  b  
-----------+----+---+-----
- remp     |  1 | 2 | foo
- remp     |  2 | 1 | qux
+select tableoid::regclass, a, b FROM utrtest;
+ tableoid | a |  b  
+----------+---+-----
+ remp     | 1 | foo
+ remp     | 1 | qux
 (2 rows)
 
 --Testcase 606:
-select tableoid::regclass, * FROM remp;
- tableoid | id | a |  b  
-----------+----+---+-----
- remp     |  1 | 2 | foo
- remp     |  2 | 1 | qux
+select tableoid::regclass, a, b FROM remp;
+ tableoid | a |  b  
+----------+---+-----
+ remp     | 1 | foo
+ remp     | 1 | qux
 (2 rows)
 
 --Testcase 607:
-select tableoid::regclass, * FROM locp;
- tableoid | id | a | b 
-----------+----+---+---
+select tableoid::regclass, a, b FROM locp;
+ tableoid | a | b 
+----------+---+---
 (0 rows)
 
 -- The executor should not let unexercised FDWs shut down
 --Testcase 608:
 update utrtest set a = 1 where b = 'foo';
 -- Test that remote triggers work with update tuple routing
+--Testcase 862:
 create trigger remp_br_insert_trigger before insert on remp
 	for each row execute procedure br_insert_trigfunc();
 --Testcase 609:
@@ -9141,24 +9354,24 @@ update utrtest set a = 1 where a = 1 or a = 2;
                                QUERY PLAN                                
 -------------------------------------------------------------------------
  Update on public.utrtest
-   Foreign Update on public.remp
-   Update on public.locp
-   ->  Foreign Scan on public.remp
-         Output: remp.id, 1, remp.b, remp.id
+   Foreign Update on public.remp utrtest_1
+   Update on public.locp utrtest_2
+   ->  Foreign Scan on public.remp utrtest_1
+         Output: utrtest_1.id, 1, utrtest_1.b, utrtest_1.id
          Remote SQL: SELECT  *  FROM loct12 WHERE (((a = 1) OR (a = 2)))
-   ->  Seq Scan on public.locp
-         Output: locp.id, 1, locp.b, locp.ctid
-         Filter: ((locp.a = 1) OR (locp.a = 2))
+   ->  Seq Scan on public.locp utrtest_2
+         Output: utrtest_2.id, 1, utrtest_2.b, utrtest_2.ctid
+         Filter: ((utrtest_2.a = 1) OR (utrtest_2.a = 2))
 (9 rows)
 
 -- The new values are concatenated with ' triggered !'
 --Testcase 612:
 update utrtest set a = 1 where a = 1 or a = 2;
 --Testcase 613:
-select * from utrtest;
- id | a |        b        
-----+---+-----------------
-  3 | 1 | qux triggered !
+select a, b from utrtest;
+ a |        b        
+---+-----------------
+ 1 | qux triggered !
 (1 row)
 
 --Testcase 614:
@@ -9169,25 +9382,26 @@ insert into utrtest(a, b) values (2, 'qux');
 --Testcase 616:
 explain (verbose, costs off)
 update utrtest set a = 1 where a = 2;
-                  QUERY PLAN                   
------------------------------------------------
+                          QUERY PLAN                          
+--------------------------------------------------------------
  Update on public.utrtest
-   Update on public.locp
-   ->  Seq Scan on public.locp
-         Output: locp.id, 1, locp.b, locp.ctid
-         Filter: (locp.a = 2)
+   Update on public.locp utrtest_1
+   ->  Seq Scan on public.locp utrtest_1
+         Output: utrtest_1.id, 1, utrtest_1.b, utrtest_1.ctid
+         Filter: (utrtest_1.a = 2)
 (5 rows)
 
 -- The new values are concatenated with ' triggered !'
 --Testcase 617:
 update utrtest set a = 1 where a = 2;
 --Testcase 618:
-select * from utrtest;
- id | a |        b        
-----+---+-----------------
-  4 | 1 | qux triggered !
+select a, b from utrtest;
+ a |        b        
+---+-----------------
+ 1 | qux triggered !
 (1 row)
 
+--Testcase 863:
 drop trigger remp_br_insert_trigger on remp;
 -- We can move rows to a foreign partition that has been updated already,
 -- but can't move rows to a foreign partition that hasn't been updated yet
@@ -9202,26 +9416,26 @@ insert into utrtest(a, b) values (2, 'qux');
 --Testcase 622:
 explain (verbose, costs off)
 update utrtest set a = 1;
-                  QUERY PLAN                   
------------------------------------------------
+                          QUERY PLAN                          
+--------------------------------------------------------------
  Update on public.utrtest
-   Foreign Update on public.remp
-   Update on public.locp
-   ->  Foreign Scan on public.remp
-         Output: remp.id, 1, remp.b, remp.id
+   Foreign Update on public.remp utrtest_1
+   Update on public.locp utrtest_2
+   ->  Foreign Scan on public.remp utrtest_1
+         Output: utrtest_1.id, 1, utrtest_1.b, utrtest_1.id
          Remote SQL: SELECT  *  FROM loct12
-   ->  Seq Scan on public.locp
-         Output: locp.id, 1, locp.b, locp.ctid
+   ->  Seq Scan on public.locp utrtest_2
+         Output: utrtest_2.id, 1, utrtest_2.b, utrtest_2.ctid
 (8 rows)
 
 --Testcase 623:
 update utrtest set a = 1;
 --Testcase 624:
-select * from utrtest;
- id | a |  b  
-----+---+-----
-  5 | 1 | foo
-  6 | 1 | qux
+select a, b from utrtest;
+ a |  b  
+---+-----
+ 1 | foo
+ 1 | qux
 (2 rows)
 
 --Testcase 625:
@@ -9234,26 +9448,26 @@ insert into utrtest(a, b) values (2, 'qux');
 --Testcase 628:
 explain (verbose, costs off)
 update utrtest set a = 1 from (values (1), (2)) s(x) where a = s.x;
-                          QUERY PLAN                          
---------------------------------------------------------------
+                                  QUERY PLAN                                  
+------------------------------------------------------------------------------
  Update on public.utrtest
-   Foreign Update on public.remp
-   Update on public.locp
+   Foreign Update on public.remp utrtest_1
+   Update on public.locp utrtest_2
    ->  Hash Join
-         Output: remp.id, 1, remp.b, remp.id, "*VALUES*".*
-         Hash Cond: (remp.a = "*VALUES*".column1)
-         ->  Foreign Scan on public.remp
-               Output: remp.id, remp.a, remp.b
+         Output: utrtest_1.id, 1, utrtest_1.b, utrtest_1.id, "*VALUES*".*
+         Hash Cond: (utrtest_1.a = "*VALUES*".column1)
+         ->  Foreign Scan on public.remp utrtest_1
+               Output: utrtest_1.id, utrtest_1.a, utrtest_1.b
                Remote SQL: SELECT  *  FROM loct12
          ->  Hash
                Output: "*VALUES*".*, "*VALUES*".column1
                ->  Values Scan on "*VALUES*"
                      Output: "*VALUES*".*, "*VALUES*".column1
    ->  Hash Join
-         Output: locp.id, 1, locp.b, locp.ctid, "*VALUES*".*
-         Hash Cond: (locp.a = "*VALUES*".column1)
-         ->  Seq Scan on public.locp
-               Output: locp.id, locp.b, locp.ctid, locp.a
+         Output: utrtest_2.id, 1, utrtest_2.b, utrtest_2.ctid, "*VALUES*".*
+         Hash Cond: (utrtest_2.a = "*VALUES*".column1)
+         ->  Seq Scan on public.locp utrtest_2
+               Output: utrtest_2.id, utrtest_2.b, utrtest_2.ctid, utrtest_2.a
          ->  Hash
                Output: "*VALUES*".*, "*VALUES*".column1
                ->  Values Scan on "*VALUES*"
@@ -9275,7 +9489,9 @@ select * from utrtest;
 --Testcase 631:
 delete from utrtest;
 alter table utrtest detach partition remp;
+--Testcase 864:
 drop foreign table remp;
+--Testcase 865:
 create foreign table remp (id serial, a int check (a in (3)), b text) server griddb_svr options (table_name 'loct21');
 alter foreign table remp alter column id options (rowkey 'true');
 alter foreign table remp drop constraint remp_a_check;
@@ -9290,15 +9506,15 @@ insert into utrtest(a, b) values (3, 'xyzzy');
 --Testcase 634:
 explain (verbose, costs off)
 update utrtest set a = 3;
-                  QUERY PLAN                   
------------------------------------------------
+                          QUERY PLAN                          
+--------------------------------------------------------------
  Update on public.utrtest
-   Update on public.locp
-   Foreign Update on public.remp
-   ->  Seq Scan on public.locp
-         Output: locp.id, 3, locp.b, locp.ctid
-   ->  Foreign Scan on public.remp
-         Output: remp.id, 3, remp.b, remp.id
+   Update on public.locp utrtest_1
+   Foreign Update on public.remp utrtest_2
+   ->  Seq Scan on public.locp utrtest_1
+         Output: utrtest_1.id, 3, utrtest_1.b, utrtest_1.ctid
+   ->  Foreign Scan on public.remp utrtest_2
+         Output: utrtest_2.id, 3, utrtest_2.b, utrtest_2.id
          Remote SQL: SELECT  *  FROM loct21
 (8 rows)
 
@@ -9309,25 +9525,25 @@ ERROR:  cannot route tuples into foreign table to be updated "remp"
 --Testcase 636:
 explain (verbose, costs off)
 update utrtest set a = 3 from (values (2), (3)) s(x) where a = s.x;
-                          QUERY PLAN                          
---------------------------------------------------------------
+                                  QUERY PLAN                                  
+------------------------------------------------------------------------------
  Update on public.utrtest
-   Update on public.locp
-   Foreign Update on public.remp
+   Update on public.locp utrtest_1
+   Foreign Update on public.remp utrtest_2
    ->  Hash Join
-         Output: locp.id, 3, locp.b, locp.ctid, "*VALUES*".*
-         Hash Cond: (locp.a = "*VALUES*".column1)
-         ->  Seq Scan on public.locp
-               Output: locp.id, locp.b, locp.ctid, locp.a
+         Output: utrtest_1.id, 3, utrtest_1.b, utrtest_1.ctid, "*VALUES*".*
+         Hash Cond: (utrtest_1.a = "*VALUES*".column1)
+         ->  Seq Scan on public.locp utrtest_1
+               Output: utrtest_1.id, utrtest_1.b, utrtest_1.ctid, utrtest_1.a
          ->  Hash
                Output: "*VALUES*".*, "*VALUES*".column1
                ->  Values Scan on "*VALUES*"
                      Output: "*VALUES*".*, "*VALUES*".column1
    ->  Hash Join
-         Output: remp.id, 3, remp.b, remp.id, "*VALUES*".*
-         Hash Cond: (remp.a = "*VALUES*".column1)
-         ->  Foreign Scan on public.remp
-               Output: remp.id, remp.a, remp.b
+         Output: utrtest_2.id, 3, utrtest_2.b, utrtest_2.id, "*VALUES*".*
+         Hash Cond: (utrtest_2.a = "*VALUES*".column1)
+         ->  Foreign Scan on public.remp utrtest_2
+               Output: utrtest_2.id, utrtest_2.a, utrtest_2.b
                Remote SQL: SELECT  *  FROM loct21
          ->  Hash
                Output: "*VALUES*".*, "*VALUES*".column1
@@ -9338,11 +9554,15 @@ update utrtest set a = 3 from (values (2), (3)) s(x) where a = s.x;
 --update utrtest set a = 3 from (values (2), (3)) s(x) where a = s.x; -- ERROR
 --Testcase 637:
 delete from utrtest;
+--Testcase 866:
 drop table utrtest;
 --drop table loct;
 -- Test copy tuple routing
+--Testcase 867:
 create table ctrtest (id serial, a int, b text) partition by list (a);
+--Testcase 868:
 create foreign table remp1 (id serial, a int, b text) server griddb_svr options (table_name 'loct12');
+--Testcase 869:
 create foreign table remp2 (id serial, a int, b text) server griddb_svr options (table_name 'loct21');
 alter foreign table remp1 alter column id options (rowkey 'true');
 alter foreign table remp2 alter column id options (rowkey 'true');
@@ -9351,207 +9571,234 @@ alter table ctrtest attach partition remp2 for values in (2);
 --Testcase 638:
 insert into ctrtest(a, b) values (1, 'foo'), (2, 'qux');
 --Testcase 639:
-select tableoid::regclass, * FROM ctrtest;
- tableoid | id | a |  b  
-----------+----+---+-----
- remp1    |  1 | 1 | foo
- remp2    |  2 | 2 | qux
+select tableoid::regclass, a, b FROM ctrtest;
+ tableoid | a |  b  
+----------+---+-----
+ remp1    | 1 | foo
+ remp2    | 2 | qux
 (2 rows)
 
 --Testcase 640:
-select tableoid::regclass, * FROM remp1;
- tableoid | id | a |  b  
-----------+----+---+-----
- remp1    |  1 | 1 | foo
+select tableoid::regclass, a, b FROM remp1;
+ tableoid | a |  b  
+----------+---+-----
+ remp1    | 1 | foo
 (1 row)
 
 --Testcase 641:
-select tableoid::regclass, * FROM remp2;
- tableoid | id | a |  b  
-----------+----+---+-----
- remp2    |  2 | 2 | qux
+select tableoid::regclass, b, a FROM remp2;
+ tableoid |  b  | a 
+----------+-----+---
+ remp2    | qux | 2
 (1 row)
 
+-- GridDB not support partitions by
 -- Copying into foreign partitions directly should work as well
 copy remp1(a, b) from stdin;
 WARNING:  row was updated instead of insert because same row key has already existed.
 --Testcase 642:
-select tableoid::regclass, * FROM remp1;
- tableoid | id | a |  b  
-----------+----+---+-----
- remp1    |  1 | 1 | bar
+select tableoid::regclass, a, b FROM remp1;
+ tableoid | a |  b  
+----------+---+-----
+ remp1    | 1 | bar
 (1 row)
 
 --Testcase 643:
 delete from ctrtest;
+--Testcase 870:
 drop table ctrtest;
 -- ===================================================================
 -- test COPY FROM
 -- ===================================================================
-create foreign table rem2 (id serial, a int, b text) server griddb_svr options(table_name 'loct12');
+--Testcase 871:
+create foreign table rem2 (id serial, f1 int, f2 text) server griddb_svr options(table_name 'loct12');
 alter foreign table rem2 alter column id options (rowkey 'true');
 -- Test basic functionality
 --Testcase 644:
-insert into rem2(a, b) values (1, 'foo'), (2, 'bar');
+insert into rem2(f1, f2) values (1, 'foo'), (2, 'bar');
 --Testcase 645:
-select * from rem2;
- id | a |  b  
-----+---+-----
-  1 | 1 | foo
-  2 | 2 | bar
+select f1, f2 from rem2;
+ f1 | f2  
+----+-----
+  1 | foo
+  2 | bar
 (2 rows)
 
 --Testcase 646:
 delete from rem2;
 -- Test check constraints
-alter foreign table rem2 add constraint rem2_f1positive check (a >= 0);
+alter foreign table rem2 add constraint rem2_f1positive check (f1 >= 0);
 -- check constraint is enforced on the remote side, not locally
 --Testcase 647:
-insert into rem2(a, b) values (1, 'foo'), (2, 'bar');
+insert into rem2(f1, f2) values (1, 'foo'), (2, 'bar');
+-- GridDB not support constraint
 --Testcase 648:
-insert into rem2(a, b) values (-1, 'xyzzy');
+--insert into rem2(f1, f2) values (-1, 'xyzzy');
 --Testcase 649:
-select * from rem2;
- id | a  |   b   
-----+----+-------
-  3 |  1 | foo
-  4 |  2 | bar
-  5 | -1 | xyzzy
-(3 rows)
+select f1, f2 from rem2;
+ f1 | f2  
+----+-----
+  1 | foo
+  2 | bar
+(2 rows)
 
 alter foreign table rem2 drop constraint rem2_f1positive;
 --alter table loc2 drop constraint loc2_f1positive;
 --Testcase 650:
 delete from rem2;
 -- Test local triggers
+--Testcase 872:
 create trigger trig_stmt_before before insert on rem2
 	for each statement execute procedure trigger_func();
+--Testcase 873:
 create trigger trig_stmt_after after insert on rem2
 	for each statement execute procedure trigger_func();
+--Testcase 874:
 create trigger trig_row_before before insert on rem2
 	for each row execute procedure trigger_data(23,'skidoo');
+--Testcase 875:
 create trigger trig_row_after after insert on rem2
 	for each row execute procedure trigger_data(23,'skidoo');
-copy rem2(a, b) from stdin;
+copy rem2(f1, f2) from stdin;
 NOTICE:  trigger_func(<NULL>) called: action = INSERT, when = BEFORE, level = STATEMENT
 NOTICE:  trig_row_before(23, skidoo) BEFORE ROW INSERT ON rem2
-NOTICE:  NEW: (6,1,foo)
+NOTICE:  NEW: (5,1,foo)
 NOTICE:  trig_row_before(23, skidoo) BEFORE ROW INSERT ON rem2
-NOTICE:  NEW: (7,2,bar)
+NOTICE:  NEW: (6,2,bar)
 NOTICE:  trig_row_after(23, skidoo) AFTER ROW INSERT ON rem2
-NOTICE:  NEW: (6,1,foo)
+NOTICE:  NEW: (5,1,foo)
 NOTICE:  trig_row_after(23, skidoo) AFTER ROW INSERT ON rem2
-NOTICE:  NEW: (7,2,bar)
+NOTICE:  NEW: (6,2,bar)
 NOTICE:  trigger_func(<NULL>) called: action = INSERT, when = AFTER, level = STATEMENT
 --Testcase 651:
-select * from rem2;
- id | a |  b  
-----+---+-----
-  6 | 1 | foo
-  7 | 2 | bar
+select f1, f2 from rem2;
+ f1 | f2  
+----+-----
+  1 | foo
+  2 | bar
 (2 rows)
 
+--Testcase 876:
 drop trigger trig_row_before on rem2;
+--Testcase 877:
 drop trigger trig_row_after on rem2;
+--Testcase 878:
 drop trigger trig_stmt_before on rem2;
+--Testcase 879:
 drop trigger trig_stmt_after on rem2;
 --Testcase 652:
 delete from rem2;
+--Testcase 880:
 CREATE FUNCTION trig_row_before_insupdate1() RETURNS TRIGGER AS $$
   BEGIN
-    NEW.b := NEW.b || ' triggered !';
+    NEW.f2 := NEW.f2 || ' triggered !';
     RETURN NEW;
   END
 $$ language plpgsql;
+--Testcase 881:
 create trigger trig_row_before_insert before insert on rem2
 	for each row execute procedure trig_row_before_insupdate1();
 -- The new values are concatenated with ' triggered !'
-copy rem2(a, b) from stdin;
+copy rem2(f1, f2) from stdin;
 --Testcase 653:
-select * from rem2;
- id | a |        b        
-----+---+-----------------
-  8 | 1 | foo triggered !
-  9 | 2 | bar triggered !
+select f1, f2 from rem2;
+ f1 |       f2        
+----+-----------------
+  1 | foo triggered !
+  2 | bar triggered !
 (2 rows)
 
+--Testcase 882:
 drop trigger trig_row_before_insert on rem2;
 --Testcase 654:
 delete from rem2;
+--Testcase 883:
 create trigger trig_null before insert on rem2
 	for each row execute procedure trig_null();
 -- Nothing happens
-copy rem2(a, b) from stdin;
+copy rem2(f1, f2) from stdin;
 --Testcase 655:
-select * from rem2;
- id | a | b 
-----+---+---
+select f1, f2 from rem2;
+ f1 | f2 
+----+----
 (0 rows)
 
+--Testcase 884:
 drop trigger trig_null on rem2;
 --Testcase 656:
 delete from rem2;
 -- Test remote triggers
+--Testcase 885:
 create trigger trig_row_before_insert before insert on rem2
 	for each row execute procedure trig_row_before_insupdate1();
 -- The new values are concatenated with ' triggered !'
-copy rem2(a, b) from stdin;
+copy rem2(f1, f2) from stdin;
 --Testcase 657:
-select * from rem2;
- id | a |        b        
-----+---+-----------------
- 12 | 1 | foo triggered !
- 13 | 2 | bar triggered !
+select f1, f2 from rem2;
+ f1 |       f2        
+----+-----------------
+  1 | foo triggered !
+  2 | bar triggered !
 (2 rows)
 
+--Testcase 886:
 drop trigger trig_row_before_insert on rem2;
 --Testcase 658:
 delete from rem2;
+--Testcase 887:
 create trigger trig_null before insert on rem2
 	for each row execute procedure trig_null();
 -- Nothing happens
-copy rem2(a, b) from stdin;
+copy rem2(f1, f2) from stdin;
 --Testcase 659:
-select * from rem2;
- id | a | b 
-----+---+---
+select f1, f2 from rem2;
+ f1 | f2 
+----+----
 (0 rows)
 
+--Testcase 888:
 drop trigger trig_null on rem2;
 --Testcase 660:
 delete from rem2;
 -- Test a combination of local and remote triggers
+--Testcase 889:
 create trigger rem2_trig_row_before before insert on rem2
 	for each row execute procedure trigger_data(23,'skidoo');
+--Testcase 890:
 create trigger rem2_trig_row_after after insert on rem2
 	for each row execute procedure trigger_data(23,'skidoo');
+--Testcase 891:
 create trigger loc2_trig_row_before_insert before insert on rem2
 	for each row execute procedure trig_row_before_insupdate1();
-copy rem2(a, b) from stdin;
+copy rem2(f1, f2) from stdin;
 NOTICE:  rem2_trig_row_before(23, skidoo) BEFORE ROW INSERT ON rem2
-NOTICE:  NEW: (16,1,"foo triggered !")
+NOTICE:  NEW: (15,1,"foo triggered !")
 NOTICE:  rem2_trig_row_before(23, skidoo) BEFORE ROW INSERT ON rem2
-NOTICE:  NEW: (17,2,"bar triggered !")
+NOTICE:  NEW: (16,2,"bar triggered !")
 NOTICE:  rem2_trig_row_after(23, skidoo) AFTER ROW INSERT ON rem2
-NOTICE:  NEW: (16,1,"foo triggered !")
+NOTICE:  NEW: (15,1,"foo triggered !")
 NOTICE:  rem2_trig_row_after(23, skidoo) AFTER ROW INSERT ON rem2
-NOTICE:  NEW: (17,2,"bar triggered !")
+NOTICE:  NEW: (16,2,"bar triggered !")
 --Testcase 661:
-select * from rem2;
- id | a |        b        
-----+---+-----------------
- 16 | 1 | foo triggered !
- 17 | 2 | bar triggered !
+select f1, f2 from rem2;
+ f1 |       f2        
+----+-----------------
+  1 | foo triggered !
+  2 | bar triggered !
 (2 rows)
 
+--Testcase 892:
 drop trigger rem2_trig_row_before on rem2;
+--Testcase 893:
 drop trigger rem2_trig_row_after on rem2;
+--Testcase 894:
 drop trigger loc2_trig_row_before_insert on rem2;
 --Testcase 662:
 delete from rem2;
 -- test COPY FROM with foreign table created in the same transaction
 --create table loc3 (f1 int, f2 text);
 begin;
+--Testcase 895:
 create foreign table rem3 (f1 int, f2 text)
 	server griddb_svr options(table_name 'loc3');
 copy rem3(f1, f2) from stdin;
@@ -9564,11 +9811,13 @@ select * from rem3;
   2 | bar
 (2 rows)
 
+--Testcase 896:
 drop foreign table rem3;
 --drop table loc3;
 -- ===================================================================
 -- test IMPORT FOREIGN SCHEMA
 -- ===================================================================
+--Testcase 897:
 CREATE SCHEMA import_grid1;
 IMPORT FOREIGN SCHEMA "S 1" LIMIT TO
 	("T0", "T1", "T2", "T3", "T4", ft1)
@@ -9674,6 +9923,7 @@ IMPORT FOREIGN SCHEMA "S 1" LIMIT TO
 \d import_grid3.*
 */
 -- Check LIMIT TO and EXCEPT
+--Testcase 898:
 CREATE SCHEMA import_grid4;
 IMPORT FOREIGN SCHEMA griddb_schema LIMIT TO ("T1", nonesuch)
   FROM SERVER griddb_svr INTO import_grid4;
@@ -9694,8 +9944,10 @@ FROM SERVER griddb_svr INTO import_grid4;
 --------------+---------------------------+------------+-------------+-------------
  import_grid4 | FLOAT4_TBL                | griddb_svr |             | 
  import_grid4 | FLOAT8_TBL                | griddb_svr |             | 
+ import_grid4 | FLOAT8_TMP                | griddb_svr |             | 
  import_grid4 | INT2_TBL                  | griddb_svr |             | 
  import_grid4 | INT4_TBL                  | griddb_svr |             | 
+ import_grid4 | INT4_TMP                  | griddb_svr |             | 
  import_grid4 | INT8_TBL                  | griddb_svr |             | 
  import_grid4 | J1_TBL                    | griddb_svr |             | 
  import_grid4 | J2_TBL                    | griddb_svr |             | 
@@ -9708,6 +9960,16 @@ FROM SERVER griddb_svr INTO import_grid4;
  import_grid4 | a2                        | griddb_svr |             | 
  import_grid4 | a3                        | griddb_svr |             | 
  import_grid4 | a4                        | griddb_svr |             | 
+ import_grid4 | agg_data_20k              | griddb_svr |             | 
+ import_grid4 | agg_data_2k               | griddb_svr |             | 
+ import_grid4 | agg_group_1               | griddb_svr |             | 
+ import_grid4 | agg_group_2               | griddb_svr |             | 
+ import_grid4 | agg_group_3               | griddb_svr |             | 
+ import_grid4 | agg_group_4               | griddb_svr |             | 
+ import_grid4 | agg_hash_1                | griddb_svr |             | 
+ import_grid4 | agg_hash_2                | griddb_svr |             | 
+ import_grid4 | agg_hash_3                | griddb_svr |             | 
+ import_grid4 | agg_hash_4                | griddb_svr |             | 
  import_grid4 | agg_t0                    | griddb_svr |             | 
  import_grid4 | agg_t1                    | griddb_svr |             | 
  import_grid4 | agg_t2                    | griddb_svr |             | 
@@ -9778,6 +10040,7 @@ FROM SERVER griddb_svr INTO import_grid4;
  import_grid4 | join_foo                  | griddb_svr |             | 
  import_grid4 | join_pt1p1p1              | griddb_svr |             | 
  import_grid4 | join_pt1p2                | griddb_svr |             | 
+ import_grid4 | join_ut1                  | griddb_svr |             | 
  import_grid4 | list_default              | griddb_svr |             | 
  import_grid4 | list_part1                | griddb_svr |             | 
  import_grid4 | loc1                      | griddb_svr |             | 
@@ -9833,6 +10096,7 @@ FROM SERVER griddb_svr INTO import_grid4;
  import_grid4 | num_exp_sub               | griddb_svr |             | 
  import_grid4 | num_input_test            | griddb_svr |             | 
  import_grid4 | num_result                | griddb_svr |             | 
+ import_grid4 | num_test_calc             | griddb_svr |             | 
  import_grid4 | numbers                   | griddb_svr |             | 
  import_grid4 | onek                      | griddb_svr |             | 
  import_grid4 | onek2                     | griddb_svr |             | 
@@ -9862,11 +10126,15 @@ FROM SERVER griddb_svr INTO import_grid4;
  import_grid4 | part_xx_yy_defpart        | griddb_svr |             | 
  import_grid4 | part_xx_yy_p1             | griddb_svr |             | 
  import_grid4 | person                    | griddb_svr |             | 
+ import_grid4 | q1                        | griddb_svr |             | 
+ import_grid4 | q2                        | griddb_svr |             | 
  import_grid4 | regr_test                 | griddb_svr |             | 
  import_grid4 | regr_test_array           | griddb_svr |             | 
  import_grid4 | returningwrtest1          | griddb_svr |             | 
  import_grid4 | returningwrtest2          | griddb_svr |             | 
  import_grid4 | road                      | griddb_svr |             | 
+ import_grid4 | road_tmp                  | griddb_svr |             | 
+ import_grid4 | rowkey_tbl                | griddb_svr |             | 
  import_grid4 | shorty                    | griddb_svr |             | 
  import_grid4 | simple                    | griddb_svr |             | 
  import_grid4 | student                   | griddb_svr |             | 
@@ -9912,6 +10180,7 @@ FROM SERVER griddb_svr INTO import_grid4;
  import_grid4 | update_test               | griddb_svr |             | 
  import_grid4 | upsert_test               | griddb_svr |             | 
  import_grid4 | wide                      | griddb_svr |             | 
+ import_grid4 | width_bucket_tbl          | griddb_svr |             | 
  import_grid4 | width_bucket_test         | griddb_svr |             | 
  import_grid4 | x                         | griddb_svr |             | 
  import_grid4 | xx                        | griddb_svr |             | 
@@ -9920,7 +10189,7 @@ FROM SERVER griddb_svr INTO import_grid4;
  import_grid4 | zt1                       | griddb_svr |             | 
  import_grid4 | zt2                       | griddb_svr |             | 
  import_grid4 | zt3                       | griddb_svr |             | 
-(228 rows)
+(247 rows)
 
 -- Assorted error cases
 IMPORT FOREIGN SCHEMA griddb_schema FROM SERVER griddb_svr INTO import_grid4;
@@ -9930,6 +10199,7 @@ NOTICE:  relation "simple" already exists, skipping
 NOTICE:  relation "x" already exists, skipping
 NOTICE:  relation "fprt1_p2" already exists, skipping
 NOTICE:  relation "minmaxtest" already exists, skipping
+NOTICE:  relation "agg_hash_3" already exists, skipping
 NOTICE:  relation "mlparted_def2" already exists, skipping
 NOTICE:  relation "brtrigpartcon1" already exists, skipping
 NOTICE:  relation "J1_TBL" already exists, skipping
@@ -9938,6 +10208,7 @@ NOTICE:  relation "empdata" already exists, skipping
 NOTICE:  relation "FLOAT4_TBL" already exists, skipping
 NOTICE:  relation "mcrparted4_common_lt_0" already exists, skipping
 NOTICE:  relation "FLOAT8_TBL" already exists, skipping
+NOTICE:  relation "FLOAT8_TMP" already exists, skipping
 NOTICE:  relation "regr_test" already exists, skipping
 NOTICE:  relation "part_xx_yy_defpart" already exists, skipping
 NOTICE:  relation "department" already exists, skipping
@@ -9948,11 +10219,13 @@ NOTICE:  relation "num_exp_sub" already exists, skipping
 NOTICE:  relation "c3" already exists, skipping
 NOTICE:  relation "num_data" already exists, skipping
 NOTICE:  relation "loct22" already exists, skipping
+NOTICE:  relation "agg_data_20k" already exists, skipping
 NOTICE:  relation "loct2" already exists, skipping
 NOTICE:  relation "pagg_tab_p3" already exists, skipping
 NOTICE:  relation "xx" already exists, skipping
 NOTICE:  relation "a3" already exists, skipping
 NOTICE:  relation "type_string" already exists, skipping
+NOTICE:  relation "agg_hash_2" already exists, skipping
 NOTICE:  relation "update_test" already exists, skipping
 NOTICE:  relation "t31" already exists, skipping
 NOTICE:  relation "y" already exists, skipping
@@ -9985,6 +10258,8 @@ NOTICE:  relation "join_pt1p1p1" already exists, skipping
 NOTICE:  relation "num_exp_sqrt" already exists, skipping
 NOTICE:  relation "part_ee_ff2" already exists, skipping
 NOTICE:  relation "mcrparted1_lt_b" already exists, skipping
+NOTICE:  relation "agg_hash_4" already exists, skipping
+NOTICE:  relation "agg_hash_1" already exists, skipping
 NOTICE:  relation "child" already exists, skipping
 NOTICE:  relation "fkest" already exists, skipping
 NOTICE:  relation "bar" already exists, skipping
@@ -9996,6 +10271,7 @@ NOTICE:  relation "a4" already exists, skipping
 NOTICE:  relation "type_timestamp" already exists, skipping
 NOTICE:  relation "t32" already exists, skipping
 NOTICE:  relation "type_string_array" already exists, skipping
+NOTICE:  relation "join_ut1" already exists, skipping
 NOTICE:  relation "j21" already exists, skipping
 NOTICE:  relation "mcrparted3_c_to_common" already exists, skipping
 NOTICE:  relation "type_byte_array" already exists, skipping
@@ -10019,11 +10295,13 @@ NOTICE:  relation "part_aa_bb" already exists, skipping
 NOTICE:  relation "loct4" already exists, skipping
 NOTICE:  relation "uniquetbl" already exists, skipping
 NOTICE:  relation "bool_test" already exists, skipping
+NOTICE:  relation "num_test_calc" already exists, skipping
 NOTICE:  relation "fprt1_p1" already exists, skipping
 NOTICE:  relation "mlparted_def1" already exists, skipping
 NOTICE:  relation "shorty" already exists, skipping
 NOTICE:  relation "list_part1" already exists, skipping
 NOTICE:  relation "mcrparted5" already exists, skipping
+NOTICE:  relation "agg_group_2" already exists, skipping
 NOTICE:  relation "part1" already exists, skipping
 NOTICE:  relation "part_null" already exists, skipping
 NOTICE:  relation "type_blob" already exists, skipping
@@ -10035,7 +10313,9 @@ NOTICE:  relation "ft4" already exists, skipping
 NOTICE:  relation "ft1" already exists, skipping
 NOTICE:  relation "loc3" already exists, skipping
 NOTICE:  relation "fkest1" already exists, skipping
+NOTICE:  relation "q2" already exists, skipping
 NOTICE:  relation "mcrparted2_b" already exists, skipping
+NOTICE:  relation "rowkey_tbl" already exists, skipping
 NOTICE:  relation "num_exp_power_10_ln" already exists, skipping
 NOTICE:  relation "nt2" already exists, skipping
 NOTICE:  relation "d3" already exists, skipping
@@ -10060,6 +10340,8 @@ NOTICE:  relation "list_default" already exists, skipping
 NOTICE:  relation "donothingbrtrig_test1" already exists, skipping
 NOTICE:  relation "hpart11" already exists, skipping
 NOTICE:  relation "j32" already exists, skipping
+NOTICE:  relation "agg_group_3" already exists, skipping
+NOTICE:  relation "road_tmp" already exists, skipping
 NOTICE:  relation "part_d_15_20" already exists, skipping
 NOTICE:  relation "part_default" already exists, skipping
 NOTICE:  relation "type_short" already exists, skipping
@@ -10068,6 +10350,7 @@ NOTICE:  relation "upsert_test" already exists, skipping
 NOTICE:  relation "mcrparted7_gt_common_lt_d" already exists, skipping
 NOTICE:  relation "tt1" already exists, skipping
 NOTICE:  relation "j12" already exists, skipping
+NOTICE:  relation "agg_data_2k" already exists, skipping
 NOTICE:  relation "type_double" already exists, skipping
 NOTICE:  relation "J2_TBL" already exists, skipping
 NOTICE:  relation "bigger_than_it_looks" already exists, skipping
@@ -10076,6 +10359,7 @@ NOTICE:  relation "yy" already exists, skipping
 NOTICE:  relation "mcrparted1" already exists, skipping
 NOTICE:  relation "tt4" already exists, skipping
 NOTICE:  relation "num_exp_div" already exists, skipping
+NOTICE:  relation "width_bucket_tbl" already exists, skipping
 NOTICE:  relation "b2" already exists, skipping
 NOTICE:  relation "to_number_test" already exists, skipping
 NOTICE:  relation "loct13" already exists, skipping
@@ -10132,6 +10416,7 @@ NOTICE:  relation "agg_t4" already exists, skipping
 NOTICE:  relation "num_exp_mul" already exists, skipping
 NOTICE:  relation "hpart2" already exists, skipping
 NOTICE:  relation "ft2" already exists, skipping
+NOTICE:  relation "q1" already exists, skipping
 NOTICE:  relation "mcrparted3" already exists, skipping
 NOTICE:  relation "child_tbl" already exists, skipping
 NOTICE:  relation "tt6" already exists, skipping
@@ -10139,6 +10424,8 @@ NOTICE:  relation "b0" already exists, skipping
 NOTICE:  relation "person" already exists, skipping
 NOTICE:  relation "bool_test_a" already exists, skipping
 NOTICE:  relation "loct11" already exists, skipping
+NOTICE:  relation "agg_group_4" already exists, skipping
+NOTICE:  relation "agg_group_1" already exists, skipping
 NOTICE:  relation "part2" already exists, skipping
 NOTICE:  relation "numbers" already exists, skipping
 NOTICE:  relation "tt3" already exists, skipping
@@ -10148,6 +10435,7 @@ NOTICE:  relation "loct" already exists, skipping
 NOTICE:  relation "mlparted12" already exists, skipping
 NOTICE:  relation "type_integer" already exists, skipping
 NOTICE:  relation "INT4_TBL" already exists, skipping
+NOTICE:  relation "INT4_TMP" already exists, skipping
 NOTICE:  relation "bitwise_test" already exists, skipping
 NOTICE:  relation "agg_t1" already exists, skipping
 NOTICE:  relation "INT8_TBL" already exists, skipping
@@ -10159,6 +10447,7 @@ NOTICE:  relation "simple" already exists, skipping
 NOTICE:  relation "x" already exists, skipping
 NOTICE:  relation "fprt1_p2" already exists, skipping
 NOTICE:  relation "minmaxtest" already exists, skipping
+NOTICE:  relation "agg_hash_3" already exists, skipping
 NOTICE:  relation "mlparted_def2" already exists, skipping
 NOTICE:  relation "brtrigpartcon1" already exists, skipping
 NOTICE:  relation "J1_TBL" already exists, skipping
@@ -10167,6 +10456,7 @@ NOTICE:  relation "empdata" already exists, skipping
 NOTICE:  relation "FLOAT4_TBL" already exists, skipping
 NOTICE:  relation "mcrparted4_common_lt_0" already exists, skipping
 NOTICE:  relation "FLOAT8_TBL" already exists, skipping
+NOTICE:  relation "FLOAT8_TMP" already exists, skipping
 NOTICE:  relation "regr_test" already exists, skipping
 NOTICE:  relation "part_xx_yy_defpart" already exists, skipping
 NOTICE:  relation "department" already exists, skipping
@@ -10178,11 +10468,13 @@ NOTICE:  relation "T2" already exists, skipping
 NOTICE:  relation "c3" already exists, skipping
 NOTICE:  relation "num_data" already exists, skipping
 NOTICE:  relation "loct22" already exists, skipping
+NOTICE:  relation "agg_data_20k" already exists, skipping
 NOTICE:  relation "loct2" already exists, skipping
 NOTICE:  relation "pagg_tab_p3" already exists, skipping
 NOTICE:  relation "xx" already exists, skipping
 NOTICE:  relation "a3" already exists, skipping
 NOTICE:  relation "type_string" already exists, skipping
+NOTICE:  relation "agg_hash_2" already exists, skipping
 NOTICE:  relation "update_test" already exists, skipping
 NOTICE:  relation "t31" already exists, skipping
 NOTICE:  relation "y" already exists, skipping
@@ -10215,6 +10507,8 @@ NOTICE:  relation "join_pt1p1p1" already exists, skipping
 NOTICE:  relation "num_exp_sqrt" already exists, skipping
 NOTICE:  relation "part_ee_ff2" already exists, skipping
 NOTICE:  relation "mcrparted1_lt_b" already exists, skipping
+NOTICE:  relation "agg_hash_4" already exists, skipping
+NOTICE:  relation "agg_hash_1" already exists, skipping
 NOTICE:  relation "child" already exists, skipping
 NOTICE:  relation "fkest" already exists, skipping
 NOTICE:  relation "bar" already exists, skipping
@@ -10226,6 +10520,7 @@ NOTICE:  relation "a4" already exists, skipping
 NOTICE:  relation "type_timestamp" already exists, skipping
 NOTICE:  relation "t32" already exists, skipping
 NOTICE:  relation "type_string_array" already exists, skipping
+NOTICE:  relation "join_ut1" already exists, skipping
 NOTICE:  relation "j21" already exists, skipping
 NOTICE:  relation "mcrparted3_c_to_common" already exists, skipping
 NOTICE:  relation "type_byte_array" already exists, skipping
@@ -10249,11 +10544,13 @@ NOTICE:  relation "part_aa_bb" already exists, skipping
 NOTICE:  relation "loct4" already exists, skipping
 NOTICE:  relation "uniquetbl" already exists, skipping
 NOTICE:  relation "bool_test" already exists, skipping
+NOTICE:  relation "num_test_calc" already exists, skipping
 NOTICE:  relation "fprt1_p1" already exists, skipping
 NOTICE:  relation "mlparted_def1" already exists, skipping
 NOTICE:  relation "shorty" already exists, skipping
 NOTICE:  relation "list_part1" already exists, skipping
 NOTICE:  relation "mcrparted5" already exists, skipping
+NOTICE:  relation "agg_group_2" already exists, skipping
 NOTICE:  relation "part1" already exists, skipping
 NOTICE:  relation "part_null" already exists, skipping
 NOTICE:  relation "type_blob" already exists, skipping
@@ -10265,7 +10562,9 @@ NOTICE:  relation "ft4" already exists, skipping
 NOTICE:  relation "ft1" already exists, skipping
 NOTICE:  relation "loc3" already exists, skipping
 NOTICE:  relation "fkest1" already exists, skipping
+NOTICE:  relation "q2" already exists, skipping
 NOTICE:  relation "mcrparted2_b" already exists, skipping
+NOTICE:  relation "rowkey_tbl" already exists, skipping
 NOTICE:  relation "num_exp_power_10_ln" already exists, skipping
 NOTICE:  relation "nt2" already exists, skipping
 NOTICE:  relation "d3" already exists, skipping
@@ -10290,6 +10589,8 @@ NOTICE:  relation "list_default" already exists, skipping
 NOTICE:  relation "donothingbrtrig_test1" already exists, skipping
 NOTICE:  relation "hpart11" already exists, skipping
 NOTICE:  relation "j32" already exists, skipping
+NOTICE:  relation "agg_group_3" already exists, skipping
+NOTICE:  relation "road_tmp" already exists, skipping
 NOTICE:  relation "part_d_15_20" already exists, skipping
 NOTICE:  relation "part_default" already exists, skipping
 NOTICE:  relation "type_short" already exists, skipping
@@ -10298,6 +10599,7 @@ NOTICE:  relation "upsert_test" already exists, skipping
 NOTICE:  relation "mcrparted7_gt_common_lt_d" already exists, skipping
 NOTICE:  relation "tt1" already exists, skipping
 NOTICE:  relation "j12" already exists, skipping
+NOTICE:  relation "agg_data_2k" already exists, skipping
 NOTICE:  relation "type_double" already exists, skipping
 NOTICE:  relation "J2_TBL" already exists, skipping
 NOTICE:  relation "bigger_than_it_looks" already exists, skipping
@@ -10306,6 +10608,7 @@ NOTICE:  relation "yy" already exists, skipping
 NOTICE:  relation "mcrparted1" already exists, skipping
 NOTICE:  relation "tt4" already exists, skipping
 NOTICE:  relation "num_exp_div" already exists, skipping
+NOTICE:  relation "width_bucket_tbl" already exists, skipping
 NOTICE:  relation "b2" already exists, skipping
 NOTICE:  relation "to_number_test" already exists, skipping
 NOTICE:  relation "loct13" already exists, skipping
@@ -10362,6 +10665,7 @@ NOTICE:  relation "agg_t4" already exists, skipping
 NOTICE:  relation "num_exp_mul" already exists, skipping
 NOTICE:  relation "hpart2" already exists, skipping
 NOTICE:  relation "ft2" already exists, skipping
+NOTICE:  relation "q1" already exists, skipping
 NOTICE:  relation "mcrparted3" already exists, skipping
 NOTICE:  relation "child_tbl" already exists, skipping
 NOTICE:  relation "tt6" already exists, skipping
@@ -10369,6 +10673,8 @@ NOTICE:  relation "b0" already exists, skipping
 NOTICE:  relation "person" already exists, skipping
 NOTICE:  relation "bool_test_a" already exists, skipping
 NOTICE:  relation "loct11" already exists, skipping
+NOTICE:  relation "agg_group_4" already exists, skipping
+NOTICE:  relation "agg_group_1" already exists, skipping
 NOTICE:  relation "part2" already exists, skipping
 NOTICE:  relation "numbers" already exists, skipping
 NOTICE:  relation "tt3" already exists, skipping
@@ -10378,6 +10684,7 @@ NOTICE:  relation "loct" already exists, skipping
 NOTICE:  relation "mlparted12" already exists, skipping
 NOTICE:  relation "type_integer" already exists, skipping
 NOTICE:  relation "INT4_TBL" already exists, skipping
+NOTICE:  relation "INT4_TMP" already exists, skipping
 NOTICE:  relation "bitwise_test" already exists, skipping
 NOTICE:  relation "agg_t1" already exists, skipping
 NOTICE:  relation "INT8_TBL" already exists, skipping
@@ -10388,6 +10695,7 @@ IMPORT FOREIGN SCHEMA nonesuch FROM SERVER nowhere INTO notthere;
 ERROR:  server "nowhere" does not exist
 -- Check case of a type present only on the remote server.
 -- We can fake this by dropping the type locally in our transaction.
+--Testcase 899:
 CREATE SCHEMA import_grid5;
 BEGIN;
 IMPORT FOREIGN SCHEMA griddb_schema LIMIT TO ("T1")
@@ -10443,37 +10751,54 @@ ROLLBACK;
 */
 -- Drop schemas
 SET client_min_messages to WARNING;
+--Testcase 900:
 DROP SCHEMA import_grid1 CASCADE;
+--Testcase 901:
 DROP SCHEMA import_grid2 CASCADE;
 ERROR:  schema "import_grid2" does not exist
+--Testcase 902:
 DROP SCHEMA import_grid3 CASCADE;
 ERROR:  schema "import_grid3" does not exist
+--Testcase 903:
 DROP SCHEMA import_grid4 CASCADE;
+--Testcase 904:
 DROP SCHEMA import_grid5 CASCADE;
 SET client_min_messages to NOTICE;
 -- ===================================================================
 -- test partitionwise joins
 -- ===================================================================
 SET enable_partitionwise_join=on;
+--Testcase 905:
 CREATE TABLE fprt1 (a int, b int, c text) PARTITION BY RANGE(a);
 --Testcase 678:
 INSERT INTO "S 1".fprt1_p1 SELECT i, i, to_char(i/50, 'FM0000') FROM generate_series(0, 249, 2) i;
 --Testcase 679:
 INSERT INTO "S 1".fprt1_p2 SELECT i, i, to_char(i/50, 'FM0000') FROM generate_series(250, 499, 2) i;
+--Testcase 906:
 CREATE FOREIGN TABLE ftprt1_p1 PARTITION OF fprt1 FOR VALUES FROM (0) TO (250)
 	SERVER griddb_svr OPTIONS (table_name 'fprt1_p1');
+--Testcase 907:
 CREATE FOREIGN TABLE ftprt1_p2 PARTITION OF fprt1 FOR VALUES FROM (250) TO (500)
 	SERVER griddb_svr OPTIONS (TABLE_NAME 'fprt1_p2');
+--ANALYZE fprt1;
+--ANALYZE fprt1_p1;
+--ANALYZE fprt1_p2;
+--Testcase 908:
 CREATE TABLE fprt2 (a int, b int, c text) PARTITION BY RANGE(b);
 --Testcase 680:
 INSERT INTO "S 1".fprt2_p1 SELECT i, i, to_char(i/50, 'FM0000') FROM generate_series(0, 249, 3) i;
 --Testcase 681:
 INSERT INTO "S 1".fprt2_p2 SELECT i, i, to_char(i/50, 'FM0000') FROM generate_series(250, 499, 3) i;
+--Testcase 909:
 CREATE FOREIGN TABLE ftprt2_p1 (a int, b int, c text)
 	SERVER griddb_svr OPTIONS (table_name 'fprt2_p1');
 ALTER TABLE fprt2 ATTACH PARTITION ftprt2_p1 FOR VALUES FROM (0) TO (250);
+--Testcase 910:
 CREATE FOREIGN TABLE ftprt2_p2 PARTITION OF fprt2 FOR VALUES FROM (250) TO (500)
 	SERVER griddb_svr OPTIONS (table_name 'fprt2_p2');
+--ANALYZE fprt2;
+--ANALYZE fprt2_p1;
+--ANALYZE fprt2_p2;
 -- inner join three tables
 --Testcase 682:
 EXPLAIN (COSTS OFF)
@@ -10484,23 +10809,23 @@ SELECT t1.a,t2.b,t3.c FROM fprt1 t1 INNER JOIN fprt2 t2 ON (t1.a = t2.b) INNER J
    Sort Key: t1.a, t3.c
    ->  Append
          ->  Hash Join
-               Hash Cond: (t2.b = t1.a)
-               ->  Foreign Scan on ftprt2_p1 t2
-               ->  Hash
-                     ->  Hash Join
-                           Hash Cond: (t3.a = t1.a)
-                           ->  Foreign Scan on ftprt1_p1 t3
-                           ->  Hash
-                                 ->  Foreign Scan on ftprt1_p1 t1
-         ->  Hash Join
                Hash Cond: (t2_1.b = t1_1.a)
-               ->  Foreign Scan on ftprt2_p2 t2_1
+               ->  Foreign Scan on ftprt2_p1 t2_1
                ->  Hash
                      ->  Hash Join
                            Hash Cond: (t3_1.a = t1_1.a)
-                           ->  Foreign Scan on ftprt1_p2 t3_1
+                           ->  Foreign Scan on ftprt1_p1 t3_1
                            ->  Hash
-                                 ->  Foreign Scan on ftprt1_p2 t1_1
+                                 ->  Foreign Scan on ftprt1_p1 t1_1
+         ->  Hash Join
+               Hash Cond: (t2_2.b = t1_2.a)
+               ->  Foreign Scan on ftprt2_p2 t2_2
+               ->  Hash
+                     ->  Hash Join
+                           Hash Cond: (t3_2.a = t1_2.a)
+                           ->  Foreign Scan on ftprt1_p2 t3_2
+                           ->  Hash
+                                 ->  Foreign Scan on ftprt1_p2 t1_2
 (21 rows)
 
 --Testcase 683:
@@ -10517,19 +10842,20 @@ SELECT t1.a,t2.b,t3.c FROM fprt1 t1 INNER JOIN fprt2 t2 ON (t1.a = t2.b) INNER J
 --Testcase 684:
 EXPLAIN (COSTS OFF)
 SELECT t1.a,t2.b,t2.c FROM fprt1 t1 LEFT JOIN (SELECT * FROM fprt2 WHERE a < 10) t2 ON (t1.a = t2.b and t1.b = t2.a) WHERE t1.a < 10 ORDER BY 1,2,3;
-                             QUERY PLAN                              
----------------------------------------------------------------------
- Sort
-   Sort Key: t1.a, ftprt2_p1.b, ftprt2_p1.c
+                         QUERY PLAN                          
+-------------------------------------------------------------
+ Incremental Sort
+   Sort Key: t1.a, fprt2.b, fprt2.c
+   Presorted Key: t1.a
    ->  Merge Left Join
-         Merge Cond: ((t1.a = ftprt2_p1.b) AND (t1.b = ftprt2_p1.a))
+         Merge Cond: ((t1.a = fprt2.b) AND (t1.b = fprt2.a))
          ->  Sort
                Sort Key: t1.a, t1.b
                ->  Foreign Scan on ftprt1_p1 t1
          ->  Sort
-               Sort Key: ftprt2_p1.b, ftprt2_p1.a
-               ->  Foreign Scan on ftprt2_p1
-(10 rows)
+               Sort Key: fprt2.b, fprt2.a
+               ->  Foreign Scan on ftprt2_p1 fprt2
+(11 rows)
 
 --Testcase 685:
 SELECT t1.a,t2.b,t2.c FROM fprt1 t1 LEFT JOIN (SELECT * FROM fprt2 WHERE a < 10) t2 ON (t1.a = t2.b and t1.b = t2.a) WHERE t1.a < 10 ORDER BY 1,2,3;
@@ -10553,12 +10879,12 @@ SELECT t1.wr, t2.wr FROM (SELECT t1 wr, a FROM fprt1 t1 WHERE t1.a % 25 = 0) t1 
    ->  Hash Full Join
          Hash Cond: (t1.a = t2.b)
          ->  Append
-               ->  Foreign Scan on ftprt1_p1 t1
-               ->  Foreign Scan on ftprt1_p2 t1_1
+               ->  Foreign Scan on ftprt1_p1 t1_1
+               ->  Foreign Scan on ftprt1_p2 t1_2
          ->  Hash
                ->  Append
-                     ->  Foreign Scan on ftprt2_p1 t2
-                     ->  Foreign Scan on ftprt2_p2 t2_1
+                     ->  Foreign Scan on ftprt2_p1 t2_1
+                     ->  Foreign Scan on ftprt2_p2 t2_2
 (11 rows)
 
 --Testcase 687:
@@ -10591,15 +10917,15 @@ SELECT t1.a,t1.b FROM fprt1 t1, LATERAL (SELECT t2.a, t2.b FROM fprt2 t2 WHERE t
    Sort Key: t1.a, t1.b
    ->  Append
          ->  Hash Join
-               Hash Cond: ((t2.b = t1.a) AND (t2.a = t1.b))
-               ->  Foreign Scan on ftprt2_p1 t2
-               ->  Hash
-                     ->  Foreign Scan on ftprt1_p1 t1
-         ->  Hash Join
                Hash Cond: ((t2_1.b = t1_1.a) AND (t2_1.a = t1_1.b))
-               ->  Foreign Scan on ftprt2_p2 t2_1
+               ->  Foreign Scan on ftprt2_p1 t2_1
                ->  Hash
-                     ->  Foreign Scan on ftprt1_p2 t1_1
+                     ->  Foreign Scan on ftprt1_p1 t1_1
+         ->  Hash Join
+               Hash Cond: ((t2_2.b = t1_2.a) AND (t2_2.a = t1_2.b))
+               ->  Foreign Scan on ftprt2_p2 t2_2
+               ->  Hash
+                     ->  Foreign Scan on ftprt1_p2 t1_2
 (13 rows)
 
 --Testcase 689:
@@ -10616,21 +10942,21 @@ SELECT t1.a,t1.b FROM fprt1 t1, LATERAL (SELECT t2.a, t2.b FROM fprt2 t2 WHERE t
 --Testcase 690:
 EXPLAIN (COSTS OFF)
 SELECT t1.a, t1.phv, t2.b, t2.phv FROM (SELECT 't1_phv' phv, * FROM fprt1 WHERE a % 25 = 0) t1 FULL JOIN (SELECT 't2_phv' phv, * FROM fprt2 WHERE b % 25 = 0) t2 ON (t1.a = t2.b) ORDER BY t1.a, t2.b;
-                      QUERY PLAN                      
-------------------------------------------------------
+                        QUERY PLAN                         
+-----------------------------------------------------------
  Sort
-   Sort Key: ftprt1_p1.a, ftprt2_p1.b
+   Sort Key: fprt1.a, fprt2.b
    ->  Append
          ->  Hash Full Join
-               Hash Cond: (ftprt1_p1.a = ftprt2_p1.b)
-               ->  Foreign Scan on ftprt1_p1
+               Hash Cond: (fprt1_1.a = fprt2_1.b)
+               ->  Foreign Scan on ftprt1_p1 fprt1_1
                ->  Hash
-                     ->  Foreign Scan on ftprt2_p1
+                     ->  Foreign Scan on ftprt2_p1 fprt2_1
          ->  Hash Full Join
-               Hash Cond: (ftprt1_p2.a = ftprt2_p2.b)
-               ->  Foreign Scan on ftprt1_p2
+               Hash Cond: (fprt1_2.a = fprt2_2.b)
+               ->  Foreign Scan on ftprt1_p2 fprt1_2
                ->  Hash
-                     ->  Foreign Scan on ftprt2_p2
+                     ->  Foreign Scan on ftprt2_p2 fprt2_2
 (13 rows)
 
 --Testcase 691:
@@ -10665,12 +10991,12 @@ SELECT t1.a, t2.b FROM fprt1 t1 INNER JOIN fprt2 t2 ON (t1.a = t2.b) WHERE t1.a 
          ->  Hash Join
                Hash Cond: (t2.b = t1.a)
                ->  Append
-                     ->  Foreign Scan on ftprt2_p1 t2
-                     ->  Foreign Scan on ftprt2_p2 t2_1
+                     ->  Foreign Scan on ftprt2_p1 t2_1
+                     ->  Foreign Scan on ftprt2_p2 t2_2
                ->  Hash
                      ->  Append
-                           ->  Foreign Scan on ftprt1_p1 t1
-                           ->  Foreign Scan on ftprt1_p2 t1_1
+                           ->  Foreign Scan on ftprt1_p1 t1_1
+                           ->  Foreign Scan on ftprt1_p2 t1_2
 (12 rows)
 
 --Testcase 693:
@@ -10687,6 +11013,7 @@ RESET enable_partitionwise_join;
 -- ===================================================================
 -- test partitionwise aggregates
 -- ===================================================================
+--Testcase 911:
 CREATE TABLE pagg_tab (t int, a int, b int, c text) PARTITION BY RANGE(a);
 --Testcase 694:
 INSERT INTO "S 1".pagg_tab_p1 SELECT i, i % 30, i % 50, to_char(i/30, 'FM0000') FROM generate_series(1, 3000) i WHERE (i % 30) < 10;
@@ -10695,26 +11022,33 @@ INSERT INTO "S 1".pagg_tab_p2 SELECT i, i % 30, i % 50, to_char(i/30, 'FM0000') 
 --Testcase 696:
 INSERT INTO "S 1".pagg_tab_p3 SELECT i, i % 30, i % 50, to_char(i/30, 'FM0000') FROM generate_series(1, 3000) i WHERE (i % 30) < 30 and (i % 30) >= 20;
 -- Create foreign partitions
+--Testcase 912:
 CREATE FOREIGN TABLE fpagg_tab_p1 PARTITION OF pagg_tab FOR VALUES FROM (0) TO (10) SERVER griddb_svr OPTIONS (table_name 'pagg_tab_p1');
+--Testcase 913:
 CREATE FOREIGN TABLE fpagg_tab_p2 PARTITION OF pagg_tab FOR VALUES FROM (10) TO (20) SERVER griddb_svr OPTIONS (table_name 'pagg_tab_p2');;
+--Testcase 914:
 CREATE FOREIGN TABLE fpagg_tab_p3 PARTITION OF pagg_tab FOR VALUES FROM (20) TO (30) SERVER griddb_svr OPTIONS (table_name 'pagg_tab_p3');;
+--ANALYZE pagg_tab;
+--ANALYZE fpagg_tab_p1;
+--ANALYZE fpagg_tab_p2;
+--ANALYZE fpagg_tab_p3;
 -- When GROUP BY clause matches with PARTITION KEY.
 -- Plan with partitionwise aggregates is disabled
 SET enable_partitionwise_aggregate TO false;
 --Testcase 697:
 EXPLAIN (COSTS OFF)
 SELECT a, sum(b), min(b), count(*) FROM pagg_tab GROUP BY a HAVING avg(b) < 22 ORDER BY 1;
-                      QUERY PLAN                       
--------------------------------------------------------
+                        QUERY PLAN                         
+-----------------------------------------------------------
  Sort
-   Sort Key: fpagg_tab_p1.a
+   Sort Key: pagg_tab.a
    ->  HashAggregate
-         Group Key: fpagg_tab_p1.a
-         Filter: (avg(fpagg_tab_p1.b) < '22'::numeric)
+         Group Key: pagg_tab.a
+         Filter: (avg(pagg_tab.b) < '22'::numeric)
          ->  Append
-               ->  Foreign Scan on fpagg_tab_p1
-               ->  Foreign Scan on fpagg_tab_p2
-               ->  Foreign Scan on fpagg_tab_p3
+               ->  Foreign Scan on fpagg_tab_p1 pagg_tab_1
+               ->  Foreign Scan on fpagg_tab_p2 pagg_tab_2
+               ->  Foreign Scan on fpagg_tab_p3 pagg_tab_3
 (9 rows)
 
 -- Plan with partitionwise aggregates is enabled
@@ -10722,23 +11056,23 @@ SET enable_partitionwise_aggregate TO true;
 --Testcase 698:
 EXPLAIN (COSTS OFF)
 SELECT a, sum(b), min(b), count(*) FROM pagg_tab GROUP BY a HAVING avg(b) < 22 ORDER BY 1;
-                         QUERY PLAN                          
--------------------------------------------------------------
+                        QUERY PLAN                         
+-----------------------------------------------------------
  Sort
-   Sort Key: fpagg_tab_p1.a
+   Sort Key: pagg_tab.a
    ->  Append
          ->  HashAggregate
-               Group Key: fpagg_tab_p1.a
-               Filter: (avg(fpagg_tab_p1.b) < '22'::numeric)
-               ->  Foreign Scan on fpagg_tab_p1
+               Group Key: pagg_tab.a
+               Filter: (avg(pagg_tab.b) < '22'::numeric)
+               ->  Foreign Scan on fpagg_tab_p1 pagg_tab
          ->  HashAggregate
-               Group Key: fpagg_tab_p2.a
-               Filter: (avg(fpagg_tab_p2.b) < '22'::numeric)
-               ->  Foreign Scan on fpagg_tab_p2
+               Group Key: pagg_tab_1.a
+               Filter: (avg(pagg_tab_1.b) < '22'::numeric)
+               ->  Foreign Scan on fpagg_tab_p2 pagg_tab_1
          ->  HashAggregate
-               Group Key: fpagg_tab_p3.a
-               Filter: (avg(fpagg_tab_p3.b) < '22'::numeric)
-               ->  Foreign Scan on fpagg_tab_p3
+               Group Key: pagg_tab_2.a
+               Filter: (avg(pagg_tab_2.b) < '22'::numeric)
+               ->  Foreign Scan on fpagg_tab_p3 pagg_tab_2
 (15 rows)
 
 --Testcase 699:
@@ -10803,41 +11137,163 @@ SELECT a, count(t1) FROM pagg_tab t1 GROUP BY a HAVING avg(b) < 22 ORDER BY 1;
 --Testcase 702:
 EXPLAIN (COSTS OFF)
 SELECT b, avg(a), max(a), count(*) FROM pagg_tab GROUP BY b HAVING sum(a) < 700 ORDER BY 1;
-                      QUERY PLAN                      
-------------------------------------------------------
+                           QUERY PLAN                            
+-----------------------------------------------------------------
  Sort
-   Sort Key: fpagg_tab_p1.b
+   Sort Key: pagg_tab.b
    ->  Finalize HashAggregate
-         Group Key: fpagg_tab_p1.b
-         Filter: (sum(fpagg_tab_p1.a) < 700)
+         Group Key: pagg_tab.b
+         Filter: (sum(pagg_tab.a) < 700)
          ->  Append
                ->  Partial HashAggregate
-                     Group Key: fpagg_tab_p1.b
-                     ->  Foreign Scan on fpagg_tab_p1
+                     Group Key: pagg_tab.b
+                     ->  Foreign Scan on fpagg_tab_p1 pagg_tab
                ->  Partial HashAggregate
-                     Group Key: fpagg_tab_p2.b
-                     ->  Foreign Scan on fpagg_tab_p2
+                     Group Key: pagg_tab_1.b
+                     ->  Foreign Scan on fpagg_tab_p2 pagg_tab_1
                ->  Partial HashAggregate
-                     Group Key: fpagg_tab_p3.b
-                     ->  Foreign Scan on fpagg_tab_p3
+                     Group Key: pagg_tab_2.b
+                     ->  Foreign Scan on fpagg_tab_p3 pagg_tab_2
 (15 rows)
 
+-- Skip test because GridDB not support no super user
+-- ===================================================================
+-- access rights and superuser
+-- ===================================================================
+/*
+-- Non-superuser cannot create a FDW without a password in the connstr
+CREATE ROLE regress_nosuper NOSUPERUSER;
+
+GRANT USAGE ON FOREIGN DATA WRAPPER griddb_fdw TO regress_nosuper;
+
+SET ROLE regress_nosuper;
+
+SHOW is_superuser;
+
+-- This will be OK, we can create the FDW
+DO $d$
+    BEGIN
+        EXECUTE $$CREATE SERVER griddb_fdw_nopw FOREIGN DATA WRAPPER griddb_fdw
+            OPTIONS (host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster')$$;
+    END;
+$d$;
+
+-- But creation of user mappings for non-superusers should fail
+CREATE USER MAPPING FOR public SERVER griddb_fdw_nopw OPTIONS (username 'admin', password 'testadmin');
+CREATE USER MAPPING FOR CURRENT_USER SERVER griddb_fdw_nopw;
+
+CREATE FOREIGN TABLE ft1_nopw (
+	c1 int OPTIONS (rowkey 'true'),
+	c2 int NOT NULL,
+	c3 text,
+	c4 timestamp,
+	c5 timestamp,
+	c6 text,
+	c7 text default 'ft1',
+	c8 text
+) SERVER griddb_fdw_nopw OPTIONS (table_name 'ft1');
+
+SELECT * FROM ft1_nopw LIMIT 1;
+
+-- If we add a password to the connstr it'll fail, because we don't allow passwords
+-- in connstrs only in user mappings.
+
+DO $d$
+    BEGIN
+        EXECUTE $$ALTER SERVER griddb_fdw_nopw OPTIONS (ADD password 'dummypw')$$;
+    END;
+$d$;
+
+-- If we add a password for our user mapping instead, we should get a different
+-- error because the password wasn't actually *used* when we run with trust auth.
+--
+-- This won't work with installcheck, but neither will most of the FDW checks.
+
+ALTER USER MAPPING FOR CURRENT_USER SERVER griddb_fdw_nopw OPTIONS (ADD password 'dummypw');
+
+SELECT * FROM ft1_nopw LIMIT 1;
+
+-- Unpriv user cannot make the mapping passwordless
+ALTER USER MAPPING FOR CURRENT_USER SERVER griddb_fdw_nopw OPTIONS (ADD password_required 'false');
+
+
+SELECT * FROM ft1_nopw LIMIT 1;
+
+RESET ROLE;
+
+-- But the superuser can
+ALTER USER MAPPING FOR regress_nosuper SERVER griddb_fdw_nopw OPTIONS (ADD password_required 'false');
+
+SET ROLE regress_nosuper;
+
+-- Should finally work now
+SELECT * FROM ft1_nopw LIMIT 1;
+
+-- unpriv user also cannot set sslcert / sslkey on the user mapping
+-- first set password_required so we see the right error messages
+ALTER USER MAPPING FOR CURRENT_USER SERVER griddb_fdw_nopw OPTIONS (SET password_required 'true');
+ALTER USER MAPPING FOR CURRENT_USER SERVER griddb_fdw_nopw OPTIONS (ADD sslcert 'foo.crt');
+ALTER USER MAPPING FOR CURRENT_USER SERVER griddb_fdw_nopw OPTIONS (ADD sslkey 'foo.key');
+
+-- We're done with the role named after a specific user and need to check the
+-- changes to the public mapping.
+DROP USER MAPPING FOR CURRENT_USER SERVER griddb_fdw_nopw;
+
+-- This will fail again as it'll resolve the user mapping for public, which
+-- lacks password_required=false
+SELECT * FROM ft1_nopw LIMIT 1;
+
+RESET ROLE;
+
+-- The user mapping for public is passwordless and lacks the password_required=false
+-- mapping option, but will work because the current user is a superuser.
+SELECT * FROM ft1_nopw LIMIT 1;
+
+-- cleanup
+DROP USER MAPPING FOR public SERVER griddb_fdw_nopw;
+DROP OWNED BY regress_nosuper;
+DROP ROLE regress_nosuper;
+*/
 -- Clean-up
 RESET enable_partitionwise_aggregate;
+-- GridDB has different result because GridDB does not run test check constraints
+-- Two-phase transactions are not supported.
+BEGIN;
+--Testcase 915:
+SELECT count(*) FROM ft1;
+ count 
+-------
+   821
+(1 row)
+
+-- error here
+--Testcase 916:
+PREPARE TRANSACTION 'fdw_tpc';
+ERROR:  cannot prepare a transaction that modified remote tables
+ROLLBACK;
+WARNING:  there is no transaction in progress
 SET client_min_messages to WARNING;
 DO $$ DECLARE
     r RECORD;
 BEGIN
     FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = current_schema()) LOOP
+--Testcase 917:
         EXECUTE 'DROP TABLE IF EXISTS ' || quote_ident(r.tablename);
     END LOOP;
 END $$;
 -- Drop all foreign tables
+--Testcase 918:
 DROP USER MAPPING FOR public SERVER griddb_svr;
+--Testcase 919:
 DROP USER MAPPING FOR public SERVER griddb_svr2;
+--Testcase 920:
 DROP USER MAPPING FOR public SERVER testserver1;
+--Testcase 921:
 DROP SERVER griddb_svr CASCADE;
+--Testcase 922:
 DROP SERVER griddb_svr2 CASCADE;
+--Testcase 923:
 DROP SERVER testserver1 CASCADE;
+--Testcase 924:
 DROP EXTENSION griddb_fdw CASCADE;
 SET client_min_messages to NOTICE;

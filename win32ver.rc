@@ -17,7 +17,7 @@ BEGIN
    VALUE "CompanyName",      "TOSHIBA CORPORATION"
    VALUE "FileDescription",  "griddb_fdw - foreign data wrapper for GridDB"
    VALUE "FileVersion",      1.0
-   VALUE "LegalCopyright", "Copyright (C) TOSHIBA CORPORATION, 2017, All Rights Reserved."
+   VALUE "LegalCopyright", "Copyright (C) TOSHIBA CORPORATION, 2020, All Rights Reserved."
    VALUE "ProductName",      "GridDB FDW"
    VALUE "ProductVersion",   1.0
   END

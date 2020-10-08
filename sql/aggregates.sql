@@ -1,9 +1,13 @@
 --
 -- AGGREGATES
 --
+--Testcase 345:
 CREATE EXTENSION griddb_fdw;
+--Testcase 346:
 CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS(host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster');
+--Testcase 347:
 CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS(username 'admin', password 'testadmin');
+--Testcase 348:
 CREATE FOREIGN TABLE onek(
   unique1   int4 OPTIONS (rowkey 'true'),
   unique2   int4,
@@ -23,12 +27,14 @@ CREATE FOREIGN TABLE onek(
   string4   text
 ) SERVER griddb_svr;
 
+--Testcase 349:
 CREATE FOREIGN TABLE aggtest (
   id      int4,
   a       int2,
   b     float4
 ) SERVER griddb_svr;
 
+--Testcase 350:
 CREATE FOREIGN TABLE student (
   name    text,
   age     int4,
@@ -36,6 +42,7 @@ CREATE FOREIGN TABLE student (
   gpa     float8
 ) SERVER griddb_svr;
 
+--Testcase 351:
 CREATE FOREIGN TABLE tenk1 (
   unique1   int4,
   unique2   int4,
@@ -55,16 +62,22 @@ CREATE FOREIGN TABLE tenk1 (
   string4   text
 ) SERVER griddb_svr;
 
+--Testcase 352:
 CREATE FOREIGN TABLE multi_arg_agg (a int OPTIONS (rowkey 'true'), b int, c text) SERVER griddb_svr;
 
+--Testcase 353:
 CREATE FOREIGN TABLE INT4_TBL(id serial OPTIONS (rowkey 'true'), f1 int4) SERVER griddb_svr; 
 
+--Testcase 354:
 CREATE FOREIGN TABLE INT8_TBL(id serial OPTIONS (rowkey 'true'), q1 int8 , q2 int8) SERVER griddb_svr; 
 
+--Testcase 355:
 CREATE FOREIGN TABLE VARCHAR_TBL(f1 text OPTIONS (rowkey 'true')) SERVER griddb_svr;
 
+--Testcase 356:
 CREATE FOREIGN TABLE FLOAT8_TBL(id serial OPTIONS (rowkey 'true'), f1 float8) SERVER griddb_svr;
 
+--Testcase 357:
 CREATE FOREIGN TABLE FLOAT8_TMP(id serial OPTIONS (rowkey 'true'), f1 float8, f2 float8) SERVER griddb_svr;
 
 -- avoid bit-exact output here because operations may not be bit-exact.
@@ -122,11 +135,157 @@ SELECT var_pop(b::numeric) FROM aggtest;
 --Testcase 20:
 SELECT var_samp(b::numeric) FROM aggtest;
 
--- skip this test, the above tests already covered
 -- population variance is defined for a single tuple, sample variance
 -- is not
---SELECT var_pop(1.0), var_samp(2.0);
---SELECT stddev_pop(3.0::numeric), stddev_samp(4.0::numeric);
+BEGIN;
+--Testcase 358:
+DELETE FROM FLOAT8_TBL;
+--Testcase 359:
+INSERT INTO FLOAT8_TBL(f1) VALUES (1.0::float8);
+--Testcase 360:
+SELECT var_pop(f1::float8), var_samp(f1::float8) FROM FLOAT8_TBL;
+ROLLBACK;
+
+BEGIN;
+--Testcase 361:
+DELETE FROM FLOAT8_TBL;
+--Testcase 362:
+INSERT INTO FLOAT8_TBL(f1) VALUES (3.0::float8);
+--Testcase 363:
+SELECT stddev_pop(f1::float8), stddev_samp(f1::float8) FROM FLOAT8_TBL;
+ROLLBACK;
+
+BEGIN;
+--Testcase 364:
+DELETE FROM FLOAT8_TBL;
+--Testcase 365:
+INSERT INTO FLOAT8_TBL(f1) VALUES ('inf'::float8);
+--Testcase 366:
+SELECT var_pop(f1::float8), var_samp(f1::float8) FROM FLOAT8_TBL;
+ROLLBACK;
+
+BEGIN;
+--Testcase 367:
+DELETE FROM FLOAT8_TBL;
+--Testcase 368:
+INSERT INTO FLOAT8_TBL(f1) VALUES ('inf'::float8);
+--Testcase 369:
+SELECT stddev_pop(f1::float8), stddev_samp(f1::float8) FROM FLOAT8_TBL;
+ROLLBACK;
+
+BEGIN;
+--Testcase 370:
+DELETE FROM FLOAT8_TBL;
+--Testcase 371:
+INSERT INTO FLOAT8_TBL(f1) VALUES ('nan'::float8);
+--Testcase 372:
+SELECT var_pop(f1::float8), var_samp(f1::float8) FROM FLOAT8_TBL;
+ROLLBACK;
+
+BEGIN;
+--Testcase 373:
+DELETE FROM FLOAT8_TBL;
+--Testcase 374:
+INSERT INTO FLOAT8_TBL(f1) VALUES ('nan'::float8);
+--Testcase 375:
+SELECT stddev_pop(f1::float8), stddev_samp(f1::float8) FROM FLOAT8_TBL;
+ROLLBACK;
+
+--Testcase 376:
+CREATE FOREIGN TABLE FLOAT4_TBL(id serial OPTIONS (rowkey 'true'), f1 float4) SERVER griddb_svr;
+
+BEGIN;
+--Testcase 377:
+DELETE FROM FLOAT4_TBL;
+--Testcase 378:
+INSERT INTO FLOAT4_TBL(f1) VALUES (1.0::float4);
+--Testcase 379:
+SELECT var_pop(f1::float4), var_samp(f1::float4) FROM FLOAT4_TBL;
+ROLLBACK;
+
+BEGIN;
+--Testcase 380:
+DELETE FROM FLOAT4_TBL;
+--Testcase 381:
+INSERT INTO FLOAT4_TBL(f1) VALUES (3.0::float4);
+--Testcase 382:
+SELECT stddev_pop(f1::float4), stddev_samp(f1::float4) FROM FLOAT4_TBL;
+ROLLBACK;
+
+BEGIN;
+--Testcase 383:
+DELETE FROM FLOAT4_TBL;
+--Testcase 384:
+INSERT INTO FLOAT4_TBL(f1) VALUES ('inf'::float4);
+--Testcase 385:
+SELECT var_pop(f1::float4), var_samp(f1::float4) FROM FLOAT4_TBL;
+ROLLBACK;
+
+BEGIN;
+--Testcase 386:
+DELETE FROM FLOAT4_TBL;
+--Testcase 387:
+INSERT INTO FLOAT4_TBL(f1) VALUES ('inf'::float4);
+--Testcase 388:
+SELECT stddev_pop(f1::float4), stddev_samp(f1::float4) FROM FLOAT4_TBL;
+ROLLBACK;
+
+BEGIN;
+--Testcase 389:
+DELETE FROM FLOAT4_TBL;
+--Testcase 390:
+INSERT INTO FLOAT4_TBL(f1) VALUES ('nan'::float4);
+--Testcase 391:
+SELECT var_pop(f1::float4), var_samp(f1::float4) FROM FLOAT4_TBL;
+ROLLBACK;
+
+BEGIN;
+--Testcase 392:
+DELETE FROM FLOAT4_TBL;
+--Testcase 393:
+INSERT INTO FLOAT4_TBL(f1) VALUES ('nan'::float4);
+--Testcase 394:
+SELECT stddev_pop(f1::float4), stddev_samp(f1::float4) FROM FLOAT4_TBL;
+ROLLBACK;
+
+BEGIN;
+--Testcase 395:
+DELETE FROM FLOAT4_TBL;
+--Testcase 396:
+INSERT INTO FLOAT4_TBL(f1) VALUES (1.0);
+--Testcase 397:
+SELECT var_pop(f1::numeric), var_samp(f1::numeric) FROM FLOAT4_TBL;
+ROLLBACK;
+
+BEGIN;
+--Testcase 398:
+DELETE FROM FLOAT4_TBL;
+--Testcase 399:
+INSERT INTO FLOAT4_TBL(f1) VALUES (3.0);
+--Testcase 400:
+SELECT stddev_pop(f1::numeric), stddev_samp(f1::numeric) FROM FLOAT4_TBL;
+ROLLBACK;
+
+BEGIN;
+--Testcase 401:
+DELETE FROM FLOAT4_TBL;
+--Testcase 402:
+INSERT INTO FLOAT4_TBL(f1) VALUES ('nan');
+--Testcase 403:
+SELECT var_pop(f1::numeric), var_samp(f1::numeric) FROM FLOAT4_TBL;
+ROLLBACK;
+
+BEGIN;
+--Testcase 404:
+DELETE FROM FLOAT4_TBL;
+--Testcase 405:
+INSERT INTO FLOAT4_TBL(f1) VALUES ('nan');
+--Testcase 406:
+SELECT stddev_pop(f1::numeric), stddev_samp(f1::numeric) FROM FLOAT4_TBL;
+ROLLBACK;
+
+--Testcase 407:
+DROP FOREIGN TABLE FLOAT4_TBL;
 
 -- verify correct results for null and NaN inputs
 begin;
@@ -233,7 +392,36 @@ SELECT covar_pop(b, a), covar_samp(b, a) FROM aggtest;
 --Testcase 59:
 SELECT corr(b, a) FROM aggtest;
 
+-- check single-tuple behavior
+BEGIN;
+--Testcase 408:
+DELETE FROM FLOAT8_TMP;
+--Testcase 409:
+INSERT INTO FLOAT8_TMP(f1, f2) VALUES (1::float8,2::float8);
+--Testcase 410:
+SELECT covar_pop(f1::float8, f2::float8), covar_samp(f1::float8, f2::float8) FROM FLOAT8_TMP;
+ROLLBACK;
+
+BEGIN;
+--Testcase 411:
+DELETE FROM FLOAT8_TMP;
+--Testcase 412:
+INSERT INTO FLOAT8_TMP(f1, f2) VALUES (1::float8, 'inf'::float8);
+--Testcase 413:
+SELECT covar_pop(f1::float8, f2::float8), covar_samp(f1::float8, f2::float8) FROM FLOAT8_TMP;
+ROLLBACK;
+
+BEGIN;
+--Testcase 414:
+DELETE FROM FLOAT8_TMP;
+--Testcase 415:
+INSERT INTO FLOAT8_TMP(f1, f2) VALUES (1::float8, 'nan'::float8);
+--Testcase 416:
+SELECT covar_pop(f1::float8, f2::float8), covar_samp(f1::float8, f2::float8) FROM FLOAT8_TMP;
+ROLLBACK;
+
 -- test accum and combine functions directly
+--Testcase 417:
 CREATE FOREIGN TABLE regr_test (id serial OPTIONS (rowkey 'true'), x int4, y int4) SERVER griddb_svr;
 --Testcase 60:
 INSERT INTO regr_test(x, y) VALUES (10,150),(20,250),(30,350),(80,540),(100,200);
@@ -244,6 +432,7 @@ FROM regr_test WHERE x IN (10,20,30,80);
 SELECT count(*), sum(x), regr_sxx(y,x), sum(y),regr_syy(y,x), regr_sxy(y,x)
 FROM regr_test;
 
+--Testcase 418:
 CREATE FOREIGN TABLE regr_test_array (id serial OPTIONS (rowkey 'true'), x float8[], y float8[]) SERVER griddb_svr;
 BEGIN;
 --Testcase 63:
@@ -311,7 +500,9 @@ INSERT INTO regr_test_array(x,y) VALUES ('{3,60,200,750,20000,2000}'::float8[],
 SELECT float8_regr_combine(x, y) FROM regr_test_array;
 ROLLBACK;
 
+--Testcase 419:
 DROP FOREIGN TABLE regr_test;
+--Testcase 420:
 DROP FOREIGN TABLE regr_test_array;
 
 -- test count, distinct
@@ -329,35 +520,42 @@ select ten, count(four), sum(DISTINCT four) from onek
 group by ten order by ten;
 
 -- user-defined aggregates
+--Testcase 421:
 CREATE AGGREGATE newavg (
    sfunc = int4_avg_accum, basetype = int4, stype = _int8,
    finalfunc = int8_avg,
    initcond1 = '{0,0}'
 );
 
+--Testcase 422:
 CREATE AGGREGATE newsum (
    sfunc1 = int4pl, basetype = int4, stype1 = int4,
    initcond1 = '0'
 );
 
+--Testcase 423:
 CREATE AGGREGATE newcnt (*) (
    sfunc = int8inc, stype = int8,
    initcond = '0', parallel = safe
 );
 
+--Testcase 424:
 CREATE AGGREGATE newcnt ("any") (
    sfunc = int8inc_any, stype = int8,
    initcond = '0'
 );
 
+--Testcase 425:
 CREATE AGGREGATE oldcnt (
    sfunc = int8inc, basetype = 'ANY', stype = int8,
    initcond = '0'
 );
 
+--Testcase 426:
 create function sum3(int8,int8,int8) returns int8 as
 'select $1 + $2 + $3' language sql strict immutable;
 
+--Testcase 427:
 create aggregate sum2(int8,int8) (
    sfunc = sum3, stype = int8,
    initcond = '0'
@@ -433,6 +631,7 @@ ROLLBACK;
 --
 -- test for bitwise integer aggregates
 --
+--Testcase 428:
 CREATE FOREIGN TABLE bitwise_test(
   id serial OPTIONS (rowkey 'true'),
   i2 INT2,
@@ -478,6 +677,7 @@ FROM bitwise_test;
 --
 -- first test all possible transition and final states
 
+--Testcase 429:
 CREATE FOREIGN TABLE bool_test_a(
   id serial OPTIONS (rowkey 'true'),
   a1 BOOL,
@@ -491,6 +691,7 @@ CREATE FOREIGN TABLE bool_test_a(
   a9 BOOL
 ) SERVER griddb_svr;
 
+--Testcase 430:
 CREATE FOREIGN TABLE bool_test_b(
   id serial OPTIONS (rowkey 'true'),
   b1 BOOL,
@@ -530,6 +731,7 @@ SELECT
 -- test boolean aggregates
 --
 
+--Testcase 431:
 CREATE FOREIGN TABLE bool_test(
   id serial OPTIONS (rowkey 'true'),
   b1 BOOL,
@@ -677,12 +879,19 @@ explain (costs off)
 select max(100) from tenk1;
 
 -- try it on an inheritance tree
+--Testcase 432:
 create foreign table minmaxtest(f1 int) server griddb_svr;;
+--Testcase 433:
 create table minmaxtest1() inherits (minmaxtest);
+--Testcase 434:
 create table minmaxtest2() inherits (minmaxtest);
+--Testcase 435:
 create table minmaxtest3() inherits (minmaxtest);
+--Testcase 436:
 create index minmaxtest1i on minmaxtest1(f1);
+--Testcase 437:
 create index minmaxtest2i on minmaxtest2(f1 desc);
+--Testcase 438:
 create index minmaxtest3i on minmaxtest3(f1) where f1 is not null;
 
 --Testcase 139:
@@ -707,6 +916,7 @@ explain (costs off)
 --Testcase 146:
 select distinct min(f1), max(f1) from minmaxtest;
 
+--Testcase 439:
 drop foreign table minmaxtest cascade;
 
 -- check for correct detection of nested-aggregate errors
@@ -719,7 +929,9 @@ select (select max(min(unique1)) from int8_tbl) from tenk1;
 -- Test removal of redundant GROUP BY columns
 --
 
+--Testcase 440:
 create foreign table agg_t1 (a int OPTIONS (rowkey 'true'), b int, c int, d int) server griddb_svr;
+--Testcase 441:
 create foreign table agg_t2 (x int OPTIONS (rowkey 'true'), y int, z int) server griddb_svr;
 -- GridDB does not support deferable for primary key
 -- Skip this test
@@ -814,21 +1026,26 @@ select array_agg(distinct q1 order by q1 desc nulls last)
 rollback;
 
 -- multi-arg aggs, strict/nonstrict, distinct/order by
+--Testcase 442:
 create type aggtype as (a integer, b integer, c text);
 
+--Testcase 443:
 create function aggf_trans(aggtype[],integer,integer,text) returns aggtype[]
 as 'select array_append($1,ROW($2,$3,$4)::aggtype)'
 language sql strict immutable;
 
+--Testcase 444:
 create function aggfns_trans(aggtype[],integer,integer,text) returns aggtype[]
 as 'select array_append($1,ROW($2,$3,$4)::aggtype)'
 language sql immutable;
 
+--Testcase 445:
 create aggregate aggfstr(integer,integer,text) (
    sfunc = aggf_trans, stype = aggtype[],
    initcond = '{}'
 );
 
+--Testcase 446:
 create aggregate aggfns(integer,integer,text) (
    sfunc = aggfns_trans, stype = aggtype[], sspace = 10000,
    initcond = '{}'
@@ -865,6 +1082,7 @@ select aggfns(distinct a,b,c order by a,c using ~<~,b) from multi_arg_agg, gener
 
 -- check node I/O via view creation and usage, also deparsing logic
 
+--Testcase 447:
 create view agg_view1 as
   select aggfns(a,b,c) from multi_arg_agg;
 
@@ -873,6 +1091,7 @@ select * from agg_view1;
 --Testcase 179:
 select pg_get_viewdef('agg_view1'::regclass);
 
+--Testcase 448:
 create or replace view agg_view1 as
   select aggfns(distinct a,b,c) from multi_arg_agg, generate_series(1,3) i;
 
@@ -881,6 +1100,7 @@ select * from agg_view1;
 --Testcase 181:
 select pg_get_viewdef('agg_view1'::regclass);
 
+--Testcase 449:
 create or replace view agg_view1 as
   select aggfns(distinct a,b,c order by b) from multi_arg_agg, generate_series(1,3) i;
 
@@ -889,6 +1109,7 @@ select * from agg_view1;
 --Testcase 183:
 select pg_get_viewdef('agg_view1'::regclass);
 
+--Testcase 450:
 create or replace view agg_view1 as
   select aggfns(a,b,c order by b+1) from multi_arg_agg;
 
@@ -897,6 +1118,7 @@ select * from agg_view1;
 --Testcase 185:
 select pg_get_viewdef('agg_view1'::regclass);
 
+--Testcase 451:
 create or replace view agg_view1 as
   select aggfns(a,a,c order by b) from multi_arg_agg;
 
@@ -905,6 +1127,7 @@ select * from agg_view1;
 --Testcase 187:
 select pg_get_viewdef('agg_view1'::regclass);
 
+--Testcase 452:
 create or replace view agg_view1 as
   select aggfns(a,b,c order by c using ~<~) from multi_arg_agg;
 
@@ -913,6 +1136,7 @@ select * from agg_view1;
 --Testcase 189:
 select pg_get_viewdef('agg_view1'::regclass);
 
+--Testcase 453:
 create or replace view agg_view1 as
   select aggfns(distinct a,b,c order by a,c using ~<~,b) from multi_arg_agg, generate_series(1,2) i;
 
@@ -921,6 +1145,7 @@ select * from agg_view1;
 --Testcase 191:
 select pg_get_viewdef('agg_view1'::regclass);
 
+--Testcase 454:
 drop view agg_view1;
 rollback;
 
@@ -980,6 +1205,7 @@ select string_agg(distinct f1, ',' order by f1::varchar) from varchar_tbl;  -- n
 select string_agg(distinct f1::varchar, ',' order by f1::varchar) from varchar_tbl;  -- ok
 
 -- string_agg bytea tests
+--Testcase 455:
 create foreign table bytea_test_table(id serial, v bytea) server griddb_svr;
 
 --Testcase 213:
@@ -1001,6 +1227,7 @@ select string_agg(v, NULL) from bytea_test_table;
 --Testcase 219:
 select string_agg(v, decode('ee', 'hex')) from bytea_test_table;
 
+--Testcase 456:
 drop foreign table bytea_test_table;
 
 -- FILTER tests
@@ -1020,6 +1247,7 @@ select ten, sum(distinct four) filter (where four > 10) from onek a
 group by ten
 having exists (select 1 from onek b where sum(distinct a.four) = b.four);
 
+--Testcase 457:
 create foreign table agg_t0(foo text, bar text) server griddb_svr;
 --Testcase 224:
 insert into agg_t0 values ('a', 'b');
@@ -1028,7 +1256,9 @@ select max(foo COLLATE "C") filter (where (bar collate "POSIX") > '0')
 from agg_t0;
 
 -- outer reference in FILTER (PostgreSQL extension)
+--Testcase 458:
 create foreign table agg_t3 (inner_c int) server griddb_svr;
+--Testcase 459:
 create foreign table agg_t4 (outer_c int) server griddb_svr;
 
 --Testcase 226:
@@ -1161,6 +1391,7 @@ from tenk1;
 select percentile_disc(array[[null,1,0.5],[0.75,0.25,null]]) within group (order by thousand)
 from tenk1;
 
+--Testcase 460:
 create foreign table agg_t5 (x int) server griddb_svr;
 begin;
 --Testcase 265:
@@ -1173,6 +1404,7 @@ rollback;
 --Testcase 267:
 select ten, mode() within group (order by string4) from tenk1 group by ten;
 
+--Testcase 461:
 create foreign table agg_t6 (id serial OPTIONS (rowkey 'true'), x text) server griddb_svr;
 begin;
 --Testcase 268:
@@ -1191,6 +1423,7 @@ select pg_collation_for(percentile_disc(1) within group (order by x collate "POS
   from agg_t6;
 rollback;
 -- ordered-set aggs created with CREATE 
+--Testcase 462:
 create aggregate my_percentile_disc(float8 ORDER BY anyelement) (
   stype = internal,
   sfunc = ordered_set_transition,
@@ -1198,6 +1431,7 @@ create aggregate my_percentile_disc(float8 ORDER BY anyelement) (
   finalfunc_extra = true,
   finalfunc_modify = read_write
 );
+--Testcase 463:
 create aggregate my_rank(VARIADIC "any" ORDER BY VARIADIC "any") (
   stype = internal,
   sfunc = ordered_set_transition_multi,
@@ -1300,8 +1534,8 @@ rollback;
 
 
 -- deparse and multiple features:
+--Testcase 464:
 create view aggordview1 as
---Testcase 295:
 select ten,
        percentile_disc(0.5) within group (order by thousand) as p50,
        percentile_disc(0.5) within group (order by thousand) filter (where hundred=1) as px,
@@ -1313,29 +1547,56 @@ select ten,
 select pg_get_viewdef('aggordview1');
 --Testcase 297:
 select * from aggordview1 order by ten;
+--Testcase 465:
 drop view aggordview1;
 
 -- variadic aggregates
+--Testcase 466:
 create function least_accum(anyelement, variadic anyarray)
 returns anyelement language sql as
   'select least($1, min($2[i])) from generate_subscripts($2,1) g(i)';
 
+--Testcase 467:
 create aggregate least_agg(variadic items anyarray) (
   stype = anyelement, sfunc = least_accum
 );
+
+--Testcase 468:
+create function cleast_accum(anycompatible, variadic anycompatiblearray)
+returns anycompatible language sql as
+  'select least($1, min($2[i])) from generate_subscripts($2,1) g(i)';
+
+--Testcase 469:
+create aggregate cleast_agg(variadic items anycompatiblearray) (
+  stype = anycompatible, sfunc = cleast_accum
+);
+
 --Testcase 298:
 select least_agg(q1,q2) from int8_tbl;
 --Testcase 299:
 select least_agg(variadic array[q1,q2]) from int8_tbl;
 
+--Testcase 470:
+select cleast_agg(q1,q2) from int8_tbl;
+--Testcase 471:
+select cleast_agg(4.5,f1) from int4_tbl;
+--Testcase 472:
+select cleast_agg(variadic array[4.5,f1]) from int4_tbl;
+--Testcase 473:
+select pg_typeof(cleast_agg(variadic array[4.5,f1])) from int4_tbl;
+
+--Testcase 474:
 drop aggregate least_agg(variadic items anyarray);
+--Testcase 475:
 drop function least_accum(anyelement, variadic anyarray);
 
 -- test aggregates with common transition functions share the same states
 begin work;
 
+--Testcase 476:
 create type avg_state as (total bigint, count bigint);
 
+--Testcase 477:
 create or replace function avg_transfn(state avg_state, n bigint) returns avg_state as
 $$
 declare new_state avg_state;
@@ -1358,6 +1619,7 @@ begin
 end
 $$ language plpgsql;
 
+--Testcase 478:
 create function avg_finalfn(state avg_state) returns bigint as
 $$
 begin
@@ -1369,6 +1631,7 @@ begin
 end
 $$ language plpgsql;
 
+--Testcase 479:
 create function sum_finalfn(state avg_state) returns bigint as
 $$
 begin
@@ -1380,6 +1643,7 @@ begin
 end
 $$ language plpgsql;
 
+--Testcase 480:
 create aggregate my_avg(bigint)
 (
    stype = avg_state,
@@ -1387,6 +1651,7 @@ create aggregate my_avg(bigint)
    finalfunc = avg_finalfn
 );
 
+--Testcase 481:
 create aggregate my_sum(bigint)
 (
    stype = avg_state,
@@ -1467,6 +1732,7 @@ select
 from int8_tbl;
 
 -- test that aggs with the same sfunc and initcond share the same agg state
+--Testcase 482:
 create aggregate my_sum_init(int8)
 (
    stype = avg_state,
@@ -1475,6 +1741,7 @@ create aggregate my_sum_init(int8)
    initcond = '(10,0)'
 );
 
+--Testcase 483:
 create aggregate my_avg_init(int8)
 (
    stype = avg_state,
@@ -1483,6 +1750,7 @@ create aggregate my_avg_init(int8)
    initcond = '(10,0)'
 );
 
+--Testcase 484:
 create aggregate my_avg_init2(int8)
 (
    stype = avg_state,
@@ -1509,6 +1777,7 @@ rollback;
 -- finalfn and the other one has none.
 begin work;
 
+--Testcase 485:
 create or replace function sum_transfn(state int8, n int8) returns int8 as
 $$
 declare new_state int8;
@@ -1529,6 +1798,7 @@ begin
 end
 $$ language plpgsql;
 
+--Testcase 486:
 create function halfsum_finalfn(state int8) returns int8 as
 $$
 begin
@@ -1540,12 +1810,14 @@ begin
 end
 $$ language plpgsql;
 
+--Testcase 487:
 create aggregate my_sum(int8)
 (
    stype = int8,
    sfunc = sum_transfn
 );
 
+--Testcase 488:
 create aggregate my_half_sum(int8)
 (
    stype = int8,
@@ -1569,6 +1841,7 @@ rollback;
 
 -- First test the case of a normal transition function returning NULL
 BEGIN;
+--Testcase 489:
 CREATE FUNCTION balkifnull(int8, int4)
 RETURNS int8
 STRICT
@@ -1580,6 +1853,7 @@ BEGIN
     RETURN NULL;
 END$$;
 
+--Testcase 490:
 CREATE AGGREGATE balk(int4)
 (
     SFUNC = balkifnull(int8, int4),
@@ -1597,6 +1871,7 @@ ROLLBACK;
 -- returning NULL. For that use normal transition function, but a
 -- combiner function returning NULL.
 BEGIN ISOLATION LEVEL REPEATABLE READ;
+--Testcase 491:
 CREATE FUNCTION balkifnull(int8, int8)
 RETURNS int8
 PARALLEL SAFE
@@ -1609,6 +1884,7 @@ BEGIN
     RETURN NULL;
 END$$;
 
+--Testcase 492:
 CREATE AGGREGATE balk(int4)
 (
     SFUNC = int4_sum(int8, int4),
@@ -1636,6 +1912,7 @@ SET parallel_setup_cost = 0;
 SET parallel_tuple_cost = 0;
 SET min_parallel_table_scan_size = 0;
 SET max_parallel_workers_per_gather = 4;
+SET parallel_leader_participation = off;
 SET enable_indexonlyscan = off;
 
 -- variance(int4) covers numeric_poly_combine
@@ -1643,11 +1920,35 @@ SET enable_indexonlyscan = off;
 -- regr_count(float8, float8) covers int8inc_float8_float8 and aggregates with > 1 arg
 --Testcase 331:
 EXPLAIN (COSTS OFF, VERBOSE)
-  SELECT variance(unique1::int4), sum(unique1::int8), regr_count(unique1::float8, unique1::float8) FROM tenk1;
+  SELECT variance(unique1::int4), sum(unique1::int8), regr_count(unique1::float8, unique1::float8)
+  FROM (SELECT * FROM tenk1
+      UNION ALL SELECT * FROM tenk1
+      UNION ALL SELECT * FROM tenk1
+      UNION ALL SELECT * FROM tenk1) u;
 
 --Testcase 332:
-SELECT variance(unique1::int4), sum(unique1::int8), regr_count(unique1::float8, unique1::float8) FROM tenk1;
+SELECT variance(unique1::int4), sum(unique1::int8), regr_count(unique1::float8, unique1::float8)
+FROM (SELECT * FROM tenk1
+      UNION ALL SELECT * FROM tenk1
+      UNION ALL SELECT * FROM tenk1
+      UNION ALL SELECT * FROM tenk1) u;
 
+-- variance(int8) covers numeric_combine
+-- avg(numeric) covers numeric_avg_combine
+--Testcase 493:
+EXPLAIN (COSTS OFF, VERBOSE)
+SELECT variance(unique1::int8), avg(unique1::numeric)
+FROM (SELECT * FROM tenk1
+      UNION ALL SELECT * FROM tenk1
+      UNION ALL SELECT * FROM tenk1
+      UNION ALL SELECT * FROM tenk1) u;
+
+--Testcase 494:
+SELECT variance(unique1::int8), avg(unique1::numeric)
+FROM (SELECT * FROM tenk1
+      UNION ALL SELECT * FROM tenk1
+      UNION ALL SELECT * FROM tenk1
+      UNION ALL SELECT * FROM tenk1) u;
 ROLLBACK;
 
 -- test coverage for dense_rank
@@ -1702,6 +2003,185 @@ explain (costs off)
   select 1 from tenk1
    where (hundred, thousand) in (select twothousand, twothousand from onek);
 
+--
+-- Hash Aggregation Spill tests
+--
+
+set enable_sort=false;
+set work_mem='64kB';
+
+--Testcase 495:
+select unique1, count(*), sum(twothousand) from tenk1
+group by unique1
+having sum(fivethous) > 4975
+order by sum(twothousand);
+
+set work_mem to default;
+set enable_sort to default;
+
+--
+-- Compare results between plans using sorting and plans using hash
+-- aggregation. Force spilling in both cases by setting work_mem low.
+--
+
+set work_mem='64kB';
+
+--Testcase 496:
+create foreign table agg_data_2k (g int) server griddb_svr;
+--Testcase 497:
+create foreign table agg_data_20k (g int) server griddb_svr;
+
+--Testcase 498:
+create foreign table agg_group_1(id serial OPTIONS (rowkey 'true'), c1 int, c2 float8, c3 int) server griddb_svr;
+--Testcase 499:
+create foreign table agg_group_2(id serial OPTIONS (rowkey 'true'), a int, c1 float8, c2 text, c3 int) server griddb_svr;
+--Testcase 500:
+create foreign table agg_group_3(id serial OPTIONS (rowkey 'true'), c1 float8, c2 int4, c3 int) server griddb_svr;
+--Testcase 501:
+create foreign table agg_group_4(id serial OPTIONS (rowkey 'true'), c1 float8, c2 text, c3 int) server griddb_svr;
+
+--Testcase 502:
+create foreign table agg_hash_1(id serial OPTIONS (rowkey 'true'), c1 int, c2 float8, c3 int) server griddb_svr;
+--Testcase 503:
+create foreign table agg_hash_2(id serial OPTIONS (rowkey 'true'), a int, c1 float8, c2 text, c3 int) server griddb_svr;
+--Testcase 504:
+create foreign table agg_hash_3(id serial OPTIONS (rowkey 'true'), c1 float8, c2 int4, c3 int) server griddb_svr;
+--Testcase 505:
+create foreign table agg_hash_4(id serial OPTIONS (rowkey 'true'), c1 float8, c2 text, c3 int) server griddb_svr;
+
+--Testcase 506:
+insert into agg_data_2k select g from generate_series(0, 1999) g;
+-- analyze agg_data_2k;
+
+--Testcase 507:
+insert into agg_data_20k select g from generate_series(0, 19999) g;
+-- analyze agg_data_20k;
+
+-- Produce results with sorting.
+
+set enable_hashagg = false;
+
+set jit_above_cost = 0;
+
+--Testcase 508:
+explain (costs off)
+select g%10000 as c1, sum(g::float8) as c2, count(*) as c3
+  from agg_data_20k group by g%10000;
+
+--Testcase 509:
+insert into agg_group_1(c1, c2, c3)
+select g%10000 as c1, sum(g::float8) as c2, count(*) as c3
+  from agg_data_20k group by g%10000;
+
+--Testcase 510:
+insert into agg_group_2(a, c1, c2, c3)
+select * from
+  (values (100), (300), (500)) as r(a),
+  lateral (
+    select (g/2)::float8 as c1,
+           array_agg(g::float8) as c2,
+	   count(*) as c3
+    from agg_data_2k
+    where g < r.a
+    group by g/2) as s;
+
+--Testcase 511:
+insert into agg_group_3(c1, c2, c3)
+select (g/2)::float8 as c1, sum(7::int4) as c2, count(*) as c3
+  from agg_data_2k group by g/2;
+
+--Testcase 512:
+insert into agg_group_4(c1, c2, c3)
+select (g/2)::float8 as c1, array_agg(g::float8) as c2, count(*) as c3
+  from agg_data_2k group by g/2;
+
+-- Produce results with hash aggregation
+
+set enable_hashagg = true;
+set enable_sort = false;
+
+set jit_above_cost = 0;
+
+--Testcase 513:
+explain (costs off)
+select g%10000 as c1, sum(g::float8) as c2, count(*) as c3
+  from agg_data_20k group by g%10000;
+
+--Testcase 514:
+insert into agg_hash_1(c1, c2, c3)
+select g%10000 as c1, sum(g::float8) as c2, count(*) as c3
+  from agg_data_20k group by g%10000;
+
+--Testcase 515:
+insert into agg_hash_2(a, c1, c2, c3)
+select * from
+  (values (100), (300), (500)) as r(a),
+  lateral (
+    select (g/2)::float8 as c1,
+           array_agg(g::float8) as c2,
+	   count(*) as c3
+    from agg_data_2k
+    where g < r.a
+    group by g/2) as s;
+
+set jit_above_cost to default;
+
+--Testcase 516:
+insert into agg_hash_3(c1, c2, c3)
+select (g/2)::float8 as c1, sum(7::int4) as c2, count(*) as c3
+  from agg_data_2k group by g/2;
+
+--Testcase 517:
+insert into agg_hash_4(c1, c2, c3)
+select (g/2)::float8 as c1, array_agg(g::float8) as c2, count(*) as c3
+  from agg_data_2k group by g/2;
+
+set enable_sort = true;
+set work_mem to default;
+
+-- Compare group aggregation results to hash aggregation results
+
+--Testcase 518:
+(select c1, c2, c3 from agg_hash_1 except select c1, c2, c3 from agg_group_1)
+  union all
+(select c1, c2, c3 from agg_group_1 except select c1, c2, c3 from agg_hash_1);
+
+--Testcase 519:
+(select a, c1, c2, c3 from agg_hash_2 except select a, c1, c2, c3 from agg_group_2)
+  union all
+(select a, c1, c2, c3 from agg_group_2 except select a, c1, c2, c3 from agg_hash_2);
+
+--Testcase 520:
+(select c1, c2, c3 from agg_hash_3 except select c1, c2, c3 from agg_group_3)
+  union all
+(select c1, c2, c3 from agg_group_3 except select c1, c2, c3 from agg_hash_3);
+
+--Testcase 521:
+(select c1, c2, c3 from agg_hash_4 except select c1, c2, c3 from agg_group_4)
+  union all
+(select c1, c2, c3 from agg_group_4 except select c1, c2, c3 from agg_hash_4);
+
+--Testcase 522:
+drop foreign table agg_data_2k;
+--Testcase 523:
+drop foreign table agg_data_20k;
+--Testcase 524:
+drop foreign table agg_group_1;
+--Testcase 525:
+drop foreign table agg_group_2;
+--Testcase 526:
+drop foreign table agg_group_3;
+--Testcase 527:
+drop foreign table agg_group_4;
+--Testcase 528:
+drop foreign table agg_hash_1;
+--Testcase 529:
+drop foreign table agg_hash_2;
+--Testcase 530:
+drop foreign table agg_hash_3;
+--Testcase 531:
+drop foreign table agg_hash_4;
+
 DO $d$
 declare
   l_rec record;
@@ -1712,6 +2192,9 @@ begin
   end loop;
 end;
 $d$;
+--Testcase 532:
 DROP USER MAPPING FOR public SERVER griddb_svr;
+--Testcase 533:
 DROP SERVER griddb_svr;
+--Testcase 534:
 DROP EXTENSION griddb_fdw CASCADE;

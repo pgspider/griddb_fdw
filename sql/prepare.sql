@@ -1,10 +1,14 @@
 -- Regression tests for prepareable statements. We query the content
 -- of the pg_prepared_statements view as prepared statements are
 -- created and removed.
+--Testcase 27:
 CREATE EXTENSION griddb_fdw;
+--Testcase 28:
 CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS(host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster');
+--Testcase 29:
 CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS(username 'admin', password 'testadmin');
 
+--Testcase 30:
 CREATE FOREIGN TABLE tenk1 (
 	unique1		int4,
 	unique2		int4,
@@ -26,16 +30,27 @@ CREATE FOREIGN TABLE tenk1 (
 
 --ALTER TABLE tenk1 SET WITH OIDS;
 
+--Testcase 31:
 CREATE FOREIGN TABLE road (
 	name		text,
 	thepath 	text
 ) SERVER griddb_svr;
 
+--Testcase 32:
+CREATE FOREIGN TABLE road_tmp (
+	id serial OPTIONS (rowkey 'true'),
+	a int4,
+	b int4
+) SERVER griddb_svr;
+
+--Testcase 33:
+insert into road_tmp(a, b) values (1, 2);
+
 --Testcase 1:
 SELECT name, statement, parameter_types FROM pg_prepared_statements;
 
 --Testcase 2:
-PREPARE q1 AS SELECT * FROM road LIMIT 1;
+PREPARE q1 AS SELECT a FROM road_tmp;
 --Testcase 3:
 EXECUTE q1;
 
@@ -44,17 +59,17 @@ SELECT name, statement, parameter_types FROM pg_prepared_statements;
 
 -- should fail
 --Testcase 5:
-PREPARE q1 AS SELECT * FROM tenk1 LIMIT 1;
+PREPARE q1 AS SELECT b FROM road_tmp;
 
 -- should succeed
 DEALLOCATE q1;
 --Testcase 6:
-PREPARE q1 AS SELECT * FROM tenk1 LIMIT 1;
+PREPARE q1 AS SELECT b FROM road_tmp;
 --Testcase 7:
 EXECUTE q1;
 
 --Testcase 8:
-PREPARE q2 AS SELECT * FROM tenk1 LIMIT 1;
+PREPARE q2 AS SELECT b FROM road_tmp;
 --Testcase 9:
 SELECT name, statement, parameter_types FROM pg_prepared_statements;
 
@@ -108,9 +123,11 @@ PREPARE q4(nonexistenttype) AS SELECT * FROM road WHERE name = $1;
 PREPARE q5(int, text) AS
 	SELECT * FROM tenk1 WHERE unique1 = $1 OR stringu1 = $2
 	ORDER BY unique1;
+--Testcase 34:
 CREATE TEMPORARY TABLE q5_prep_results AS EXECUTE q5(200, 'DTAAAA');
 --Testcase 21:
 SELECT * FROM q5_prep_results;
+--Testcase 35:
 CREATE TEMPORARY TABLE q5_prep_nodata AS EXECUTE q5(200, 'DTAAAA')
     WITH NO DATA;
 --Testcase 22:
@@ -134,8 +151,13 @@ DEALLOCATE ALL;
 SELECT name, statement, parameter_types FROM pg_prepared_statements
     ORDER BY name;
 
+--Testcase 36:
 DROP FOREIGN TABLE tenk1;
+--Testcase 37:
 DROP FOREIGN TABLE road;
+--Testcase 38:
 DROP USER MAPPING FOR public SERVER griddb_svr;
+--Testcase 39:
 DROP SERVER griddb_svr CASCADE;
+--Testcase 40:
 DROP EXTENSION griddb_fdw CASCADE;

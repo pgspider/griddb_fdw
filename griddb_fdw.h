@@ -2,7 +2,7 @@
  *
  * GridDB Foreign Data Wrapper
  *
- * Portions Copyright (c) 2018, TOSHIBA CORPORATION
+ * Portions Copyright (c) 2020, TOSHIBA CORPORATION
  *
  * IDENTIFICATION
  *		  griddb_fdw.h
@@ -99,6 +99,16 @@
 
 /* The index of rowkey for array storing rowkey and modified record values. It cannot be changed. */
 #define ROWKEY_IDX 0
+
+/* float4 values are passed by value if 'true', by reference if 'false' */
+#ifndef FLOAT4PASSBYVAL
+#define FLOAT4PASSBYVAL true
+#endif
+
+#if (PG_VERSION_NUM < 120000)
+#define table_close(rel, lock)	heap_close(rel, lock)
+#define table_open(rel, lock)	heap_open(rel, lock)
+#endif
 
 /*
  * Options structure to store the MySQL
