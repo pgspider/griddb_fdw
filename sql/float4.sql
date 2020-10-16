@@ -148,13 +148,17 @@ ROLLBACK;
 --Testcase 38:
 SELECT '' AS five, f1 FROM FLOAT4_TBL;
 
---SELECT '' AS four, f.* FROM FLOAT4_TBL f WHERE f.f1 <> '1004.3';
-
---SELECT '' AS one, f.* FROM FLOAT4_TBL f WHERE f.f1 = '1004.3';
-
---SELECT '' AS three, f.* FROM FLOAT4_TBL f WHERE '1004.3' > f.f1;
-
---SELECT '' AS three, f.* FROM FLOAT4_TBL f WHERE  f.f1 < '1004.3';
+-- ========================================================================
+-- Compare float4 type (Confirmed on gribdb server and client version 4.5)
+-- ========================================================================
+--Testcase 170:
+SELECT '' AS four, f.* FROM FLOAT4_TBL f WHERE f.f1 <> '1004.3';
+--Testcase 171:
+SELECT '' AS one, f.* FROM FLOAT4_TBL f WHERE f.f1 = '1004.3';
+--Testcase 172:
+SELECT '' AS three, f.* FROM FLOAT4_TBL f WHERE '1004.3' > f.f1;
+--Testcase 173:
+SELECT '' AS three, f.* FROM FLOAT4_TBL f WHERE  f.f1 < '1004.3';
 
 --Testcase 39:
 SELECT '' AS four, f.f1 FROM FLOAT4_TBL f WHERE '1004.3' >= f.f1;
