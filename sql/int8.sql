@@ -2,12 +2,16 @@
 -- INT8
 -- Test int8 64-bit integers.
 --
+\set ECHO none
+\ir sql/parameters.conf
+\set ECHO all
+
 --Testcase 229:
 CREATE EXTENSION griddb_fdw;
 --Testcase 230:
-CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS(host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster');
+CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS (host :GRIDDB_HOST, port :GRIDDB_PORT, clustername 'griddbfdwTestCluster');
 --Testcase 231:
-CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS(username 'admin', password 'testadmin');
+CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS (username :GRIDDB_USER, password :GRIDDB_PASS);
 
 --Testcase 232:
 CREATE FOREIGN TABLE INT8_TBL(id serial OPTIONS (rowkey 'true'), q1 int8, q2 int8) SERVER griddb_svr; 

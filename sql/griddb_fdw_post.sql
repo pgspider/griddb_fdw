@@ -1,19 +1,21 @@
+\set ECHO none
+\ir sql/parameters.conf
+\set ECHO all
+
 --SET client_min_messages TO WARNING;
 --Testcase 703:
 CREATE EXTENSION IF NOT EXISTS griddb_fdw;
-DO $d$
-    BEGIN
-        EXECUTE $$CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw
-            OPTIONS (host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster')$$;
-        EXECUTE $$CREATE SERVER griddb_svr2 FOREIGN DATA WRAPPER griddb_fdw
-            OPTIONS (host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster')$$;
-        EXECUTE $$CREATE SERVER testserver1 FOREIGN DATA WRAPPER griddb_fdw$$;
-    END;
-$d$;
+
+CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw
+    OPTIONS (host :GRIDDB_HOST, port :GRIDDB_PORT, clustername 'griddbfdwTestCluster');
+CREATE SERVER griddb_svr2 FOREIGN DATA WRAPPER griddb_fdw
+    OPTIONS (host :GRIDDB_HOST, port :GRIDDB_PORT, clustername 'griddbfdwTestCluster');
+CREATE SERVER testserver1 FOREIGN DATA WRAPPER griddb_fdw;
+
 --Testcase 704:
-CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS (username 'admin', password 'testadmin');
+CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS (username :GRIDDB_USER, password :GRIDDB_PASS);
 --Testcase 705:
-CREATE USER MAPPING FOR public SERVER griddb_svr2 OPTIONS (username 'admin', password 'testadmin');
+CREATE USER MAPPING FOR public SERVER griddb_svr2 OPTIONS (username :GRIDDB_USER, password :GRIDDB_PASS);
 --Testcase 706:
 CREATE USER MAPPING FOR public SERVER testserver1 OPTIONS (username 'value', password 'value');
 
@@ -724,7 +726,7 @@ DROP FOREIGN TABLE local_tbl;
 --Testcase 719:
 CREATE ROLE regress_view_owner SUPERUSER;
 --Testcase 720:
-CREATE USER MAPPING FOR regress_view_owner SERVER griddb_svr OPTIONS (username 'admin', password 'testadmin');
+CREATE USER MAPPING FOR regress_view_owner SERVER griddb_svr OPTIONS (username :GRIDDB_USER, password :GRIDDB_PASS);
 GRANT SELECT ON ft4 TO regress_view_owner;
 GRANT SELECT ON ft5 TO regress_view_owner;
 
@@ -3406,15 +3408,11 @@ SET ROLE regress_nosuper;
 SHOW is_superuser;
 
 -- This will be OK, we can create the FDW
-DO $d$
-    BEGIN
-        EXECUTE $$CREATE SERVER griddb_fdw_nopw FOREIGN DATA WRAPPER griddb_fdw
-            OPTIONS (host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster')$$;
-    END;
-$d$;
+CREATE SERVER griddb_fdw_nopw FOREIGN DATA WRAPPER griddb_fdw
+    OPTIONS (host :GRIDDB_HOST, port :GRIDDB_PORT, clustername 'griddbfdwTestCluster');
 
 -- But creation of user mappings for non-superusers should fail
-CREATE USER MAPPING FOR public SERVER griddb_fdw_nopw OPTIONS (username 'admin', password 'testadmin');
+CREATE USER MAPPING FOR public SERVER griddb_fdw_nopw OPTIONS (username :GRIDDB_USER, password :GRIDDB_PASS);
 CREATE USER MAPPING FOR CURRENT_USER SERVER griddb_fdw_nopw;
 
 CREATE FOREIGN TABLE ft1_nopw (

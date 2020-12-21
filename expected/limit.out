@@ -2,12 +2,13 @@
 -- LIMIT
 -- Check the LIMIT/OFFSET feature of SELECT
 --
+\set ECHO none
 --Testcase 57:
 CREATE EXTENSION griddb_fdw;
 --Testcase 58:
-CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS(host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster');
+CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS (host :GRIDDB_HOST, port :GRIDDB_PORT, clustername 'griddbfdwTestCluster');
 --Testcase 59:
-CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS(username 'admin', password 'testadmin');
+CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS (username :GRIDDB_USER, password :GRIDDB_PASS);
 --Testcase 60:
 CREATE FOREIGN TABLE onek(
   unique1     int4 OPTIONS (rowkey 'true'),
@@ -663,8 +664,8 @@ ROLLBACK;
 explain (verbose, costs off)
 select sum(tenthous) as s1, sum(tenthous) + random()*0 as s2
   from tenk1 group by thousand order by thousand limit 3;
-                                                      QUERY PLAN                                                       
------------------------------------------------------------------------------------------------------------------------
+                                                                               QUERY PLAN                                                                                
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Limit
    Output: (sum(tenthous)), ((((sum(tenthous)))::double precision + (random() * '0'::double precision))), thousand
    ->  Result
@@ -676,7 +677,7 @@ select sum(tenthous) as s1, sum(tenthous) + random()*0 as s2
                      Output: sum(tenthous), thousand
                      Group Key: tenk1.thousand
                      ->  Foreign Scan on public.tenk1
-                           Output: thousand, tenthous
+                           Output: unique1, unique2, two, four, ten, twenty, hundred, thousand, twothousand, fivethous, tenthous, odd, even, stringu1, stringu2, string4
                            Remote SQL: SELECT  *  FROM tenk1
 (13 rows)
 
@@ -763,7 +764,7 @@ SELECT  thousand
 SELECT ''::text AS two, unique1, unique2, stringu1
 		FROM onek WHERE unique1 > 50
 		FETCH FIRST 2 ROW WITH TIES;
-ERROR:  WITH TIES options can not be specified without ORDER BY clause
+ERROR:  WITH TIES cannot be specified without ORDER BY clause
 -- test ruleutils
 --Testcase 77:
 CREATE VIEW limit_thousand_v_1 AS SELECT thousand FROM onek WHERE thousand < 995
@@ -802,7 +803,7 @@ View definition:
 --Testcase 81:
 CREATE VIEW limit_thousand_v_3 AS SELECT thousand FROM onek WHERE thousand < 995
 		ORDER BY thousand FETCH FIRST NULL ROWS WITH TIES;		-- fails
-ERROR:  row count cannot be NULL in FETCH FIRST ... WITH TIES clause
+ERROR:  row count cannot be null in FETCH FIRST ... WITH TIES clause
 --Testcase 82:
 CREATE VIEW limit_thousand_v_3 AS SELECT thousand FROM onek WHERE thousand < 995
 		ORDER BY thousand FETCH FIRST (NULL+1) ROWS WITH TIES;

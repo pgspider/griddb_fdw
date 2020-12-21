@@ -1,13 +1,16 @@
 --
 -- SELECT_HAVING
 --
+\set ECHO none
+\ir sql/parameters.conf
+\set ECHO all
 
 --Testcase 22:
 CREATE EXTENSION griddb_fdw;
 --Testcase 23:
-CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS(host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster');
+CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS (host :GRIDDB_HOST, port :GRIDDB_PORT, clustername 'griddbfdwTestCluster');
 --Testcase 24:
-CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS(username 'admin', password 'testadmin');
+CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS (username :GRIDDB_USER, password :GRIDDB_PASS);
 --Testcase 25:
 CREATE FOREIGN TABLE test_having(a int OPTIONS (rowkey 'true'), b int, c text, d text) SERVER griddb_svr;
 

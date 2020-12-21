@@ -1,12 +1,13 @@
 --
 -- AGGREGATES
 --
+\set ECHO none
 --Testcase 345:
 CREATE EXTENSION griddb_fdw;
 --Testcase 346:
-CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS(host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster');
+CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS (host :GRIDDB_HOST, port :GRIDDB_PORT, clustername 'griddbfdwTestCluster');
 --Testcase 347:
-CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS(username 'admin', password 'testadmin');
+CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS (username :GRIDDB_USER, password :GRIDDB_PASS);
 --Testcase 348:
 CREATE FOREIGN TABLE onek(
   unique1   int4 OPTIONS (rowkey 'true'),
@@ -1013,7 +1014,7 @@ order by 1, 2;
                Output: s2.f1, sum((s1.f1 + s2.f1))
                Group Key: s2.f1
                ->  Foreign Scan on public.int4_tbl s2
-                     Output: s2.f1
+                     Output: s2.id, s2.f1
                      Remote SQL: SELECT  *  FROM int4_tbl
 (14 rows)
 
@@ -1054,7 +1055,7 @@ select array(select sum(x.f1+y.f1) s
                  Output: sum((x.f1 + y.f1)), y.f1
                  Group Key: y.f1
                  ->  Foreign Scan on public.int4_tbl y
-                       Output: y.f1
+                       Output: y.id, y.f1
                        Remote SQL: SELECT  *  FROM int4_tbl
 (13 rows)
 
