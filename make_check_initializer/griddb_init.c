@@ -131,9 +131,12 @@ insert_recordsFromTSV(GSGridStore * store,
 	/* Get data from TSV file and save to the corresponding table */
 	while (fgets(line, sizeof(line), infile) != NULL)
 	{
+		while (line[strlen(line) - 1] == '\n' || line[strlen(line) - 1] == '\r')
+			line[strlen(line) - 1] = '\0';
+
 		data = line;
 		i = 0;
-		while (sscanf(data, " %[^\t^\n]%n", record_cols[i], &offset) == 1)
+		while (sscanf(data, "%[^\t]\t%n", record_cols[i], &offset) == 1)
 		{
 			data += offset;
 			i++;

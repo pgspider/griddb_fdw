@@ -1,19 +1,16 @@
+\set ECHO none
 --SET client_min_messages TO WARNING;
 --Testcase 703:
 CREATE EXTENSION IF NOT EXISTS griddb_fdw;
-DO $d$
-    BEGIN
-        EXECUTE $$CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw
-            OPTIONS (host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster')$$;
-        EXECUTE $$CREATE SERVER griddb_svr2 FOREIGN DATA WRAPPER griddb_fdw
-            OPTIONS (host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster')$$;
-        EXECUTE $$CREATE SERVER testserver1 FOREIGN DATA WRAPPER griddb_fdw$$;
-    END;
-$d$;
+CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw
+    OPTIONS (host :GRIDDB_HOST, port :GRIDDB_PORT, clustername 'griddbfdwTestCluster');
+CREATE SERVER griddb_svr2 FOREIGN DATA WRAPPER griddb_fdw
+    OPTIONS (host :GRIDDB_HOST, port :GRIDDB_PORT, clustername 'griddbfdwTestCluster');
+CREATE SERVER testserver1 FOREIGN DATA WRAPPER griddb_fdw;
 --Testcase 704:
-CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS (username 'admin', password 'testadmin');
+CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS (username :GRIDDB_USER, password :GRIDDB_PASS);
 --Testcase 705:
-CREATE USER MAPPING FOR public SERVER griddb_svr2 OPTIONS (username 'admin', password 'testadmin');
+CREATE USER MAPPING FOR public SERVER griddb_svr2 OPTIONS (username :GRIDDB_USER, password :GRIDDB_PASS);
 --Testcase 706:
 CREATE USER MAPPING FOR public SERVER testserver1 OPTIONS (username 'value', password 'value');
 CREATE TYPE user_enum AS ENUM ('foo', 'bar', 'buz');
@@ -3007,7 +3004,7 @@ DROP FOREIGN TABLE local_tbl;
 --Testcase 719:
 CREATE ROLE regress_view_owner SUPERUSER;
 --Testcase 720:
-CREATE USER MAPPING FOR regress_view_owner SERVER griddb_svr OPTIONS (username 'admin', password 'testadmin');
+CREATE USER MAPPING FOR regress_view_owner SERVER griddb_svr OPTIONS (username :GRIDDB_USER, password :GRIDDB_PASS);
 GRANT SELECT ON ft4 TO regress_view_owner;
 GRANT SELECT ON ft5 TO regress_view_owner;
 --Testcase 721:
@@ -3217,7 +3214,7 @@ select count(c6), sum(c1), avg(c1), min(c2), max(c1), stddev(c2), sum(c1) * (ran
                Output: count(c6), sum(c1), avg(c1), min(c2), max(c1), stddev(c2), c2
                Group Key: ft1.c2
                ->  Foreign Scan on public.ft1
-                     Output: c2, c6, c1
+                     Output: c1, c2, c3, c4, c5, c6, c7, c8
                      Remote SQL: SELECT  *  FROM "T1" WHERE ((c2 < 5))
 (11 rows)
 
@@ -3248,7 +3245,7 @@ select count(c6), sum(c1), avg(c1), min(c2), max(c1), stddev(c2), sum(c1) * (ran
                      Output: count(c6), sum(c1), avg(c1), min(c2), max(c1), stddev(c2), c2
                      Group Key: ft1.c2
                      ->  Foreign Scan on public.ft1
-                           Output: c2, c6, c1
+                           Output: c1, c2, c3, c4, c5, c6, c7, c8
                            Remote SQL: SELECT  *  FROM "T1" WHERE ((c2 < 5))
 (13 rows)
 
@@ -3392,7 +3389,7 @@ select c2 * (random() <= 1)::int as sum1, sum(c1) * c2 as sum2 from ft1 group by
          Output: (c2 * ((random() <= '1'::double precision))::integer), (sum(c1) * c2), c2
          Group Key: ft1.c2
          ->  Foreign Scan on public.ft1
-               Output: c2, c1
+               Output: c1, c2, c3, c4, c5, c6, c7, c8
                Remote SQL: SELECT  *  FROM "T1"
 (9 rows)
 
@@ -3503,7 +3500,7 @@ select c2, sum(c1) from ft2 group by c2 having avg(c1) < 500 and sum(c1) < 49800
          Group Key: ft2.c2
          Filter: ((avg(ft2.c1) < '500'::numeric) AND (sum(ft2.c1) < 49800))
          ->  Foreign Scan on public.ft2
-               Output: c2, c1
+               Output: c1, c2, c3, c4, c5, c6, c7, c8
                Remote SQL: SELECT  *  FROM "T1"
 (10 rows)
 
@@ -3553,7 +3550,7 @@ select sum(c1) from ft1 group by c2 having avg(c1 * (random() <= 1)::int) > 100 
          Group Key: ft1.c2
          Filter: (avg((ft1.c1 * ((random() <= '1'::double precision))::integer)) > '100'::numeric)
          ->  Foreign Scan on public.ft1
-               Output: c2, c1
+               Output: c1, c2, c3, c4, c5, c6, c7, c8
                Remote SQL: SELECT  *  FROM "T1"
 (10 rows)
 
@@ -3795,7 +3792,7 @@ select sum(c1) filter (where c1 < 100 and c2 > 5) from ft1 group by c2 order by 
          Output: sum(c1) FILTER (WHERE ((c1 < 100) AND (c2 > 5))), c2
          Group Key: ft1.c2
          ->  Foreign Scan on public.ft1
-               Output: c2, c1
+               Output: c1, c2, c3, c4, c5, c6, c7, c8
                Remote SQL: SELECT  *  FROM "T1"
 (9 rows)
 
@@ -3908,7 +3905,7 @@ select sum(c1) filter (where (c1 / c1) * random() <= 1) from ft1 group by c2 ord
          Output: sum(c1) FILTER (WHERE ((((c1 / c1))::double precision * random()) <= '1'::double precision)), c2
          Group Key: ft1.c2
          ->  Foreign Scan on public.ft1
-               Output: c2, c1
+               Output: c1, c2, c3, c4, c5, c6, c7, c8
                Remote SQL: SELECT  *  FROM "T1"
 (9 rows)
 
@@ -4213,8 +4210,8 @@ select count(t1.c3) from ft2 t1 left join ft2 t2 on (t1.c1 = random() * t2.c2);
 --Testcase 227:
 explain (verbose, costs off)
 select count(*), x.b from ft1, (select c2 a, sum(c1) b from ft1 group by c2) x where ft1.c2 = x.a group by x.b order by 1, 2;
-                                         QUERY PLAN                                         
---------------------------------------------------------------------------------------------
+                                                          QUERY PLAN                                                          
+------------------------------------------------------------------------------------------------------------------------------
  Sort
    Output: (count(*)), x.b
    Sort Key: (count(*)), x.b
@@ -4236,7 +4233,7 @@ select count(*), x.b from ft1, (select c2 a, sum(c1) b from ft1 group by c2) x w
                                  Output: ft1_1.c2, sum(ft1_1.c1)
                                  Group Key: ft1_1.c2
                                  ->  Foreign Scan on public.ft1 ft1_1
-                                       Output: ft1_1.c2, ft1_1.c1
+                                       Output: ft1_1.c1, ft1_1.c2, ft1_1.c3, ft1_1.c4, ft1_1.c5, ft1_1.c6, ft1_1.c7, ft1_1.c8
                                        Remote SQL: SELECT  *  FROM "T1"
 (23 rows)
 
@@ -4561,7 +4558,7 @@ select c2, c6, sum(c1) from ft1 where c2 < 3 group by grouping sets(c2, c6) orde
          Hash Key: ft1.c2
          Hash Key: ft1.c6
          ->  Foreign Scan on public.ft1
-               Output: c2, c6, c1
+               Output: c1, c2, c3, c4, c5, c6, c7, c8
                Remote SQL: SELECT  *  FROM "T1" WHERE ((c2 < 3))
 (10 rows)
 
@@ -4589,7 +4586,7 @@ select c2, sum(c1), grouping(c2) from ft1 where c2 < 3 group by c2 order by 1 nu
          Output: c2, sum(c1), GROUPING(c2)
          Group Key: ft1.c2
          ->  Foreign Scan on public.ft1
-               Output: c2, c1
+               Output: c1, c2, c3, c4, c5, c6, c7, c8
                Remote SQL: SELECT  *  FROM "T1" WHERE ((c2 < 3))
 (9 rows)
 
@@ -4617,7 +4614,7 @@ select distinct sum(c1)/1000 s from ft2 where c2 < 6 group by c2 order by 1;
                Output: (sum(c1) / 1000), c2
                Group Key: ft2.c2
                ->  Foreign Scan on public.ft2
-                     Output: c2, c1
+                     Output: c1, c2, c3, c4, c5, c6, c7, c8
                      Remote SQL: SELECT  *  FROM "T1" WHERE ((c2 < 6))
 (11 rows)
 
@@ -4647,7 +4644,7 @@ select c2, sum(c2), count(c2) over (partition by c2%2) from ft2 where c2 < 10 gr
                      Output: c2, (c2 % 2), sum(c2)
                      Group Key: ft2.c2
                      ->  Foreign Scan on public.ft2
-                           Output: c2
+                           Output: c1, c2, c3, c4, c5, c6, c7, c8
                            Remote SQL: SELECT  *  FROM "T1" WHERE ((c2 < 10))
 (14 rows)
 
@@ -4684,7 +4681,7 @@ select c2, array_agg(c2) over (partition by c2%2 order by c2 desc) from ft1 wher
                      Output: c2, (c2 % 2)
                      Group Key: ft1.c2
                      ->  Foreign Scan on public.ft1
-                           Output: c2
+                           Output: c1, c2, c3, c4, c5, c6, c7, c8
                            Remote SQL: SELECT  *  FROM "T1" WHERE ((c2 < 10))
 (14 rows)
 
@@ -4721,7 +4718,7 @@ select c2, array_agg(c2) over (partition by c2%2 order by c2 range between curre
                      Output: c2, (c2 % 2)
                      Group Key: ft1.c2
                      ->  Foreign Scan on public.ft1
-                           Output: c2
+                           Output: c1, c2, c3, c4, c5, c6, c7, c8
                            Remote SQL: SELECT  *  FROM "T1" WHERE ((c2 < 10))
 (14 rows)
 
@@ -11171,15 +11168,11 @@ SET ROLE regress_nosuper;
 SHOW is_superuser;
 
 -- This will be OK, we can create the FDW
-DO $d$
-    BEGIN
-        EXECUTE $$CREATE SERVER griddb_fdw_nopw FOREIGN DATA WRAPPER griddb_fdw
-            OPTIONS (host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster')$$;
-    END;
-$d$;
+CREATE SERVER griddb_fdw_nopw FOREIGN DATA WRAPPER griddb_fdw
+    OPTIONS (host :GRIDDB_HOST, port :GRIDDB_PORT, clustername 'griddbfdwTestCluster');
 
 -- But creation of user mappings for non-superusers should fail
-CREATE USER MAPPING FOR public SERVER griddb_fdw_nopw OPTIONS (username 'admin', password 'testadmin');
+CREATE USER MAPPING FOR public SERVER griddb_fdw_nopw OPTIONS (username :GRIDDB_USER, password :GRIDDB_PASS);
 CREATE USER MAPPING FOR CURRENT_USER SERVER griddb_fdw_nopw;
 
 CREATE FOREIGN TABLE ft1_nopw (

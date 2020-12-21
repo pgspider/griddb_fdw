@@ -1,14 +1,18 @@
 --
 -- INT4
 --
+\set ECHO none
+\ir sql/parameters.conf
+\set ECHO all
+
 --Testcase 110:
 DROP EXTENSION griddb_fdw cascade;
 --Testcase 111:
 CREATE EXTENSION griddb_fdw;
 --Testcase 112:
-CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS(host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster');
+CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS (host :GRIDDB_HOST, port :GRIDDB_PORT, clustername 'griddbfdwTestCluster');
 --Testcase 113:
-CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS(username 'admin', password 'testadmin');
+CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS (username :GRIDDB_USER, password :GRIDDB_PASS);
 --Testcase 114:
 CREATE FOREIGN TABLE INT4_TBL(id serial OPTIONS (rowkey 'true'), f1 int4) SERVER griddb_svr;
 --Testcase 115:

@@ -1,12 +1,13 @@
+\set ECHO none
 --
 -- insert with DEFAULT in the target_list
 --
 --Testcase 135:
 CREATE EXTENSION griddb_fdw;
 --Testcase 136:
-CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS(host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster');
+CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS (host :GRIDDB_HOST, port :GRIDDB_PORT, clustername 'griddbfdwTestCluster');
 --Testcase 137:
-CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS(username 'admin', password 'testadmin');
+CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS (username :GRIDDB_USER, password :GRIDDB_PASS);
 --Testcase 138:
 CREATE FOREIGN TABLE inserttest01 (id serial OPTIONS (rowkey 'true'), col1 int4, col2 int4 NOT NULL, col3 text default 'testing') SERVER griddb_svr;
 --Testcase 1:

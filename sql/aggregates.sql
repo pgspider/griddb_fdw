@@ -1,12 +1,16 @@
 --
 -- AGGREGATES
 --
+\set ECHO none
+\ir sql/parameters.conf
+\set ECHO all
+
 --Testcase 345:
 CREATE EXTENSION griddb_fdw;
 --Testcase 346:
-CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS(host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster');
+CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS (host :GRIDDB_HOST, port :GRIDDB_PORT, clustername 'griddbfdwTestCluster');
 --Testcase 347:
-CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS(username 'admin', password 'testadmin');
+CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS (username :GRIDDB_USER, password :GRIDDB_PASS);
 --Testcase 348:
 CREATE FOREIGN TABLE onek(
   unique1   int4 OPTIONS (rowkey 'true'),
