@@ -1,7 +1,7 @@
 /*
  * GridDB Foreign Data Wrapper
  *
- * Portions Copyright (c) 2018, TOSHIBA CORPORATION
+ * Portions Copyright (c) 2020, TOSHIBA CORPORATION
  *
  * IDENTIFICATION
  *		  connection.c
@@ -49,7 +49,7 @@ typedef Oid ContCacheKey;
  */
 typedef struct ContCacheEntry
 {
-	ConnCacheKey key;			/* hash key (must be first) */
+	ContCacheKey key;			/* hash key (must be first) */
 	GSContainer *cont;
 }			ContCacheEntry;
 
@@ -264,7 +264,7 @@ griddb_get_container(UserMapping *user, Oid relid, GSGridStore * store)
 		HASHCTL		ctl;
 
 		MemSet(&ctl, 0, sizeof(ctl));
-		ctl.keysize = sizeof(ConnCacheKey);
+		ctl.keysize = sizeof(ContCacheKey);
 		ctl.entrysize = sizeof(ContCacheEntry);
 		conn_entry->cont_hash = hash_create("griddb_fdw containers", 8,
 											&ctl,
@@ -432,17 +432,26 @@ griddb_end_xact(ConnCacheEntry *entry, bool isCommit, GSGridStore * store)
 		GSResult	ret;
 		GSContainer *cont = cont_entry->cont;
 
-		if (isCommit)
-			ret = gsCommit(cont);
-		else
-			ret = gsAbort(cont);
-		if (!GS_SUCCEEDED(ret))
-			griddb_REPORT_ERROR(ERROR, ret, cont);
+		if (cont_entry->cont != NULL)
+		{
 
-		gsCloseContainer(&cont, true);
-		if (hash_search(entry->cont_hash, &cont_entry->key, HASH_REMOVE, NULL) == NULL)
-			elog(ERROR, "hash table corrupted");
+			if (isCommit)
+				ret = gsCommit(cont);
+			else
+				ret = gsAbort(cont);
+			if (!GS_SUCCEEDED(ret))
+				griddb_REPORT_ERROR(ERROR, ret, cont);
+
+			gsCloseContainer(&cont, true);
+		}
+		
+		/* Remove container from the hash list even if it is NULL or not */
+		hash_search(entry->cont_hash, &cont_entry->key, HASH_REMOVE, NULL);
 	}
+
+	/* Destroy container hash list after use to avoid memory leak. */
+	hash_destroy(entry->cont_hash);
+	entry->cont_hash = NULL;
 }
 
 /*

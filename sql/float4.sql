@@ -1,138 +1,358 @@
 --
 -- FLOAT4
 --
+\set ECHO none
+\ir sql/parameters.conf
+\set ECHO all
+
+--Testcase 89:
 CREATE EXTENSION griddb_fdw;
-CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS(host '239.0.0.1', port '31999', clustername 'griddbfdwTestCluster');
-CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS(username 'admin', password 'testadmin');
+--Testcase 90:
+CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS (host :GRIDDB_HOST, port :GRIDDB_PORT, clustername 'griddbfdwTestCluster');
+--Testcase 91:
+CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS (username :GRIDDB_USER, password :GRIDDB_PASS);
+--Testcase 92:
 CREATE FOREIGN TABLE FLOAT4_TBL(id serial OPTIONS (rowkey 'true'), f1 float4) SERVER griddb_svr;
 
+--Testcase 1:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('    0.0');
+--Testcase 2:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('1004.30   ');
+--Testcase 3:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('     -34.84    ');
+--Testcase 4:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('1.2345678901234e+20');
+--Testcase 5:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('1.2345678901234e-20');
 
 -- test for over and under flow
+--Testcase 6:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('10e70');
+--Testcase 7:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('-10e70');
+--Testcase 8:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('10e-70');
+--Testcase 9:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('-10e-70');
 
+--Testcase 93:
+INSERT INTO FLOAT4_TBL(f1) VALUES ('10e70'::float8);
+--Testcase 94:
+INSERT INTO FLOAT4_TBL(f1) VALUES ('-10e70'::float8);
+--Testcase 95:
+INSERT INTO FLOAT4_TBL(f1) VALUES ('10e-70'::float8);
+--Testcase 96:
+INSERT INTO FLOAT4_TBL(f1) VALUES ('-10e-70'::float8);
+--Testcase 10:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('10e400');
+--Testcase 11:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('-10e400');
+--Testcase 12:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('10e-400');
+--Testcase 13:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('-10e-400');
 
 -- bad input
+--Testcase 14:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('');
+--Testcase 15:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('       ');
+--Testcase 16:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('xyz');
+--Testcase 17:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('5.0.0');
+--Testcase 18:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('5 . 0');
+--Testcase 19:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('5.   0');
+--Testcase 20:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('     - 3.0');
+--Testcase 21:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('123            5');
 
 -- special inputs
 BEGIN;
+--Testcase 22:
 DELETE FROM FLOAT4_TBL;
+--Testcase 97:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('NaN'::float4);
-INSERT INTO FLOAT4_TBL(f1) VALUES ('nan'::float4);
-INSERT INTO FLOAT4_TBL(f1) VALUES ('   NAN  '::float4);
-INSERT INTO FLOAT4_TBL(f1) VALUES ('infinity'::float4);
-INSERT INTO FLOAT4_TBL(f1) VALUES ('          -INFINiTY   '::float4);
+--Testcase 98:
 SELECT f1 AS float4 FROM FLOAT4_TBL;
+--Testcase 24:
+DELETE FROM FLOAT4_TBL;
+--Testcase 99:
+INSERT INTO FLOAT4_TBL(f1) VALUES ('nan'::float4);
+--Testcase 100:
+SELECT f1 AS float4 FROM FLOAT4_TBL;
+--Testcase 25:
+DELETE FROM FLOAT4_TBL;
+--Testcase 101:
+INSERT INTO FLOAT4_TBL(f1) VALUES ('   NAN  '::float4);
+--Testcase 102:
+SELECT f1 AS float4 FROM FLOAT4_TBL;
+--Testcase 26:
+DELETE FROM FLOAT4_TBL;
+--Testcase 103:
+INSERT INTO FLOAT4_TBL(f1) VALUES ('infinity'::float4);
+--Testcase 104:
+SELECT f1 AS float4 FROM FLOAT4_TBL;
+--Testcase 27:
+DELETE FROM FLOAT4_TBL;
+--Testcase 105:
+INSERT INTO FLOAT4_TBL(f1) VALUES ('          -INFINiTY   '::float4);
+--Testcase 106:
+SELECT f1 AS float4 FROM FLOAT4_TBL;
+--Testcase 28:
 ROLLBACK;
 -- bad special inputs
+--Testcase 29:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('N A N'::float4);
+--Testcase 30:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('NaN x'::float4);
+--Testcase 31:
 INSERT INTO FLOAT4_TBL(f1) VALUES (' INFINITY    x'::float4);
 
+--Testcase 32:
 BEGIN;
+--Testcase 107:
 DELETE FROM FLOAT4_TBL;
-INSERT INTO FLOAT4_TBL(f1) VALUES ('Infinity'::float4 + 100.0);
-INSERT INTO FLOAT4_TBL(f1) VALUES ('Infinity'::float4 / 'Infinity'::float4);
-INSERT INTO FLOAT4_TBL(f1) VALUES ('nan'::float4 / 'nan'::float4);
-INSERT INTO FLOAT4_TBL(f1) VALUES ('nan'::numeric::float4);
-SELECT f1 AS float4 FROM FLOAT4_TBL;
+--Testcase 108:
+INSERT INTO FLOAT4_TBL(f1) VALUES ('Infinity'::float4);
+--Testcase 109:
+SELECT (f1::float4 + 100.0) AS float4 FROM FLOAT4_TBL;
+ROLLBACK;
+--Testcase 34:
+BEGIN;
+--Testcase 110:
+DELETE FROM FLOAT4_TBL;
+--Testcase 111:
+INSERT INTO FLOAT4_TBL(f1) VALUES ('Infinity'::float4);
+--Testcase 112:
+SELECT (f1::float4 / 'Infinity'::float4) AS float4 FROM FLOAT4_TBL;
+ROLLBACK;
+--Testcase 35:
+BEGIN;
+--Testcase 113:
+DELETE FROM FLOAT4_TBL;
+--Testcase 114:
+INSERT INTO FLOAT4_TBL(f1) VALUES ('nan'::float4);
+--Testcase 115:
+SELECT (f1::float4 / 'nan'::float4) AS float4 FROM FLOAT4_TBL;
+ROLLBACK;
+--Testcase 36:
+BEGIN;
+--Testcase 116:
+DELETE FROM FLOAT4_TBL;
+--Testcase 117:
+INSERT INTO FLOAT4_TBL(f1) VALUES ('nan'::numeric);
+--Testcase 118:
+SELECT (f1::float4) AS float4 FROM FLOAT4_TBL;
 ROLLBACK;
 
-SELECT '' AS five, * FROM FLOAT4_TBL;
+--Testcase 38:
+SELECT '' AS five, f1 FROM FLOAT4_TBL;
 
---SELECT '' AS four, f.* FROM FLOAT4_TBL f WHERE f.f1 <> '1004.3';
+-- ========================================================================
+-- Compare float4 type (Confirmed on gribdb server and client version 4.5)
+-- ========================================================================
+--Testcase 170:
+SELECT '' AS four, f.* FROM FLOAT4_TBL f WHERE f.f1 <> '1004.3';
+--Testcase 171:
+SELECT '' AS one, f.* FROM FLOAT4_TBL f WHERE f.f1 = '1004.3';
+--Testcase 172:
+SELECT '' AS three, f.* FROM FLOAT4_TBL f WHERE '1004.3' > f.f1;
+--Testcase 173:
+SELECT '' AS three, f.* FROM FLOAT4_TBL f WHERE  f.f1 < '1004.3';
 
---SELECT '' AS one, f.* FROM FLOAT4_TBL f WHERE f.f1 = '1004.3';
+--Testcase 39:
+SELECT '' AS four, f.f1 FROM FLOAT4_TBL f WHERE '1004.3' >= f.f1;
 
---SELECT '' AS three, f.* FROM FLOAT4_TBL f WHERE '1004.3' > f.f1;
+--Testcase 40:
+SELECT '' AS four, f.f1 FROM FLOAT4_TBL f WHERE  f.f1 <= '1004.3';
 
---SELECT '' AS three, f.* FROM FLOAT4_TBL f WHERE  f.f1 < '1004.3';
-
-SELECT '' AS four, f.* FROM FLOAT4_TBL f WHERE '1004.3' >= f.f1;
-
-SELECT '' AS four, f.* FROM FLOAT4_TBL f WHERE  f.f1 <= '1004.3';
-
+--Testcase 41:
 SELECT '' AS three, f.f1, f.f1 * '-10' AS x FROM FLOAT4_TBL f
    WHERE f.f1 > '0.0';
 
+--Testcase 42:
 SELECT '' AS three, f.f1, f.f1 + '-10' AS x FROM FLOAT4_TBL f
    WHERE f.f1 > '0.0';
 
+--Testcase 43:
 SELECT '' AS three, f.f1, f.f1 / '-10' AS x FROM FLOAT4_TBL f
    WHERE f.f1 > '0.0';
 
+--Testcase 44:
 SELECT '' AS three, f.f1, f.f1 - '-10' AS x FROM FLOAT4_TBL f
    WHERE f.f1 > '0.0';
 
 -- test divide by zero
+--Testcase 45:
 SELECT '' AS bad, f.f1 / '0.0' from FLOAT4_TBL f;
 
-SELECT '' AS five, * FROM FLOAT4_TBL;
+--Testcase 46:
+SELECT '' AS five, f1 FROM FLOAT4_TBL;
 
 -- test the unary float4abs operator
+--Testcase 47:
 SELECT '' AS five, f.f1, @f.f1 AS abs_f1 FROM FLOAT4_TBL f;
 
+--Testcase 48:
 UPDATE FLOAT4_TBL
    SET f1 = FLOAT4_TBL.f1 * '-1'
    WHERE FLOAT4_TBL.f1 > '0.0';
 
-SELECT '' AS five, * FROM FLOAT4_TBL;
+--Testcase 49:
+SELECT '' AS five, f1 FROM FLOAT4_TBL;
 
 -- test edge-case coercions to integer
+--Testcase 50:
+BEGIN;
+--Testcase 119:
 DELETE FROM FLOAT4_TBL;
-INSERT INTO FLOAT4_TBL(f1) VALUES ('32767.4'::float4::int2);
-INSERT INTO FLOAT4_TBL(f1) VALUES ('32767.6'::float4::int2);
-INSERT INTO FLOAT4_TBL(f1) VALUES ('-32768.4'::float4::int2);
-INSERT INTO FLOAT4_TBL(f1) VALUES ('-32768.6'::float4::int2);
-INSERT INTO FLOAT4_TBL(f1) VALUES ('2147483520'::float4::int4);
-INSERT INTO FLOAT4_TBL(f1) VALUES ('2147483647'::float4::int4);
-INSERT INTO FLOAT4_TBL(f1) VALUES ('-2147483648.5'::float4::int4);
-INSERT INTO FLOAT4_TBL(f1) VALUES ('-2147483900'::float4::int4);
-INSERT INTO FLOAT4_TBL(f1) VALUES ('9223369837831520256'::float4::int8);
-INSERT INTO FLOAT4_TBL(f1) VALUES ('9223372036854775807'::float4::int8);
-INSERT INTO FLOAT4_TBL(f1) VALUES ('-9223372036854775808.5'::float4::int8);
-INSERT INTO FLOAT4_TBL(f1) VALUES ('-9223380000000000000'::float4::int8);
-SELECT f1::float4::int8 FROM FLOAT4_TBL;
+--Testcase 120:
+INSERT INTO FLOAT4_TBL(f1) VALUES ('32767.4'::float4);
+--Testcase 121:
+SELECT f1::int2 as int2 FROM FLOAT4_TBL;
+ROLLBACK;
+--Testcase 52:
+BEGIN;
+--Testcase 122:
+DELETE FROM FLOAT4_TBL;
+--Testcase 123:
+INSERT INTO FLOAT4_TBL(f1) VALUES ('32767.6'::float4);
+--Testcase 124:
+SELECT f1::int2 FROM FLOAT4_TBL;
+ROLLBACK;
+--Testcase 53:
+BEGIN;
+--Testcase 125:
+DELETE FROM FLOAT4_TBL;
+--Testcase 126:
+INSERT INTO FLOAT4_TBL(f1) VALUES ('-32768.4'::float4);
+--Testcase 127:
+SELECT f1::int2 as int2 FROM FLOAT4_TBL;
+ROLLBACK;
+--Testcase 54:
+BEGIN;
+--Testcase 128:
+DELETE FROM FLOAT4_TBL;
+--Testcase 129:
+INSERT INTO FLOAT4_TBL(f1) VALUES ('-32768.6'::float4);
+--Testcase 130:
+SELECT f1::int2 FROM FLOAT4_TBL;
+ROLLBACK;
+--Testcase 55:
+BEGIN;
+--Testcase 131:
+DELETE FROM FLOAT4_TBL;
+--Testcase 132:
+INSERT INTO FLOAT4_TBL(f1) VALUES ('2147483520'::float4);
+--Testcase 133:
+SELECT f1::int4 FROM FLOAT4_TBL;
+ROLLBACK;
+--Testcase 56:
+BEGIN;
+--Testcase 134:
+DELETE FROM FLOAT4_TBL;
+--Testcase 135:
+INSERT INTO FLOAT4_TBL(f1) VALUES ('2147483647'::float4);
+--Testcase 136:
+SELECT f1::int4 FROM FLOAT4_TBL;
+ROLLBACK;
+--Testcase 57:
+BEGIN;
+--Testcase 137:
+DELETE FROM FLOAT4_TBL;
+--Testcase 138:
+INSERT INTO FLOAT4_TBL(f1) VALUES ('-2147483648.5'::float4);
+--Testcase 139:
+SELECT f1::int4  as int4 FROM FLOAT4_TBL;
+ROLLBACK;
+--Testcase 58:
+BEGIN;
+--Testcase 140:
+DELETE FROM FLOAT4_TBL;
+--Testcase 141:
+INSERT INTO FLOAT4_TBL(f1) VALUES ('-2147483900'::float4);
+--Testcase 142:
+SELECT f1::int4 FROM FLOAT4_TBL;
+ROLLBACK;
+--Testcase 59:
+BEGIN;
+--Testcase 143:
+DELETE FROM FLOAT4_TBL;
+--Testcase 144:
+INSERT INTO FLOAT4_TBL(f1) VALUES ('9223369837831520256'::float4);
+--Testcase 145:
+SELECT f1::int8 as int8 FROM FLOAT4_TBL;
+ROLLBACK;
+--Testcase 60:
+BEGIN;
+--Testcase 146:
+DELETE FROM FLOAT4_TBL;
+--Testcase 147:
+INSERT INTO FLOAT4_TBL(f1) VALUES ('9223372036854775807'::float4);
+--Testcase 148:
+SELECT f1::int8 FROM FLOAT4_TBL;
+ROLLBACK;
+--Testcase 61:
+BEGIN;
+--Testcase 149:
+DELETE FROM FLOAT4_TBL;
+--Testcase 150:
+INSERT INTO FLOAT4_TBL(f1) VALUES ('-9223372036854775808.5'::float4);
+--Testcase 151:
+SELECT f1::int8 as int8 FROM FLOAT4_TBL;
+ROLLBACK;
+--Testcase 62:
+BEGIN;
+--Testcase 152:
+DELETE FROM FLOAT4_TBL;
+--Testcase 153:
+INSERT INTO FLOAT4_TBL(f1) VALUES ('-9223380000000000000'::float4);
+--Testcase 154:
+SELECT f1::int8 FROM FLOAT4_TBL;
+ROLLBACK;
+--Testcase 63:
 
 -- Test for correct input rounding in edge cases.
 -- These lists are from Paxson 1991, excluding subnormals and
 -- inputs of over 9 sig. digits.
+--Testcase 64:
 DELETE FROM FLOAT4_TBL;
+--Testcase 65:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('5e-20'::float4);
+--Testcase 66:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('67e14'::float4);
+--Testcase 67:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('985e15'::float4);
+--Testcase 68:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('55895e-16'::float4);
+--Testcase 69:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('7038531e-32'::float4);
+--Testcase 70:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('702990899e-20'::float4);
 
+--Testcase 71:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('3e-23'::float4);
+--Testcase 72:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('57e18'::float4);
+--Testcase 73:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('789e-35'::float4);
+--Testcase 74:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('2539e-18'::float4);
+--Testcase 75:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('76173e28'::float4);
+--Testcase 76:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('887745e-11'::float4);
+--Testcase 77:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('5382571e-37'::float4);
+--Testcase 78:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('82381273e-35'::float4);
+--Testcase 79:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('750486563e-38'::float4);
+--Testcase 80:
 SELECT float4send(f1) FROM FLOAT4_TBL;
 
 -- Test that the smallest possible normalized input value inputs
@@ -143,9 +363,13 @@ SELECT float4send(f1) FROM FLOAT4_TBL;
 -- shortest val is          1.1754944000
 -- midpoint to next val is  1.1754944208...
 
+--Testcase 81:
 DELETE FROM FLOAT4_TBL;
+--Testcase 82:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('1.17549435e-38'::float4);
+--Testcase 83:
 INSERT INTO FLOAT4_TBL(f1) VALUES ('1.1754944e-38'::float4);
+--Testcase 84:
 SELECT float4send(f1) FROM FLOAT4_TBL;
 
 -- 
@@ -154,15 +378,23 @@ SELECT float4send(f1) FROM FLOAT4_TBL;
 -- float values specified by bit patterns (as a useful side effect,
 -- this means we'll fail on non-IEEE platforms).
 
+--Testcase 155:
 create type xfloat4;
+--Testcase 156:
 create function xfloat4in(cstring) returns xfloat4 immutable strict
   language internal as 'int4in';
+--Testcase 157:
 create function xfloat4out(xfloat4) returns cstring immutable strict
   language internal as 'int4out';
+--Testcase 158:
 create type xfloat4 (input = xfloat4in, output = xfloat4out, like = float4);
+--Testcase 159:
 create cast (xfloat4 as float4) without function;
+--Testcase 160:
 create cast (float4 as xfloat4) without function;
+--Testcase 161:
 create cast (xfloat4 as integer) without function;
+--Testcase 162:
 create cast (integer as xfloat4) without function;
 
 -- float4: seeeeeee emmmmmmm mmmmmmmm mmmmmmmm
@@ -171,9 +403,11 @@ create cast (integer as xfloat4) without function;
 -- correctly; those are "use at your own risk". However we do test
 -- subnormal outputs, since those are under our control.
 
+--Testcase 163:
 create foreign table test_data(id serial OPTIONS (rowkey 'true'), 
 	bits text) server griddb_svr;
 begin;
+--Testcase 85:
 insert into test_data(bits) values
   -- small subnormals
   (x'00000001'),
@@ -190,6 +424,7 @@ insert into test_data(bits) values
   (x'00424fe2'),
   -- borderline between subnormal and normal
   (x'007ffff0'), (x'007ffff1'), (x'007ffffe'), (x'007fffff');
+--Testcase 86:
 select float4send(flt) as ibits,
        flt
   from (select bits::bit(32)::integer::xfloat4::float4 as flt
@@ -198,6 +433,7 @@ select float4send(flt) as ibits,
 rollback;
 
 begin;
+--Testcase 87:
 insert into test_data(bits) values
   (x'00000000'),
   -- smallest normal values
@@ -355,6 +591,7 @@ insert into test_data(bits) values
   (x'3f9e0651'),
   (x'03d20cfe');
 
+--Testcase 88:
 select float4send(flt) as ibits,
        flt,
        flt::text::float4 as r_flt,
@@ -366,9 +603,15 @@ select float4send(flt) as ibits,
 rollback;
 
 -- clean up, lest opr_sanity complain
+--Testcase 164:
 drop type xfloat4 cascade;
+--Testcase 165:
 DROP FOREIGN TABLE test_data;
+--Testcase 166:
 DROP FOREIGN TABLE FLOAT4_TBL;
+--Testcase 167:
 DROP USER MAPPING FOR public SERVER griddb_svr;
+--Testcase 168:
 DROP SERVER griddb_svr;
+--Testcase 169:
 DROP EXTENSION griddb_fdw CASCADE;

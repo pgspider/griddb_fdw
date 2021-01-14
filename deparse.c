@@ -1,7 +1,7 @@
 /*
  * GridDB Foreign Data Wrapper
  *
- * Portions Copyright (c) 2018, TOSHIBA CORPORATION
+ * Portions Copyright (c) 2020, TOSHIBA CORPORATION
  *
  * IDENTIFICATION
  *		  deparse.c
@@ -32,6 +32,7 @@
 #include "utils/rel.h"
 #include "utils/relcache.h"
 #include "utils/syscache.h"
+#include "time.h"
 
 /*
  * Global context for foreign_expr_walker's search of an expression tree.
@@ -180,7 +181,7 @@ griddb_deparse_select(StringInfo buf,
 	 * Core code already has some lock on each rel being planned, so we can
 	 * use NoLock here.
 	 */
-	rel = heap_open(rte->relid, NoLock);
+	rel = table_open(rte->relid, NoLock);
 
 	appendStringInfoString(buf, "SELECT ");
 	griddb_deparse_target_list(buf, root, baserel->relid, rel,
@@ -202,7 +203,7 @@ griddb_deparse_select(StringInfo buf,
 	if (pathkeys)
 		griddb_append_order_by_clause(pathkeys, &context);
 
-	heap_close(rel, NoLock);
+	table_close(rel, NoLock);
 }
 
 /*
@@ -582,7 +583,11 @@ griddb_deparse_func_expr(FuncExpr *node, deparse_expr_cxt *context)
 	{
 		if (!first)
 			appendStringInfoString(buf, ", ");
+#if (PG_VERSION_NUM >= 130000)
+		if (use_variadic && lnext(node->args, arg) == NULL)
+#else
 		if (use_variadic && lnext(arg) == NULL)
+#endif
 			elog(ERROR, "VARIADIC is not supported");
 		deparseExpr((Expr *) lfirst(arg), context);
 		first = false;
@@ -747,6 +752,7 @@ griddb_deparse_scalar_array_op_expr(ScalarArrayOpExpr *node, deparse_expr_cxt *c
 	if (strcmp(opname, "<>") == 0)
 		notIn = true;
 
+	arg1 = linitial(node->args);
 	arg2 = lsecond(node->args);
 	c = (Const *) arg2;
 	Assert(nodeTag((Node *) arg2) == T_Const || c->constisnull);
@@ -754,9 +760,23 @@ griddb_deparse_scalar_array_op_expr(ScalarArrayOpExpr *node, deparse_expr_cxt *c
 	getTypeOutputInfo(c->consttype,
 					  &typoutput, &typIsVarlena);
 	extval = OidOutputFunctionCall(typoutput, c->constvalue);
-	isstr = true;
-	if (c->consttype == INT4ARRAYOID || c->consttype == OIDARRAYOID)
-		isstr = false;
+	switch (c->consttype)
+	{
+		case BOOLARRAYOID:
+		case INT8ARRAYOID:
+		case INT2ARRAYOID:
+		case INT4ARRAYOID:
+		case OIDARRAYOID:
+		case FLOAT4ARRAYOID:
+		case FLOAT8ARRAYOID:
+		case TIMESTAMPARRAYOID:
+		case TIMESTAMPTZARRAYOID:
+			isstr = false;
+			break;
+		default:
+			isstr = true;
+			break;
+	}
 
 	/* Deparse right operand. */
 	deparseLeft = true;
@@ -772,7 +792,12 @@ griddb_deparse_scalar_array_op_expr(ScalarArrayOpExpr *node, deparse_expr_cxt *c
 		/* Deparse left operand. */
 		if (deparseLeft)
 		{
-			arg1 = linitial(node->args);
+			/* No need deparse bool column */
+			if (c->consttype == BOOLARRAYOID)
+			{
+				deparseLeft = false;
+				continue;
+			}
 			deparseExpr(arg1, context);
 			if (notIn)
 				appendStringInfo(buf, " <> ");
@@ -812,9 +837,62 @@ griddb_deparse_scalar_array_op_expr(ScalarArrayOpExpr *node, deparse_expr_cxt *c
 				appendStringInfo(buf, "  AND ");
 			else
 				appendStringInfo(buf, "  OR ");
+
+			/* No need deparse bool column */
+			if (c->consttype == BOOLARRAYOID)
+			{
+				deparseLeft = false;
+				continue;
+			}
+
 			deparseLeft = true;
 			continue;
 		}
+
+		/* When compare with timestamp column, need to convert and cast to TIMESTAMP */
+		if (c->consttype == TIMESTAMPARRAYOID || c->consttype == TIMESTAMPTZARRAYOID)
+		{
+			char		timestamp[MAXDATELEN + 1];
+			char		chtime[MAXDATELEN + 1] = {0};
+			struct tm	tm;
+			int 		j = 0;
+
+			for (;; valptr++)
+			{
+				if (*valptr == '\"' && !isEscape)
+				{
+					inString = !inString;
+					break;
+				}
+				chtime[j] = *valptr;
+				j++;
+			}
+			i += j;
+
+			/* Format of chtime is YYYY-MM-DD HH:MM:SS */
+			strptime(chtime, "%Y-%m-%d %H:%M:%S", &tm);
+			griddb_convert_pg2gs_timestamp_string(time_t_to_timestamptz(timegm(&tm)), timestamp);
+			appendStringInfoString(buf, "TIMESTAMP(");
+			griddb_deparse_string_literal(buf, timestamp);
+			appendStringInfoString(buf, ")");
+			continue;
+		}
+
+		/*
+		 * GridDB not support compare bool column with true, false.
+		 * Only support column or NOT column
+		 */
+		if (c->consttype == BOOLARRAYOID)
+		{
+			appendStringInfoChar(buf, '(');
+			if (ch == 'f')
+				appendStringInfoString(buf, "NOT ");
+
+			deparseExpr(arg1, context);
+			appendStringInfoChar(buf, ')');
+			continue;
+		}
+
 		appendStringInfoChar(buf, ch);
 	}
 	if (isstr)
@@ -1355,7 +1433,7 @@ foreign_expr_walker(Node *node,
  * Returns true if given expr is safe to evaluate on the foreign server.
  */
 bool
-is_foreign_expr(PlannerInfo *root,
+griddb_is_foreign_expr(PlannerInfo *root,
 				RelOptInfo *baserel,
 				Expr *expr)
 {
@@ -1414,7 +1492,7 @@ griddb_append_order_by_clause(List *pathkeys, deparse_expr_cxt *context)
 		PathKey    *pathkey = (PathKey *) lfirst(lcell);
 		Expr	   *em_expr;
 
-		em_expr = find_em_expr_for_rel(pathkey->pk_eclass, baserel);
+		em_expr = griddb_find_em_expr_for_rel(pathkey->pk_eclass, baserel);
 		Assert(em_expr != NULL);
 
 		appendStringInfoString(buf, delim);
@@ -1518,7 +1596,7 @@ griddb_classify_conditions(PlannerInfo *root,
 	{
 		RestrictInfo *ri = (RestrictInfo *) lfirst(lc);
 
-		if (is_foreign_expr(root, baserel, ri->clause))
+		if (griddb_is_foreign_expr(root, baserel, ri->clause))
 			*remote_conds = lappend(*remote_conds, ri);
 		else
 			*local_conds = lappend(*local_conds, ri);

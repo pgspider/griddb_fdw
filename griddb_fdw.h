@@ -2,7 +2,7 @@
  *
  * GridDB Foreign Data Wrapper
  *
- * Portions Copyright (c) 2018, TOSHIBA CORPORATION
+ * Portions Copyright (c) 2020, TOSHIBA CORPORATION
  *
  * IDENTIFICATION
  *		  griddb_fdw.h
@@ -48,11 +48,29 @@
 #define DEFAULT_GRIDDB_IP_ADDRESS	"239.0.0.1"
 #define DEFAULT_GRIDDB_PORT			"31999"
 
-#define GSFDW_BOOLARRAYOID		1000	/* Oid for BOOLARRAY */
-#define GSFDW_BYTEARRAYOID		1014	/* Oid for BYTEARRAY */
-#define GSFDW_INT8ARRAYOID		1016	/* Oid for INT8ARRAY */
-#define GSFDW_FLOAT8ARRAYOID	1022	/* Oid for FLOAT8ARRAY */
-#define GSFDW_TIMESTAMPARRAYOID 1115	/* Oid for TIMESTAMPARRAYOID */
+#ifndef BOOLARRAYOID
+#define BOOLARRAYOID			1000	/* Oid for BOOLARRAY */
+#endif
+
+#ifndef BYTEARRAYOID
+#define BYTEARRAYOID			1014	/* Oid for BYTEARRAY */
+#endif
+
+#ifndef INT8ARRAYOID
+#define INT8ARRAYOID			1016	/* Oid for INT8ARRAY */
+#endif
+
+#ifndef FLOAT8ARRAYOID
+#define FLOAT8ARRAYOID			1022	/* Oid for FLOAT8ARRAY */
+#endif
+
+#ifndef TIMESTAMPARRAYOID
+#define TIMESTAMPARRAYOID 		1115	/* Oid for TIMESTAMPARRAYOID */
+#endif
+
+#ifndef TIMESTAMPTZARRAYOID
+#define TIMESTAMPTZARRAYOID		1185	/* Oid for TIMESTAMPZARRAYOID */
+#endif
 
 /* Option name for IMPORT FOREIGN SCHEMA. */
 #define OPTION_RECREATE "recreate"
@@ -81,6 +99,16 @@
 
 /* The index of rowkey for array storing rowkey and modified record values. It cannot be changed. */
 #define ROWKEY_IDX 0
+
+/* float4 values are passed by value if 'true', by reference if 'false' */
+#ifndef FLOAT4PASSBYVAL
+#define FLOAT4PASSBYVAL true
+#endif
+
+#if (PG_VERSION_NUM < 120000)
+#define table_close(rel, lock)	heap_close(rel, lock)
+#define table_open(rel, lock)	heap_open(rel, lock)
+#endif
 
 /*
  * Options structure to store the MySQL
@@ -211,10 +239,10 @@ extern void griddb_classify_conditions(PlannerInfo *root,
 						   List *input_conds,
 						   List **remote_conds,
 						   List **local_conds);
-extern bool is_foreign_expr(PlannerInfo *root,
+extern bool griddb_is_foreign_expr(PlannerInfo *root,
 				RelOptInfo *baserel,
 				Expr *expr);
-extern Expr *find_em_expr_for_rel(EquivalenceClass *ec, RelOptInfo *rel);
+extern Expr *griddb_find_em_expr_for_rel(EquivalenceClass *ec, RelOptInfo *rel);
 extern void griddb_deparse_select(StringInfo buf, PlannerInfo *root,
 					  RelOptInfo *foreignrel, List *remote_conds,
 					  List *pathkeys, List **retrieved_attrs,

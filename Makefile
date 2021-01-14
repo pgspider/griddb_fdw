@@ -13,7 +13,7 @@ SHLIB_LINK = $(libpq) -L$(GRIDDB_LIBRARY) -lgridstore
 EXTENSION = griddb_fdw
 DATA = griddb_fdw--1.0.sql
 
-REGRESS = griddb_fdw griddb_fdw_data_type
+REGRESS = griddb_fdw griddb_fdw_data_type float4 float8 int4 int8 numeric join limit aggregates prepare select_having select insert update griddb_fdw_post 
 
 ifdef USE_PGXS
 PG_CONFIG = pg_config

@@ -1,7 +1,7 @@
 /*
  * GridDB Foreign Data Wrapper
  *
- * Portions Copyright (c) 2019, TOSHIBA CORPORATION
+ * Portions Copyright (c) 2020, TOSHIBA CORPORATION
  *
  * IDENTIFICATION
  *		  store.c
