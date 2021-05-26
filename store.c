@@ -366,7 +366,7 @@ griddb_modify_targets_apply(GridDBFdwModifiedRows * modified_rows, char *cont_na
 			/* Check the cursor is pointing the target. */
 			rowkey = griddb_make_datum_from_row(row, ROWKEY_IDX,
 												field_info->column_types[ROWKEY_ATTNO - 1],
-												pgkeytype);
+												pgkeytype, GS_ROW_SET_CONTAINER_ROWS, NULL, NULL);
 			rowValues[0] = &rowkey;
 			if (comparator((const void *) &targets, (const void *) &rowValues))
 			{

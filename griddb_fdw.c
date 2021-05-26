@@ -17,6 +17,7 @@
 #include "nodes/pg_list.h"
 #include "nodes/makefuncs.h"
 #include "catalog/pg_type.h"
+#include "catalog/pg_proc.h"
 #include "commands/explain.h"
 #include "commands/defrem.h"
 #include "executor/spi.h"
@@ -28,6 +29,8 @@
 #include "optimizer/paths.h"
 #include "optimizer/pathnode.h"
 #include "optimizer/planmain.h"
+#include "optimizer/restrictinfo.h"
+#include "optimizer/tlist.h"
 #include "parser/parsetree.h"
 #include "storage/ipc.h"
 #include "utils/builtins.h"
@@ -40,7 +43,9 @@
 #include "utils/syscache.h"
 #include "utils/elog.h"
 #include "utils/timestamp.h"
-
+#if (PG_VERSION_NUM < 100000)
+#include "utils/bytea.h"
+#endif
 PG_MODULE_MAGIC;
 
 /*
@@ -60,11 +65,26 @@ enum FdwScanPrivateIndex
 	FdwScanPrivateRetrievedAttrs,
 	/* Integer representing UPDATE/DELETE target */
 	FdwScanPrivateForUpdate,
+	/* Scan tlist */
+	FdwScanTlist,
+	/* RTE */
+	FDWScanRTE,
+	/* Integer representing aggregate function name */
+	FdwScanPrivateAggRefName,
+	/* Integer representing aggregate function  */
+	FdwScanPrivateAggRefColumn,
 };
+
+/* Callback argument for ec_member_matches_foreign */
+typedef struct ec_member_foreign_arg
+{
+	Expr	   *current;		/* current expr, or NULL if not yet found */
+	List	   *already_used;	/* expressions already dealt with */
+}			ec_member_foreign_arg;
 
 /*
  * Similarly, this enum describes what's kept in the fdw_private list for
- * a ModifyTable node referencing a postgres_fdw foreign table.  We store:
+ * a ModifyTable node referencing a griddb_fdw foreign table.  We store:
  *
  * 1) INSERT/UPDATE/DELETE statement text to be sent to the remote server
  * 2) Integer list of target attribute numbers for INSERT/UPDATE
@@ -95,6 +115,21 @@ enum FdwDirectModifyPrivateIndex
 	FdwDirectModifyPrivateRetrievedAttrs,
 	/* set-processed flag (as an integer Value node) */
 	FdwDirectModifyPrivateSetProcessed
+};
+
+/*
+ * This enum describes what's kept in the fdw_private list for a ForeignPath.
+ * We store:
+ *
+ * 1) Boolean flag showing if the remote query has the final sort
+ * 2) Boolean flag showing if the remote query has the LIMIT clause
+ */
+enum FdwPathPrivateIndex
+{
+	/* has-final-sort flag (as an integer Value node) */
+	FdwPathPrivateHasFinalSort,
+	/* has-limit flag (as an integer Value node) */
+	FdwPathPrivateHasLimit
 };
 
 /*
@@ -129,6 +164,7 @@ typedef struct GridDBFdwScanState
 	/* extracted fdw_private data */
 	char	   *query;			/* text of SELECT command */
 	List	   *retrieved_attrs;	/* list of retrieved attribute numbers */
+	List	   *fdw_scan_tlist;		/* optional tlist describing scan tuple */
 
 	/* for remote query execution */
 	GSGridStore *store;			/* connection for the scan */
@@ -138,6 +174,7 @@ typedef struct GridDBFdwScanState
 	GridDBFdwFieldInfo field_info;	/* field information */
 	GSRowSet   *row_set;		/* result set */
 	GSRow	   *row;			/* row for the update */
+	GridDBAggref	*aggref;	/* aggregate function information */
 
 	/* for storing result tuples */
 	unsigned int cursor;		/* result set cursor pointing current index */
@@ -186,108 +223,142 @@ void		_PG_fini(void);
  */
 
 static void griddbGetForeignRelSize(PlannerInfo *root,
-						RelOptInfo *baserel,
-						Oid foreigntableid);
+									RelOptInfo *baserel,
+									Oid foreigntableid);
 static void griddbGetForeignPaths(PlannerInfo *root,
-					  RelOptInfo *baserel,
-					  Oid foreigntableid);
+								  RelOptInfo *baserel,
+								  Oid foreigntableid);
 static ForeignScan *griddbGetForeignPlan(PlannerInfo *root,
-					 RelOptInfo *baserel,
-					 Oid foreigntableid,
-					 ForeignPath *best_path,
-					 List *tlist,
-					 List *scan_clauses,
-					 Plan *outer_plan);
+										 RelOptInfo *baserel,
+										 Oid foreigntableid,
+										 ForeignPath *best_path,
+										 List *tlist,
+										 List *scan_clauses,
+										 Plan *outer_plan);
 static void griddbBeginForeignScan(ForeignScanState *node, int eflags);
 static TupleTableSlot *griddbIterateForeignScan(ForeignScanState *node);
 static void griddbReScanForeignScan(ForeignScanState *node);
 static void griddbEndForeignScan(ForeignScanState *node);
 static void griddbAddForeignUpdateTargets(Query *parsetree,
-							  RangeTblEntry *target_rte,
-							  Relation target_relation);
+										  RangeTblEntry *target_rte,
+										  Relation target_relation);
 static List *griddbPlanForeignModify(PlannerInfo *root,
-						ModifyTable *plan,
-						Index resultRelation,
-						int subplan_index);
+									 ModifyTable *plan,
+									 Index resultRelation,
+									 int subplan_index);
 static void griddbBeginForeignModify(ModifyTableState *mtstate,
-						 ResultRelInfo *resultRelInfo,
-						 List *fdw_private,
-						 int subplan_index,
-						 int eflags);
+									 ResultRelInfo *resultRelInfo,
+									 List *fdw_private,
+									 int subplan_index,
+									 int eflags);
 static TupleTableSlot *griddbExecForeignInsert(EState *estate,
-						ResultRelInfo *resultRelInfo,
-						TupleTableSlot *slot,
-						TupleTableSlot *planSlot);
+											   ResultRelInfo *resultRelInfo,
+											   TupleTableSlot *slot,
+											   TupleTableSlot *planSlot);
 static TupleTableSlot *griddbExecForeignUpdate(EState *estate,
-						ResultRelInfo *resultRelInfo,
-						TupleTableSlot *slot,
-						TupleTableSlot *planSlot);
+											   ResultRelInfo *resultRelInfo,
+											   TupleTableSlot *slot,
+											   TupleTableSlot *planSlot);
 static TupleTableSlot *griddbExecForeignDelete(EState *estate,
-						ResultRelInfo *resultRelInfo,
-						TupleTableSlot *slot,
-						TupleTableSlot *planSlot);
+											   ResultRelInfo *resultRelInfo,
+											   TupleTableSlot *slot,
+											   TupleTableSlot *planSlot);
 static void griddbEndForeignModify(EState *estate,
-					   ResultRelInfo *resultRelInfo);
+								   ResultRelInfo *resultRelInfo);
 #if (PG_VERSION_NUM >= 110000)
 static void griddbEndForeignInsert(EState *estate,
-					   ResultRelInfo *resultRelInfo);
+								   ResultRelInfo *resultRelInfo);
 static void griddbBeginForeignInsert(ModifyTableState *mtstate,
-						 ResultRelInfo *resultRelInfo);
+									 ResultRelInfo *resultRelInfo);
 #endif
 static int	griddbIsForeignRelUpdatable(Relation rel);
 static bool griddbPlanDirectModify(PlannerInfo *root,
-					   ModifyTable *plan,
-					   Index resultRelation,
-					   int subplan_index);
+								   ModifyTable *plan,
+								   Index resultRelation,
+								   int subplan_index);
 static void griddbExplainForeignScan(ForeignScanState *node,
-						 ExplainState *es);
+									 ExplainState *es);
 static void griddbExplainForeignModify(ModifyTableState *mtstate,
-						   ResultRelInfo *rinfo,
-						   List *fdw_private,
-						   int subplan_index,
-						   ExplainState *es);
+									   ResultRelInfo *rinfo,
+									   List *fdw_private,
+									   int subplan_index,
+									   ExplainState *es);
 static bool griddbAnalyzeForeignTable(Relation relation,
-						  AcquireSampleRowsFunc *func,
-						  BlockNumber *totalpages);
+									  AcquireSampleRowsFunc *func,
+									  BlockNumber *totalpages);
 static List *griddbImportForeignSchema(ImportForeignSchemaStmt *stmt,
-						  Oid serverOid);
-
+									   Oid serverOid);
+static void griddbGetForeignUpperPaths(PlannerInfo *root,
+									   UpperRelationKind stage,
+									   RelOptInfo *input_rel,
+									   RelOptInfo *output_rel
+#if (PG_VERSION_NUM >= 110000)
+									   ,void *extra
+#endif
+);
+static void griddb_get_datatype_for_conversion(Oid pg_type, regproc *typeinput,
+								   int *typemod);
+static bool griddb_foreign_grouping_ok(PlannerInfo *root, RelOptInfo *grouped_rel);
+static void griddb_add_foreign_grouping_paths(PlannerInfo *root,
+									   RelOptInfo *input_rel,
+									   RelOptInfo *grouped_rel
+#if (PG_VERSION_NUM >= 110000)
+									   ,GroupPathExtraData *extra
+#endif
+);
 /*
  * Helper functions
  */
 static void griddb_fdw_exit(int code, Datum arg);
 static void estimate_path_cost_size(PlannerInfo *root,
-						RelOptInfo *baserel,
-						List *join_conds,
-						List *pathkeys,
-						double *p_rows, int *p_width,
-						Cost *p_startup_cost, Cost *p_total_cost);
+									RelOptInfo *baserel,
+									List *join_conds,
+									List *pathkeys,
+									GriddbFdwPathExtraData * fpextra,
+									double *p_rows, int *p_width,
+									Cost *p_startup_cost, Cost *p_total_cost);
 
 static void griddb_make_column_info(GSContainerInfo * cont_info,
-						GridDBFdwFieldInfo * field_info);
+									GridDBFdwFieldInfo * field_info);
 static void griddb_free_column_info(GridDBFdwFieldInfo * field_info);
 static Oid	griddb_pgtyp_from_gstyp(GSType gs_type, const char **name);
 static Timestamp griddb_convert_gs2pg_timestamp(GSTimestamp ts);
+static char* griddb_convert_gs2pg_timestamp_to_string(GSTimestamp ts);
 static GSTimestamp griddb_convert_pg2gs_timestamp(Timestamp dt);
 static void griddb_execute_and_fetch(ForeignScanState *node);
 static void griddb_find_junk_attno(GridDBFdwModifyState * fmstate, List *targetlist);
 static void griddb_judge_bulk_mode(GridDBFdwModifyState * fmstate, TupleTableSlot *planSlot);
 static void griddb_bind_for_putrow(GridDBFdwModifyState * fmstate,
-					   TupleTableSlot *slot,
-					   GSRow * row, Relation rel,
-					   GridDBFdwFieldInfo * field_info);
+								   TupleTableSlot *slot,
+								   GSRow * row, Relation rel,
+								   GridDBFdwFieldInfo * field_info);
 static void griddb_add_column_name_and_type(StringInfoData *buf,
-								GSContainerInfo * info);
+											GSContainerInfo * info);
 static GSChar * *grifddb_name_list_dup(const GSChar * const *src,
 									   size_t cont_size);
 static void grifddb_name_list_free(GSChar * *p, size_t cont_size);
 static void griddb_execute_commands(List *cmd_list);
 
-static int set_transmission_modes();
-static void reset_transmission_modes(int nestlevel);
+int			griddb_set_transmission_modes();
+void		griddb_reset_transmission_modes(int nestlevel);
 
 static void griddb_check_rowkey_update(GridDBFdwModifyState * fmstate, TupleTableSlot *new_slot);
+static Oid griddb_get_agg_type(GridDBFdwFieldInfo field_info, GridDBAggref *aggref);
 
+static Datum griddb_make_datum_record(StringInfoData *values, TupleDesc tupdesc, GSType *column_types,
+						GSRow * row, regproc typeinput, int typemod);
+
+static List *griddb_get_useful_pathkeys_for_relation(PlannerInfo *root,
+													 RelOptInfo *rel);
+static List *griddb_get_useful_ecs_for_relation(PlannerInfo *root, RelOptInfo *rel);
+static void griddb_add_paths_with_pathkeys_for_rel(PlannerInfo *root, RelOptInfo *rel,
+												   Path *epq_path);
+static void griddb_add_foreign_final_paths(PlannerInfo *root, RelOptInfo *input_rel,
+										   RelOptInfo *final_rel
+#if (PG_VERSION_NUM >= 120000)
+										   ,FinalPathExtraData *extra
+#endif
+);
 void
 _PG_init()
 {
@@ -367,6 +438,9 @@ griddb_fdw_handler(PG_FUNCTION_ARGS)
 
 	/* Not support functions for join push-down */
 	routine->GetForeignJoinPaths = NULL;
+
+	/* Support functions for upper relation push-down */
+	routine->GetForeignUpperPaths = griddbGetForeignUpperPaths;
 
 	PG_RETURN_POINTER(routine);
 }
@@ -453,6 +527,9 @@ griddbGetForeignRelSize(PlannerInfo *root,
 		(GriddbFdwRelationInfo *) palloc0(sizeof(GriddbFdwRelationInfo));
 	baserel->fdw_private = (void *) fpinfo;
 
+	/* Base foreign tables need to be pushed down always. */
+	fpinfo->pushdown_safe = true;
+
 	/* Look up foreign-table catalog info. */
 	fpinfo->table = GetForeignTable(foreigntableid);
 	fpinfo->server = GetForeignServer(fpinfo->table->serverid);
@@ -467,6 +544,8 @@ griddbGetForeignRelSize(PlannerInfo *root,
 	fpinfo->use_remote_estimate = options->use_remote_estimate;
 	fpinfo->fdw_startup_cost = options->fdw_startup_cost;
 	fpinfo->fdw_tuple_cost = options->fdw_tuple_cost;
+	fpinfo->shippable_extensions = NIL;
+	fpinfo->fetch_size = 100;
 
 	/*
 	 * If the table or the server is configured to use remote estimates,
@@ -499,8 +578,12 @@ griddbGetForeignRelSize(PlannerInfo *root,
 	 * columns used in them.  Doesn't seem worth detecting that case though.)
 	 */
 	fpinfo->attrs_used = NULL;
+#if PG_VERSION_NUM >= 90600
 	pull_varattnos((Node *) baserel->reltarget->exprs, baserel->relid,
 				   &fpinfo->attrs_used);
+#else
+	pull_varattnos((Node *) baserel->reltargetlist, baserel->relid, &fpinfo->attrs_used);
+#endif
 	foreach(lc, fpinfo->local_conds)
 	{
 		RestrictInfo *rinfo = (RestrictInfo *) lfirst(lc);
@@ -562,7 +645,7 @@ griddbGetForeignRelSize(PlannerInfo *root,
 		set_baserel_size_estimates(root, baserel);
 
 		/* Fill in basically-bogus cost estimates for use later. */
-		estimate_path_cost_size(root, baserel, NIL, NIL,
+		estimate_path_cost_size(root, baserel, NIL, NIL, NULL,
 								&fpinfo->rows, &fpinfo->width,
 								&fpinfo->startup_cost, &fpinfo->total_cost);
 	}
@@ -591,7 +674,9 @@ griddbGetForeignPaths(PlannerInfo *root,
 	 * to estimate cost and size of this path.
 	 */
 	path = create_foreignscan_path(root, baserel,
+#if PG_VERSION_NUM >= 90600
 								   NULL,	/* default pathtarget */
+#endif
 								   fpinfo->rows,
 								   fpinfo->startup_cost,
 								   fpinfo->total_cost,
@@ -604,6 +689,9 @@ griddbGetForeignPaths(PlannerInfo *root,
 								   NULL,	/* no extra plan */
 								   NIL);	/* no fdw_private list */
 	add_path(baserel, (Path *) path);
+
+	/* Add paths with pathkeys */
+	griddb_add_paths_with_pathkeys_for_rel(root, baserel, NULL);
 
 	/*
 	 * If we're not using remote estimates, stop here.  We have no way to
@@ -626,14 +714,14 @@ griddbGetForeignPaths(PlannerInfo *root,
  * user-visible computations.
  *
  * We use the equivalent of a function SET option to allow the settings to
- * persist only until the caller calls reset_transmission_modes().  If an
+ * persist only until the caller calls griddb_reset_transmission_modes().  If an
  * error is thrown in between, guc.c will take care of undoing the settings.
  *
  * The return value is the nestlevel that must be passed to
- * reset_transmission_modes() to undo things.
+ * griddb_reset_transmission_modes() to undo things.
  */
-static int
-set_transmission_modes(void)
+int
+griddb_set_transmission_modes(void)
 {
 	int			nestlevel = NewGUCNestLevel();
 
@@ -658,10 +746,10 @@ set_transmission_modes(void)
 }
 
 /*
- * Undo the effects of set_transmission_modes().
+ * Undo the effects of griddb_set_transmission_modes().
  */
-static void
-reset_transmission_modes(int nestlevel)
+void
+griddb_reset_transmission_modes(int nestlevel)
 {
 	AtEOXact_GUC(true, nestlevel);
 }
@@ -687,13 +775,27 @@ griddbGetForeignPlan(PlannerInfo *root,
 	List	   *remote_exprs = NIL;
 	List	   *local_exprs = NIL;
 	List	   *params_list = NIL;
+	List	   *fdw_scan_tlist = NIL;
 	List	   *retrieved_attrs;
 	StringInfoData sql;
 	ListCell   *lc;
 	int			for_update = 0;
-	int guc_level = 0;
+	int			guc_level = 0;
+	bool		has_limit = false;
+	RangeTblEntry *rte;
 
 	elog(DEBUG1, "griddb_fdw: %s", __func__);
+
+	/* Decide to execute function pushdown support in the target list. */
+	fpinfo->is_tlist_func_pushdown = griddb_is_foreign_function_tlist(root, foreignrel, tlist);
+
+	/*
+	 * Get FDW private data created by griddbGetForeignUpperPaths(), if any.
+	 */
+	if (best_path->fdw_private)
+	{
+		has_limit = intVal(list_nth(best_path->fdw_private, FdwPathPrivateHasLimit));
+	}
 
 	/*
 	 * Separate the scan_clauses into those that can be executed remotely and
@@ -714,30 +816,89 @@ griddbGetForeignPlan(PlannerInfo *root,
 	 * remote_conds list, since appendWhereClause expects a list of
 	 * RestrictInfos.
 	 */
-	foreach(lc, scan_clauses)
+	if ((foreignrel->reloptkind == RELOPT_BASEREL ||
+		 foreignrel->reloptkind == RELOPT_OTHER_MEMBER_REL) &&
+		fpinfo->is_tlist_func_pushdown == false)
 	{
-		RestrictInfo *rinfo = (RestrictInfo *) lfirst(lc);
-
-		Assert(IsA(rinfo, RestrictInfo));
-
-		/* Ignore any pseudoconstants, they're dealt with elsewhere */
-		if (rinfo->pseudoconstant)
-			continue;
-
-		if (list_member_ptr(fpinfo->remote_conds, rinfo))
+		foreach(lc, scan_clauses)
 		{
-			remote_conds = lappend(remote_conds, rinfo);
-			remote_exprs = lappend(remote_exprs, rinfo->clause);
+			RestrictInfo *rinfo = (RestrictInfo *) lfirst(lc);
+
+			Assert(IsA(rinfo, RestrictInfo));
+
+			/* Ignore any pseudoconstants, they're dealt with elsewhere */
+			if (rinfo->pseudoconstant)
+				continue;
+
+			if (list_member_ptr(fpinfo->remote_conds, rinfo))
+			{
+				remote_conds = lappend(remote_conds, rinfo);
+				remote_exprs = lappend(remote_exprs, rinfo->clause);
+			}
+			else if (list_member_ptr(fpinfo->local_conds, rinfo))
+				local_exprs = lappend(local_exprs, rinfo->clause);
+			else if (griddb_is_foreign_expr(root, foreignrel, rinfo->clause, false))
+			{
+				remote_conds = lappend(remote_conds, rinfo);
+				remote_exprs = lappend(remote_exprs, rinfo->clause);
+			}
+			else
+				local_exprs = lappend(local_exprs, rinfo->clause);
+
 		}
-		else if (list_member_ptr(fpinfo->local_conds, rinfo))
-			local_exprs = lappend(local_exprs, rinfo->clause);
-		else if (griddb_is_foreign_expr(root, foreignrel, rinfo->clause))
+	}
+	else
+	{
+		/*
+		 * For a join rel, baserestrictinfo is NIL and we are not considering
+		 * parameterization right now, so there should be no scan_clauses for
+		 * a joinrel or an upper rel either.
+		 */
+		if (fpinfo->is_tlist_func_pushdown == false)
 		{
-			remote_conds = lappend(remote_conds, rinfo);
-			remote_exprs = lappend(remote_exprs, rinfo->clause);
+			scan_relid = 0;
+			Assert(!scan_clauses);
+		}
+
+		/*
+		 * Instead we get the conditions to apply from the fdw_private
+		 * structure.
+		 */
+		remote_exprs = extract_actual_clauses(fpinfo->remote_conds, false);
+		local_exprs = extract_actual_clauses(fpinfo->local_conds, false);
+
+		if (fpinfo->is_tlist_func_pushdown == true)
+		{
+			foreach(lc, tlist)
+			{
+				TargetEntry *tle = lfirst_node(TargetEntry, lc);
+
+				/* Pull out function from FieldSelect clause and add to fdw_scan_tlist to push down function portion only */
+				if (fpinfo->is_tlist_func_pushdown == true && IsA((Node *) tle->expr, FieldSelect))
+				{
+					fdw_scan_tlist = add_to_flat_tlist(fdw_scan_tlist,
+													griddb_pull_func_clause((Node *) tle->expr));
+				}
+				else
+				{
+					fdw_scan_tlist = lappend(fdw_scan_tlist, tle);
+				}
+			}
+
+			foreach(lc, fpinfo->local_conds)
+			{
+				RestrictInfo *rinfo = lfirst_node(RestrictInfo, lc);
+
+				fdw_scan_tlist = add_to_flat_tlist(fdw_scan_tlist,
+													pull_var_clause((Node *) rinfo->clause,
+																	PVC_RECURSE_PLACEHOLDERS));
+			}
 		}
 		else
-			local_exprs = lappend(local_exprs, rinfo->clause);
+		{
+			fdw_scan_tlist = griddb_build_tlist_to_deparse(foreignrel);
+		}
+
 	}
 
 	/*
@@ -746,11 +907,11 @@ griddbGetForeignPlan(PlannerInfo *root,
 	 */
 	initStringInfo(&sql);
 	/* Deparse timestamp as ISO style */
-	guc_level = set_transmission_modes();
+	guc_level = griddb_set_transmission_modes();
 	griddb_deparse_select(&sql, root, foreignrel, remote_conds,
 						  best_path->path.pathkeys,
-						  &retrieved_attrs, &params_list);
-	reset_transmission_modes(guc_level);
+						  &retrieved_attrs, &params_list, fdw_scan_tlist, has_limit);
+	griddb_reset_transmission_modes(guc_level);
 	griddb_deparse_locking_clause(root, foreignrel, &for_update);
 
 	if (foreignrel->relid == root->parse->resultRelation &&
@@ -769,7 +930,23 @@ griddbGetForeignPlan(PlannerInfo *root,
 							 remote_conds,
 							 retrieved_attrs,
 							 makeInteger(for_update));
+	fdw_private = lappend(fdw_private, fdw_scan_tlist);
 
+	if IS_UPPER_REL(foreignrel)
+	{
+		rte = planner_rt_fetch(((GriddbFdwRelationInfo *)((RelOptInfo *)foreignrel)->fdw_private)->outerrel->relid, root);
+	}
+	else
+	{
+		rte = planner_rt_fetch(foreignrel->relid, root);
+	}
+	fdw_private = lappend(fdw_private, rte);
+
+	if (((GriddbFdwRelationInfo *) foreignrel->fdw_private)->aggref)
+	{
+		fdw_private = lappend(fdw_private, makeString(((GriddbFdwRelationInfo *) foreignrel->fdw_private)->aggref->aggname->data));
+		fdw_private = lappend(fdw_private, makeString(((GriddbFdwRelationInfo *) foreignrel->fdw_private)->aggref->columnname->data));
+	}
 	/*
 	 * Create the ForeignScan node for the given relation.
 	 *
@@ -782,7 +959,7 @@ griddbGetForeignPlan(PlannerInfo *root,
 							scan_relid,
 							params_list,
 							fdw_private,
-							NULL,
+							fdw_scan_tlist,
 							remote_exprs,
 							outer_plan);
 }
@@ -826,10 +1003,14 @@ griddbBeginForeignScan(ForeignScanState *node, int eflags)
 	 * member RTE as a representative; we would get the same result from any.
 	 */
 	if (fsplan->scan.scanrelid > 0)
+	{
 		rtindex = fsplan->scan.scanrelid;
+		rte = rt_fetch(rtindex, estate->es_range_table);
+	}
 	else
-		rtindex = bms_next_member(fsplan->fs_relids, -1);
-	rte = rt_fetch(rtindex, estate->es_range_table);
+	{
+		rte = list_nth(fsplan->fdw_private, FDWScanRTE);
+	}
 	userid = rte->checkAsUser ? rte->checkAsUser : GetUserId();
 
 	/* Get info about foreign table. */
@@ -841,7 +1022,7 @@ griddbBeginForeignScan(ForeignScanState *node, int eflags)
 	 * establish new connection if necessary.
 	 */
 	fsstate->store = griddb_get_connection(user, false,
-										   RelationGetRelid(node->ss.ss_currentRelation));
+										   rte->relid);
 
 	fsstate->cont_name = griddb_get_rel_name(rte->relid);
 	fsstate->cont = griddb_get_container(user, rte->relid, fsstate->store);
@@ -852,7 +1033,19 @@ griddbBeginForeignScan(ForeignScanState *node, int eflags)
 												 FdwScanPrivateRetrievedAttrs);
 	for_update = intVal(list_nth(fsplan->fdw_private,
 								 FdwScanPrivateForUpdate));
+	fsstate->fdw_scan_tlist = (List *) list_nth(fsplan->fdw_private,
+												 FdwScanTlist);
 	fsstate->for_update = for_update ? GS_TRUE : GS_FALSE;
+	if (list_length(fsplan->fdw_private) - 1 == FdwScanPrivateAggRefColumn)
+	{
+		fsstate->aggref = palloc0(sizeof(GridDBAggref));
+		fsstate->aggref->aggname = makeStringInfo();
+		fsstate->aggref->aggname->data = strVal(list_nth(fsplan->fdw_private,
+										FdwScanPrivateAggRefName));
+		fsstate->aggref->columnname = makeStringInfo();
+		fsstate->aggref->columnname->data = strVal(list_nth(fsplan->fdw_private,
+										FdwScanPrivateAggRefColumn));
+	}
 	if (for_update)
 		fsstate->smrelay = griddb_get_smrelay(rte->relid);
 	fsstate->row_set = NULL;
@@ -904,18 +1097,39 @@ griddbIterateForeignScan(ForeignScanState *node)
 	if (gsHasNextRow(fsstate->row_set))
 	{
 		GSResult	ret = GS_RESULT_OK;
-		ListCell   *lc = NULL;
+		ListCell   *lc = NULL, *scanlc = NULL;
 		GSType	   *column_types = fsstate->field_info.column_types;
+		List	   *fdw_scan_tlist = fsstate->fdw_scan_tlist;
+		GSAggregationResult *agg_res;	/* aggregation result */
+		GSRowSetType row_type;			/* Row type of result */
 
-		Assert(gsHasNextRow(fsstate->row_set) == GS_TRUE);
-		ret = gsGetNextRow(fsstate->row_set, fsstate->row);
-		if (!GS_SUCCEEDED(ret))
-			griddb_REPORT_ERROR(ERROR, ret, fsstate->row_set);
+		/*
+		* In case target is aggregation only
+		*/
+		row_type = gsGetRowSetType(fsstate->row_set);
+		if (row_type == GS_ROW_SET_AGGREGATION_RESULT)
+		{
+			if (gsHasNextRow(fsstate->row_set))
+			{
+				ret = gsGetNextAggregation(fsstate->row_set, &agg_res);
+				if (!GS_SUCCEEDED(ret))
+					griddb_REPORT_ERROR(ERROR, ret, fsstate->row_set);
+			}
+		}
+		else
+		{
+			Assert(gsHasNextRow(fsstate->row_set) == GS_TRUE);
+			ret = gsGetNextRow(fsstate->row_set, fsstate->row);
+			if (!GS_SUCCEEDED(ret))
+				griddb_REPORT_ERROR(ERROR, ret, fsstate->row_set);
+		}
 
 		/* Construct tuple slot */
 		foreach(lc, fsstate->retrieved_attrs)
 		{
 			int			attnum = lfirst_int(lc);
+
+			scanlc = list_head(fdw_scan_tlist);
 
 			if (attnum > 0)
 			{
@@ -934,17 +1148,84 @@ griddbIterateForeignScan(ForeignScanState *node)
 					Oid			pgtype;
 					Relation	rel = fsstate->rel;
 					TupleDesc	tupdesc;
+					bool		is_record = false;
 
 					if (rel)
 						tupdesc = RelationGetDescr(rel);
 					else
 						tupdesc = fsstate->tupdesc;
-					pgtype = TupleDescAttr(tupdesc, attnum - 1)->atttypid;
-					tupleSlot->tts_values[attnum - 1] =
-						griddb_make_datum_from_row(fsstate->row, attnum - 1,
-												   column_types[attnum - 1],
-												   pgtype);
-					tupleSlot->tts_isnull[attnum - 1] = false;
+
+					if (scanlc != NULL)
+					{
+						TargetEntry *tle = lfirst(scanlc);
+						Node		*node = (Node *) tle->expr;
+
+						if (IsA(node, FuncExpr))
+						{
+							const char *proname;
+							HeapTuple	proctup;
+							FuncExpr   *fe = (FuncExpr *) node;
+
+							proctup = SearchSysCache1(PROCOID, ObjectIdGetDatum(fe->funcid));
+							if (!HeapTupleIsValid(proctup))
+							{
+								elog(ERROR, "cache lookup failed for function %u", fe->funcid);
+							}
+							proname = pstrdup(((Form_pg_proc) GETSTRUCT(proctup))->proname.data);
+							ReleaseSysCache(proctup);
+
+							/* The following functions return a record */
+							if (strcmp(proname, "time_next") == 0 ||
+								strcmp(proname, "time_next_only") == 0 ||
+								strcmp(proname, "time_prev") == 0 ||
+								strcmp(proname, "time_prev_only") == 0 ||
+								strcmp(proname, "time_interpolated") == 0 ||
+								strcmp(proname, "max_rows") == 0 ||
+								strcmp(proname, "min_rows") == 0 ||
+								strcmp(proname, "time_sampling") == 0)
+								is_record = true;
+						}
+					}
+
+					/*
+					 * When is_record is true, build a record as text and return it.
+					 * Example: (value1, value2, value3)
+					 */
+					if (is_record)
+					{
+						StringInfoData values;
+						regproc		typeinput;
+						int			typemod;
+
+						initStringInfo(&values);
+						griddb_get_datatype_for_conversion(TEXTOID, &typeinput, &typemod);
+
+						tupleSlot->tts_values[attnum - 1] =
+							griddb_make_datum_record(&values, tupdesc, column_types,
+													fsstate->row, typeinput, typemod);
+						tupleSlot->tts_isnull[attnum - 1] = false;
+					}
+					else if (row_type == GS_ROW_SET_AGGREGATION_RESULT)
+					{
+						GSType type = griddb_get_agg_type(fsstate->field_info, fsstate->aggref);
+
+						pgtype = TupleDescAttr(tupdesc, attnum - 1)->atttypid;
+
+						tupleSlot->tts_values[attnum - 1] =
+							griddb_make_datum_from_row(fsstate->row, attnum - 1,
+													type,
+													pgtype, row_type, agg_res, fsstate->aggref);
+						tupleSlot->tts_isnull[attnum - 1] = false;
+					}
+					else
+					{
+						pgtype = TupleDescAttr(tupdesc, attnum - 1)->atttypid;
+						tupleSlot->tts_values[attnum - 1] =
+							griddb_make_datum_from_row(fsstate->row, attnum - 1,
+													column_types[attnum - 1],
+													pgtype, row_type, agg_res, false);
+						tupleSlot->tts_isnull[attnum - 1] = false;
+					}
 				}
 			}
 		}
@@ -1035,7 +1316,7 @@ griddbAddForeignUpdateTargets(Query *parsetree,
 	/*
 	 * What we need is the rowkey which is the first column
 	 */
-	attr =	TupleDescAttr(RelationGetDescr(target_relation), ROWKEY_ATTNO - 1);
+	attr = TupleDescAttr(RelationGetDescr(target_relation), ROWKEY_ATTNO - 1);
 
 	/* Make a Var representing the desired value */
 	var = makeVar(parsetree->resultRelation,
@@ -1111,6 +1392,7 @@ griddbPlanForeignModify(PlannerInfo *root,
 	{
 		int			col;
 		Bitmapset  *allUpdatedCols;
+
 		allUpdatedCols = rte->updatedCols;
 #if (PG_VERSION_NUM >= 120000)
 		allUpdatedCols = bms_union(rte->updatedCols, rte->extraUpdatedCols);
@@ -1499,6 +1781,7 @@ griddbBeginForeignInsert(ModifyTableState *mtstate,
 	elog(DEBUG1, "griddb_fdw: %s", __func__);
 
 #if (PG_VERSION_NUM >= 110007)
+
 	/*
 	 * If the foreign table we are about to insert routed rows into is also an
 	 * UPDATE subplan result rel that will be updated later, proceeding with
@@ -1509,7 +1792,8 @@ griddbBeginForeignInsert(ModifyTableState *mtstate,
 	if (plan && plan->operation == CMD_UPDATE &&
 		(resultRelInfo->ri_usesFdwDirectModify ||
 		 resultRelInfo->ri_FdwState) &&
-		resultRelInfo > mtstate->resultRelInfo + mtstate->mt_whichplan){
+		resultRelInfo > mtstate->resultRelInfo + mtstate->mt_whichplan)
+	{
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 				 errmsg("cannot route tuples into foreign table to be updated \"%s\"",
@@ -1858,6 +2142,944 @@ griddbImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 }
 
 /*
+ * get_useful_pathkeys_for_relation
+ *		Determine which orderings of a relation might be useful.
+ *
+ * Getting data in sorted order can be useful either because the requested
+ * order matches the final output ordering for the overall query we're
+ * planning, or because it enables an efficient merge join.  Here, we try
+ * to figure out which pathkeys to consider.
+ */
+static List *
+griddb_get_useful_pathkeys_for_relation(PlannerInfo *root, RelOptInfo *rel)
+{
+	List	   *useful_pathkeys_list = NIL;
+	List	   *useful_eclass_list;
+	GriddbFdwRelationInfo *fpinfo = (GriddbFdwRelationInfo *) rel->fdw_private;
+	EquivalenceClass *query_ec = NULL;
+	ListCell   *lc;
+
+	/*
+	 * Pushing the query_pathkeys to the remote server is always worth
+	 * considering, because it might let us avoid a local sort.
+	 */
+	fpinfo->qp_is_pushdown_safe = false;
+	if (root->query_pathkeys)
+	{
+		bool		query_pathkeys_ok = true;
+
+		foreach(lc, root->query_pathkeys)
+		{
+			PathKey    *pathkey = (PathKey *) lfirst(lc);
+			EquivalenceClass *pathkey_ec = pathkey->pk_eclass;
+			Expr	   *em_expr;
+
+			/*
+			 * The planner and executor don't have any clever strategy for
+			 * taking data sorted by a prefix of the query's pathkeys and
+			 * getting it to be sorted by all of those pathkeys. We'll just
+			 * end up resorting the entire data set.  So, unless we can push
+			 * down all of the query pathkeys, forget it.
+			 *
+			 * is_foreign_expr would detect volatile expressions as well, but
+			 * checking ec_has_volatile here saves some cycles.
+			 *
+			 * For Griddb, NULL value is sorted as max value. We don't
+			 * pushdown ORDER BY clause in the following cases: (1) DESC NULLS
+			 * LAST (2) ASC NULLS FIRST
+			 *
+			 * Griddb does not support ORDER BY functions/formulas.
+			 */
+			if (pathkey_ec->ec_has_volatile ||
+				!(em_expr = griddb_find_em_expr_for_rel(pathkey_ec, rel)) ||
+				!griddb_is_foreign_expr(root, rel, em_expr, false) ||
+				((pathkey->pk_strategy == BTLessStrategyNumber) &&
+				 pathkey->pk_nulls_first) ||	/* ASC NULLS FIRST */
+				((pathkey->pk_strategy != BTLessStrategyNumber) &&
+				 !pathkey->pk_nulls_first) ||	/* DESC NULLS LAST */
+				nodeTag(em_expr) == T_OpExpr ||
+				nodeTag(em_expr) == T_FuncExpr ||
+				nodeTag(em_expr) == T_BoolExpr)
+			{
+				query_pathkeys_ok = false;
+				break;
+			}
+		}
+
+		if (query_pathkeys_ok)
+		{
+			useful_pathkeys_list = list_make1(list_copy(root->query_pathkeys));
+			fpinfo->qp_is_pushdown_safe = true;
+		}
+	}
+
+	/*
+	 * Even if we're not using remote estimates, having the remote side do the
+	 * sort generally won't be any worse than doing it locally, and it might
+	 * be much better if the remote side can generate data in the right order
+	 * without needing a sort at all.  However, what we're going to do next is
+	 * try to generate pathkeys that seem promising for possible merge joins,
+	 * and that's more speculative.  A wrong choice might hurt quite a bit, so
+	 * bail out if we can't use remote estimates.
+	 */
+	if (!fpinfo->use_remote_estimate)
+		return useful_pathkeys_list;
+
+	/* Get the list of interesting EquivalenceClasses. */
+	useful_eclass_list = griddb_get_useful_ecs_for_relation(root, rel);
+
+	/* Extract unique EC for query, if any, so we don't consider it again. */
+	if (list_length(root->query_pathkeys) == 1)
+	{
+		PathKey    *query_pathkey = linitial(root->query_pathkeys);
+
+		query_ec = query_pathkey->pk_eclass;
+	}
+
+	/*
+	 * As a heuristic, the only pathkeys we consider here are those of length
+	 * one.  It's surely possible to consider more, but since each one we
+	 * choose to consider will generate a round-trip to the remote side, we
+	 * need to be a bit cautious here.  It would sure be nice to have a local
+	 * cache of information about remote index definitions...
+	 */
+	foreach(lc, useful_eclass_list)
+	{
+		EquivalenceClass *cur_ec = lfirst(lc);
+		Expr	   *em_expr;
+		PathKey    *pathkey;
+
+		/* If redundant with what we did above, skip it. */
+		if (cur_ec == query_ec)
+			continue;
+
+		/* If no pushable expression for this rel, skip it. */
+		em_expr = griddb_find_em_expr_for_rel(cur_ec, rel);
+		if (em_expr == NULL || !griddb_is_foreign_expr(root, rel, em_expr, false))
+			continue;
+
+		/* Looks like we can generate a pathkey, so let's do it. */
+		pathkey = make_canonical_pathkey(root, cur_ec,
+										 linitial_oid(cur_ec->ec_opfamilies),
+										 BTLessStrategyNumber,
+										 false);
+		useful_pathkeys_list = lappend(useful_pathkeys_list,
+									   list_make1(pathkey));
+	}
+
+	return useful_pathkeys_list;
+}
+
+/*
+ * get_useful_ecs_for_relation Determine which EquivalenceClasses might be
+ * involved in useful orderings of this relation.
+ *
+ * This function is in some respects a mirror image of the core function
+ * pathkeys_useful_for_merging: for a regular table, we know what indexes we
+ * have and want to test whether any of them are useful.  For a foreign
+ * table, we don't know what indexes are present on the remote side but want
+ * to speculate about which ones we'd like to use if they existed.
+ *
+ * This function returns a list of potentially-useful equivalence classes,
+ * but it does not guarantee that an EquivalenceMember exists which contains
+ * Vars only from the given relation.  For example, given ft1 JOIN t1 ON
+ * ft1.x + t1.x = 0, this function will say that the equivalence class
+ * containing ft1.x + t1.x is potentially useful.  Supposing ft1 is remote
+ * and t1 is local (or on a different server), it will turn out that no
+ * useful ORDER BY clause can be generated.  It's not our job to figure that
+ * out here; we're only interested in identifying relevant ECs.
+ */
+static List *
+griddb_get_useful_ecs_for_relation(PlannerInfo *root, RelOptInfo *rel)
+{
+	List	   *useful_eclass_list = NIL;
+	ListCell   *lc;
+	Relids		relids;
+
+	/*
+	 * First, consider whether any active EC is potentially useful for a merge
+	 * join against this relation.
+	 */
+	if (rel->has_eclass_joins)
+	{
+		foreach(lc, root->eq_classes)
+		{
+			EquivalenceClass *cur_ec = (EquivalenceClass *) lfirst(lc);
+
+			if (eclass_useful_for_merging(root, cur_ec, rel))
+				useful_eclass_list = lappend(useful_eclass_list, cur_ec);
+		}
+	}
+
+	/*
+	 * Next, consider whether there are any non-EC derivable join clauses that
+	 * are merge-joinable.  If the joininfo list is empty, we can exit
+	 * quickly.
+	 */
+	if (rel->joininfo == NIL)
+		return useful_eclass_list;
+
+	/*
+	 * If this is a child rel, we must use the topmost parent rel to search.
+	 */
+	if (IS_OTHER_REL(rel))
+	{
+#if (PG_VERSION_NUM >= 100000)
+		Assert(!bms_is_empty(rel->top_parent_relids));
+		relids = rel->top_parent_relids;
+#else
+		relids = find_childrel_top_parent(root, rel)->relids;
+#endif
+	}
+	else
+		relids = rel->relids;
+
+	/* Check each join clause in turn. */
+	foreach(lc, rel->joininfo)
+	{
+		RestrictInfo *restrictinfo = (RestrictInfo *) lfirst(lc);
+
+		/* Consider only mergejoinable clauses */
+		if (restrictinfo->mergeopfamilies == NIL)
+			continue;
+
+		/* Make sure we've got canonical ECs. */
+		update_mergeclause_eclasses(root, restrictinfo);
+
+		/*
+		 * restrictinfo->mergeopfamilies != NIL is sufficient to guarantee
+		 * that left_ec and right_ec will be initialized, per comments in
+		 * distribute_qual_to_rels.
+		 *
+		 * We want to identify which side of this merge-joinable clause
+		 * contains columns from the relation produced by this RelOptInfo. We
+		 * test for overlap, not containment, because there could be extra
+		 * relations on either side.  For example, suppose we've got something
+		 * like ((A JOIN B ON A.x = B.x) JOIN C ON A.y = C.y) LEFT JOIN D ON
+		 * A.y = D.y. The input rel might be the joinrel between A and B, and
+		 * we'll consider the join clause A.y = D.y. relids contains a
+		 * relation not involved in the join class (B) and the equivalence
+		 * class for the left-hand side of the clause contains a relation not
+		 * involved in the input rel (C). Despite the fact that we have only
+		 * overlap and not containment in either direction, A.y is potentially
+		 * useful as a sort column.
+		 *
+		 * Note that it's even possible that relids overlaps neither side of
+		 * the join clause.  For example, consider A LEFT JOIN B ON A.x = B.x
+		 * AND A.x = 1.  The clause A.x = 1 will appear in B's joininfo list,
+		 * but overlaps neither side of B.  In that case, we just skip this
+		 * join clause, since it doesn't suggest a useful sort order for this
+		 * relation.
+		 */
+		if (bms_overlap(relids, restrictinfo->right_ec->ec_relids))
+			useful_eclass_list = list_append_unique_ptr(useful_eclass_list,
+														restrictinfo->right_ec);
+		else if (bms_overlap(relids, restrictinfo->left_ec->ec_relids))
+			useful_eclass_list = list_append_unique_ptr(useful_eclass_list,
+														restrictinfo->left_ec);
+	}
+
+	return useful_eclass_list;
+}
+
+static void
+griddb_add_paths_with_pathkeys_for_rel(PlannerInfo *root, RelOptInfo *rel,
+									   Path *epq_path)
+{
+	List	   *useful_pathkeys_list = NIL; /* List of all pathkeys */
+	ListCell   *lc;
+	double		rows;
+	Cost		startup_cost;
+	Cost		total_cost;
+
+	/* Use small cost to push down ORDER BY always */
+	rows = startup_cost = total_cost = 10;
+
+	useful_pathkeys_list = griddb_get_useful_pathkeys_for_relation(root, rel);
+
+	/* Create one path for each set of pathkeys we found above. */
+	foreach(lc, useful_pathkeys_list)
+	{
+		List	   *useful_pathkeys = lfirst(lc);
+		Path	   *sorted_epq_path;
+
+		/*
+		 * The EPQ path must be at least as well sorted as the path itself, in
+		 * case it gets used as input to a mergejoin.
+		 */
+		sorted_epq_path = epq_path;
+		if (sorted_epq_path != NULL &&
+			!pathkeys_contained_in(useful_pathkeys,
+								   sorted_epq_path->pathkeys))
+			sorted_epq_path = (Path *)
+				create_sort_path(root,
+								 rel,
+								 sorted_epq_path,
+								 useful_pathkeys,
+								 -1.0);
+
+		if (IS_SIMPLE_REL(rel))
+			add_path(rel, (Path *)
+					 create_foreignscan_path(root, rel,
+											 NULL,
+											 rows,
+											 startup_cost,
+											 total_cost,
+											 useful_pathkeys,
+											 rel->lateral_relids,
+											 sorted_epq_path,
+											 NIL));
+		else
+			add_path(rel, (Path *)
+#if PG_VERSION_NUM >= 120000
+					 create_foreign_join_path
+#else
+					 create_foreignscan_path
+#endif
+											 (root, rel,
+											  NULL,
+											  rows,
+											  startup_cost,
+											  total_cost,
+											  useful_pathkeys,
+#if (PG_VERSION_NUM >= 120000)
+											  rel->lateral_relids,
+#else
+											  NULL,	/* no outer rel either */
+#endif
+											  sorted_epq_path,
+											  NIL));
+	}
+}
+
+/*
+ * Assess whether the aggregation, grouping and having operations can be pushed
+ * down to the foreign server.  As a side effect, save information we obtain in
+ * this function to GriddbFdwRelationInfo of the input relation.
+ */
+static bool
+griddb_foreign_grouping_ok(PlannerInfo *root, RelOptInfo *grouped_rel)
+{
+	Query	   *query = root->parse;
+	GriddbFdwRelationInfo *fpinfo = (GriddbFdwRelationInfo *) grouped_rel->fdw_private;
+	PathTarget *grouping_target;
+	GriddbFdwRelationInfo *ofpinfo;
+	ListCell   *lc;
+	int			i;
+	List	   *tlist = NIL;
+
+	/* We currently don't support pushing Grouping Sets. */
+	if (query->groupingSets)
+		return false;
+
+	/* Get the fpinfo of the underlying scan relation. */
+	ofpinfo = (GriddbFdwRelationInfo *) fpinfo->outerrel->fdw_private;
+
+	/*
+	 * If underlying scan relation has any local conditions, those conditions
+	 * are required to be applied before performing aggregation.  Hence the
+	 * aggregate cannot be pushed down.
+	 */
+	if (ofpinfo->local_conds)
+		return false;
+
+	/*
+	 * The targetlist expected from this node and the targetlist pushed down
+	 * to the foreign server may be different. The latter requires
+	 * sortgrouprefs to be set to push down GROUP BY clause, but should not
+	 * have those arising from ORDER BY clause. These sortgrouprefs may be
+	 * different from those in the plan's targetlist. Use a copy of path
+	 * target to record the new sortgrouprefs.
+	 */
+	grouping_target = copy_pathtarget(root->upper_targets[UPPERREL_GROUP_AGG]);
+
+	/*
+	 * Examine grouping expressions, as well as other expressions we'd need to
+	 * compute, and check whether they are safe to push down to the foreign
+	 * server.  All GROUP BY expressions will be part of the grouping target
+	 * and thus there is no need to search for them separately.  Add grouping
+	 * expressions into target list which will be passed to foreign server.
+	 *
+	 * A tricky fine point is that we must not put any expression into the
+	 * target list that is just a foreign param (that is, something that
+	 * deparse.c would conclude has to be sent to the foreign server).  If we
+	 * do, the expression will also appear in the fdw_exprs list of the plan
+	 * node, and setrefs.c will get confused and decide that the fdw_exprs
+	 * entry is actually a reference to the fdw_scan_tlist entry, resulting in
+	 * a broken plan.  Somewhat oddly, it's OK if the expression contains such
+	 * a node, as long as it's not at top level; then no match is possible.
+	 */
+	i = 0;
+
+	foreach(lc, grouping_target->exprs)
+	{
+		Expr	   *expr = (Expr *) lfirst(lc);
+		ListCell   *l;
+
+		/*
+			* Non-grouping expression we need to compute.  Can we ship it
+			* as-is to the foreign server?
+			*/
+		if (griddb_is_foreign_expr(root, grouped_rel, expr, true) &&
+			!griddb_is_foreign_param(root, grouped_rel, expr))
+		{
+			/* Yes, so add to tlist as-is; OK to suppress duplicates */
+			tlist = add_to_flat_tlist(tlist, list_make1(expr));
+
+			/* GridDB does not support selecting multiple target, so do not push down when there are multiple items in target list. */
+			if (list_length(tlist) > 1)
+				return false;
+		}
+		else
+		{
+			/* Not pushable as a whole; extract its Vars and aggregates */
+			List	   *aggvars;
+
+			aggvars = pull_var_clause((Node *) expr,
+										PVC_INCLUDE_AGGREGATES);
+
+			/*
+				* If any aggregate expression is not shippable, then we
+				* cannot push down aggregation to the foreign server.  (We
+				* don't have to check is_foreign_param, since that certainly
+				* won't return true for any such expression.)
+				*/
+			if (!griddb_is_foreign_expr(root, grouped_rel, (Expr *) aggvars, true))
+				return false;
+
+			/*
+				* Add aggregates, if any, into the targetlist.  Plain Vars
+				* outside an aggregate can be ignored, because they should be
+				* either same as some GROUP BY column or part of some GROUP
+				* BY expression.  In either case, they are already part of
+				* the targetlist and thus no need to add them again.  In fact
+				* including plain Vars in the tlist when they do not match a
+				* GROUP BY column would cause the foreign server to complain
+				* that the shipped query is invalid.
+				*/
+			foreach(l, aggvars)
+			{
+				Expr	   *expr = (Expr *) lfirst(l);
+
+				if (IsA(expr, Aggref))
+					tlist = add_to_flat_tlist(tlist, list_make1(expr));
+			}
+
+			/* GridDB does not support selecting multiple target, so do not push down when there are multiple items in target list. */
+			if (list_length(tlist) > 1)
+				return false;
+		}
+
+		i++;
+	}
+
+	/*
+	 * If there are any local conditions, pull Vars and aggregates from it and
+	 * check whether they are safe to pushdown or not.
+	 */
+	if (fpinfo->local_conds)
+	{
+		List	   *aggvars = NIL;
+		ListCell   *lc;
+
+		foreach(lc, fpinfo->local_conds)
+		{
+			RestrictInfo *rinfo = lfirst_node(RestrictInfo, lc);
+
+			aggvars = list_concat(aggvars,
+								  pull_var_clause((Node *) rinfo->clause,
+												  PVC_INCLUDE_AGGREGATES));
+		}
+
+		foreach(lc, aggvars)
+		{
+			Expr	   *expr = (Expr *) lfirst(lc);
+
+			/*
+			 * If aggregates within local conditions are not safe to push
+			 * down, then we cannot push down the query.  Vars are already
+			 * part of GROUP BY clause which are checked above, so no need to
+			 * access them again here.  Again, we need not check
+			 * is_foreign_param for a foreign aggregate.
+			 */
+			if (IsA(expr, Aggref))
+			{
+				if (!griddb_is_foreign_expr(root, grouped_rel, expr, true))
+					return false;
+
+				tlist = add_to_flat_tlist(tlist, list_make1(expr));
+			}
+		}
+	}
+
+	/* Store generated targetlist */
+	fpinfo->grouped_tlist = tlist;
+
+	/* Safe to pushdown */
+	fpinfo->pushdown_safe = true;
+
+	/*
+	 * Set # of retrieved rows and cached relation costs to some negative
+	 * value, so that we can detect when they are set to some sensible values,
+	 * during one (usually the first) of the calls to estimate_path_cost_size.
+	 */
+	fpinfo->retrieved_rows = -1;
+	fpinfo->rel_startup_cost = -1;
+	fpinfo->rel_total_cost = -1;
+
+	/*
+	 * Set the string describing this grouped relation to be used in EXPLAIN
+	 * output of corresponding ForeignScan.  Note that the decoration we add
+	 * to the base relation name mustn't include any digits, or it'll confuse
+	 * postgresExplainForeignScan.
+	 */
+	/*
+	 * Set the string describing this grouped relation to be used in EXPLAIN
+	 * output of corresponding ForeignScan.
+	 */
+	fpinfo->relation_name = makeStringInfo();
+
+	return true;
+}
+
+/*
+ * griddb_add_foreign_grouping_paths
+ *		Add foreign path for grouping and/or aggregation.
+ *
+ * Given input_rel represents the underlying scan.  The paths are added to the
+ * given grouped_rel.
+ */
+static void
+griddb_add_foreign_grouping_paths(PlannerInfo *root, RelOptInfo *input_rel,
+						   RelOptInfo *grouped_rel
+#if (PG_VERSION_NUM >= 110000)
+							, GroupPathExtraData *extra
+#endif
+							)
+{
+	Query	   *parse = root->parse;
+	GriddbFdwRelationInfo *ifpinfo = input_rel->fdw_private;
+	GriddbFdwRelationInfo *fpinfo = grouped_rel->fdw_private;
+	ForeignPath *grouppath;
+	double		rows;
+	int			width;
+	Cost		startup_cost;
+	Cost		total_cost;
+
+	/*
+	 * Nothing to be done, if there is no aggregation required.
+	 * Griddb does not support GROUP BY, GROUPING SET, HAVING, so also return when there are those clauses.
+	 */
+	if (parse->groupClause ||
+		parse->groupingSets ||
+		root->hasHavingQual ||
+		!parse->hasAggs)
+		return;
+
+#if (PG_VERSION_NUM >= 110000)
+	Assert(extra->patype == PARTITIONWISE_AGGREGATE_NONE ||
+		   extra->patype == PARTITIONWISE_AGGREGATE_FULL);
+#endif
+
+	/* save the input_rel as outerrel in fpinfo */
+	fpinfo->outerrel = input_rel;
+
+	/*
+	 * Copy foreign table, foreign server, user mapping, FDW options etc.
+	 * details from the input relation's fpinfo.
+	 */
+	fpinfo->table = ifpinfo->table;
+	fpinfo->server = ifpinfo->server;
+	fpinfo->user = ifpinfo->user;
+
+	/*
+	 * Assess if it is safe to push down aggregation and grouping.
+	 *
+	 * Use HAVING qual from extra. In case of child partition, it will have
+	 * translated Vars.
+	 */
+	if (!griddb_foreign_grouping_ok(root, grouped_rel))
+		return;
+
+	/*
+	 * Compute the selectivity and cost of the local_conds, so we don't have
+	 * to do it over again for each path.  (Currently we create just a single
+	 * path here, but in future it would be possible that we build more paths
+	 * such as pre-sorted paths as in postgresGetForeignPaths and
+	 * postgresGetForeignJoinPaths.)  The best we can do for these conditions
+	 * is to estimate selectivity on the basis of local statistics.
+	 */
+	fpinfo->local_conds_sel = clauselist_selectivity(root,
+													 fpinfo->local_conds,
+													 0,
+													 JOIN_INNER,
+													 NULL);
+
+	/* Use small cost to push down aggregate always */
+	rows = width = startup_cost = total_cost = 1;
+
+	/* Now update this information in the fpinfo */
+	fpinfo->rows = rows;
+	fpinfo->width = width;
+	fpinfo->startup_cost = startup_cost;
+	fpinfo->total_cost = total_cost;
+
+	/* Create and add foreign path to the grouping relation. */
+#if (PG_VERSION_NUM >= 120000)
+	grouppath = create_foreign_upper_path(root,
+										  grouped_rel,
+										  grouped_rel->reltarget,
+										  rows,
+										  startup_cost,
+										  total_cost,
+										  NIL,	/* no pathkeys */
+										  NULL,
+										  NIL); /* no fdw_private */
+#else
+	grouppath = create_foreignscan_path(root,
+										grouped_rel,
+										root->upper_targets[UPPERREL_GROUP_AGG],
+										rows,
+										startup_cost,
+										total_cost,
+										NIL,	/* no pathkeys */
+										NULL,	/* no required_outer */
+										NULL,
+										NIL);	/* no fdw_private */
+#endif
+
+	/* Add generated path into grouped_rel by add_path(). */
+	add_path(grouped_rel, (Path *) grouppath);
+
+}
+
+/*
+ * griddb_add_foreign_final_paths
+ *		Add foreign paths for performing the final processing remotely.
+ *
+ * Given input_rel contains the source-data Paths.  The paths are added to the
+ * given final_rel.
+ */
+static void
+griddb_add_foreign_final_paths(PlannerInfo *root, RelOptInfo *input_rel,
+							   RelOptInfo *final_rel
+#if (PG_VERSION_NUM >= 120000)
+							   ,FinalPathExtraData *extra
+#endif
+)
+{
+	Query	   *parse = root->parse;
+	GriddbFdwRelationInfo *ifpinfo = (GriddbFdwRelationInfo *) input_rel->fdw_private;
+	GriddbFdwRelationInfo *fpinfo = (GriddbFdwRelationInfo *) final_rel->fdw_private;
+	bool		has_final_sort = false;
+	List	   *pathkeys = NIL;
+	double		rows;
+	int			width;
+	Cost		startup_cost;
+	Cost		total_cost;
+	List	   *fdw_private;
+	ForeignPath *final_path;
+
+	/*
+	 * Currently, we only support this for SELECT commands
+	 */
+	if (parse->commandType != CMD_SELECT)
+		return;
+
+	/*
+	 * Currently, we do not support FOR UPDATE/SHARE
+	 */
+	if (parse->rowMarks)
+		return;
+
+	/*
+	 * No work if there is no FOR UPDATE/SHARE clause and if there is no need
+	 * to add a LIMIT node
+	 */
+	if (!parse->rowMarks
+#if (PG_VERSION_NUM >= 120000)
+		&& !extra->limit_needed
+#endif
+		)
+		return;
+
+#if (PG_VERSION_NUM >= 100000)
+	/* We don't support cases where there are any SRFs in the targetlist */
+	if (parse->hasTargetSRFs)
+		return;
+#endif
+	/* Save the input_rel as outerrel in fpinfo */
+	fpinfo->outerrel = input_rel;
+
+	/*
+	 * Copy foreign table, foreign server, user mapping, FDW options etc.
+	 * details from the input relation's fpinfo.
+	 */
+	fpinfo->table = ifpinfo->table;
+	fpinfo->server = ifpinfo->server;
+	fpinfo->user = ifpinfo->user;
+
+#if (PG_VERSION_NUM >= 120000)
+
+	/*
+	 * If there is no need to add a LIMIT node, there might be a ForeignPath
+	 * in the input_rel's pathlist that implements all behavior of the query.
+	 * Note: we would already have accounted for the query's FOR UPDATE/SHARE
+	 * (if any) before we get here.
+	 */
+	if (!extra->limit_needed)
+	{
+		ListCell   *lc;
+
+		Assert(parse->rowMarks);
+
+		/*
+		 * Grouping and aggregation are not supported with FOR UPDATE/SHARE,
+		 * so the input_rel should be a base, join, or ordered relation; and
+		 * if it's an ordered relation, its input relation should be a base or
+		 * join relation.
+		 */
+		Assert(input_rel->reloptkind == RELOPT_BASEREL ||
+			   input_rel->reloptkind == RELOPT_JOINREL ||
+			   (input_rel->reloptkind == RELOPT_UPPER_REL &&
+				ifpinfo->stage == UPPERREL_ORDERED &&
+				(ifpinfo->outerrel->reloptkind == RELOPT_BASEREL ||
+				 ifpinfo->outerrel->reloptkind == RELOPT_JOINREL)));
+
+		foreach(lc, input_rel->pathlist)
+		{
+			Path	   *path = (Path *) lfirst(lc);
+
+			/*
+			 * apply_scanjoin_target_to_paths() uses create_projection_path()
+			 * to adjust each of its input paths if needed, whereas
+			 * create_ordered_paths() uses apply_projection_to_path() to do
+			 * that.  So the former might have put a ProjectionPath on top of
+			 * the ForeignPath; look through ProjectionPath and see if the
+			 * path underneath it is ForeignPath.
+			 */
+			if (IsA(path, ForeignPath) ||
+				(IsA(path, ProjectionPath) &&
+				 IsA(((ProjectionPath *) path)->subpath, ForeignPath)))
+			{
+				/*
+				 * Create foreign final path; this gets rid of a
+				 * no-longer-needed outer plan (if any), which makes the
+				 * EXPLAIN output look cleaner
+				 */
+#if (PG_VERSION_NUM >= 120000)
+				final_path = create_foreign_upper_path(root,
+													   path->parent,
+													   path->pathtarget,
+													   path->rows,
+													   path->startup_cost,
+													   path->total_cost,
+													   path->pathkeys,
+													   NULL,	/* no extra plan */
+													   NULL);	/* no fdw_private */
+#else
+				final_path = create_foreignscan_path(root,
+													 input_rel,
+													 root->upper_targets[UPPERREL_FINAL],
+													 rows,
+													 startup_cost,
+													 total_cost,
+													 pathkeys,
+													 NULL,	/* no required_outer */
+													 NULL,	/* no extra plan */
+													 fdw_private);
+#endif
+				/* and add it to the final_rel */
+				add_path(final_rel, (Path *) final_path);
+
+				/* Safe to push down */
+				fpinfo->pushdown_safe = true;
+
+				return;
+			}
+		}
+
+		/*
+		 * If we get here it means no ForeignPaths; since we would already
+		 * have considered pushing down all operations for the query to the
+		 * remote server, give up on it.
+		 */
+		return;
+	}
+
+	Assert(extra->limit_needed);
+#endif
+
+	/*
+	 * If the input_rel is an ordered relation, replace the input_rel with its
+	 * input relation
+	 */
+	if (input_rel->reloptkind == RELOPT_UPPER_REL &&
+		ifpinfo->stage == UPPERREL_ORDERED)
+	{
+		input_rel = ifpinfo->outerrel;
+		ifpinfo = (GriddbFdwRelationInfo *) input_rel->fdw_private;
+		has_final_sort = true;
+		pathkeys = root->sort_pathkeys;
+	}
+
+	/* The input_rel should be a base, join, or grouping relation */
+	Assert(input_rel->reloptkind == RELOPT_BASEREL ||
+		   input_rel->reloptkind == RELOPT_JOINREL ||
+		   (input_rel->reloptkind == RELOPT_UPPER_REL &&
+			ifpinfo->stage == UPPERREL_GROUP_AGG));
+
+	/*
+	 * We try to create a path below by extending a simple foreign path for
+	 * the underlying base, join, or grouping relation to perform the final
+	 * sort (if has_final_sort) and the LIMIT restriction remotely, which is
+	 * stored into the fdw_private list of the resulting path.  (We
+	 * re-estimate the costs of sorting the underlying relation, if
+	 * has_final_sort.)
+	 */
+
+	/*
+	 * Assess if it is safe to push down the LIMIT and OFFSET to the remote
+	 * server
+	 */
+
+	/*
+	 * If the underlying relation has any local conditions, the LIMIT/OFFSET
+	 * cannot be pushed down.
+	 */
+	if (ifpinfo->local_conds)
+		return;
+
+	/*
+	 * When query contains OFFSET but no LIMIT, do not push down because
+	 * GridDB does not support.
+	 */
+	if (!parse->limitCount && parse->limitOffset)
+		return;
+
+	/*
+	 * Also, the LIMIT/OFFSET cannot be pushed down, if their expressions are
+	 * not safe to remote.
+	 */
+	if (!griddb_is_foreign_expr(root, input_rel, (Expr *) parse->limitOffset, false) ||
+		!griddb_is_foreign_expr(root, input_rel, (Expr *) parse->limitCount, false))
+		return;
+
+	/* Safe to push down */
+	fpinfo->pushdown_safe = true;
+
+	/* Use small cost to push down limit always */
+	rows = width = startup_cost = total_cost = 1;
+	/* Now update this information in the fpinfo */
+	fpinfo->rows = rows;
+	fpinfo->width = width;
+	fpinfo->startup_cost = startup_cost;
+	fpinfo->total_cost = total_cost;
+
+	/*
+	 * Build the fdw_private list that will be used by postgresGetForeignPlan.
+	 * Items in the list must match order in enum FdwPathPrivateIndex.
+	 */
+	fdw_private = list_make2(makeInteger(has_final_sort)
+#if (PG_VERSION_NUM >= 120000)
+							 ,makeInteger(extra->limit_needed));
+#else
+							 ,makeInteger(false));
+#endif
+
+	/*
+	 * Create foreign final path; this gets rid of a no-longer-needed outer
+	 * plan (if any), which makes the EXPLAIN output look cleaner
+	 */
+#if (PG_VERSION_NUM >= 120000)
+	final_path = create_foreign_upper_path(root,
+										   input_rel,
+										   root->upper_targets[UPPERREL_FINAL],
+										   rows,
+										   startup_cost,
+										   total_cost,
+										   pathkeys,
+										   NULL,	/* no extra plan */
+										   fdw_private);
+#else
+	final_path = create_foreignscan_path(root,
+										 input_rel,
+										 root->upper_targets[UPPERREL_FINAL],
+										 rows,
+										 startup_cost,
+										 total_cost,
+										 pathkeys,
+										 NULL,	/* no required_outer */
+										 NULL,	/* no extra plan */
+										 fdw_private);
+#endif
+
+	/* and add it to the final_rel */
+	add_path(final_rel, (Path *) final_path);
+}
+
+/*
+ * griddbGetForeignUpperPaths
+ *		Add paths for post-join operations like aggregation, grouping etc. if
+ *		corresponding operations are safe to push down.
+ *		Currently, we only support push down LIMIT...OFFSET
+ */
+static void
+griddbGetForeignUpperPaths(PlannerInfo *root, UpperRelationKind stage,
+						   RelOptInfo *input_rel, RelOptInfo *output_rel
+#if (PG_VERSION_NUM >= 110000)
+						   ,
+						   void *extra
+#endif
+)
+{
+	GriddbFdwRelationInfo *fpinfo;
+
+	/*
+	 * If input rel is not safe to pushdown, then simply return as we cannot
+	 * perform any post-join operations on the foreign server.
+	 */
+	if (!input_rel->fdw_private ||
+		!((GriddbFdwRelationInfo *) input_rel->fdw_private)->pushdown_safe)
+		return;
+
+	/*
+	 * Ignore stages we don't support; and skip any duplicate calls. We only
+	 * support LIMIT...OFFSET and aggregation push down
+	 */
+	if ((stage != UPPERREL_GROUP_AGG &&
+	     stage != UPPERREL_FINAL) ||
+		 output_rel->fdw_private)
+		return;
+
+	fpinfo = (GriddbFdwRelationInfo *) palloc0(sizeof(GriddbFdwRelationInfo));
+	fpinfo->pushdown_safe = false;
+	fpinfo->stage = stage;
+	output_rel->fdw_private = fpinfo;
+
+	switch (stage)
+	{
+		case UPPERREL_GROUP_AGG:
+			griddb_add_foreign_grouping_paths(root, input_rel, output_rel
+#if (PG_VERSION_NUM >= 110000)
+									   , (GroupPathExtraData *) extra
+#endif
+									   );
+			break;
+		case UPPERREL_FINAL:
+			griddb_add_foreign_final_paths(root, input_rel, output_rel
+#if (PG_VERSION_NUM >= 120000)
+										   ,(FinalPathExtraData *) extra
+#endif
+				);
+			break;
+		default:
+			elog(ERROR, "unexpected upper relation: %d", (int) stage);
+			break;
+	}
+}
+
+/*
  * estimate_path_cost_size
  *		Get cost and size estimates for a foreign scan on given foreign relation
  *		either a base relation or a join between foreign relations.
@@ -1873,6 +3095,7 @@ estimate_path_cost_size(PlannerInfo *root,
 						RelOptInfo *foreignrel,
 						List *param_join_conds,
 						List *pathkeys,
+						GriddbFdwPathExtraData * fpextra,
 						double *p_rows, int *p_width,
 						Cost *p_startup_cost, Cost *p_total_cost)
 {
@@ -1947,6 +3170,24 @@ estimate_path_cost_size(PlannerInfo *root,
 			cpu_per_tuple =
 				cpu_tuple_cost + foreignrel->baserestrictcost.per_tuple;
 			run_cost += cpu_per_tuple * foreignrel->tuples;
+
+			/*
+			 * If we estimate the costs of a foreign scan or a foreign join
+			 * with additional post-scan/join-processing steps, the scan or
+			 * join costs obtained from the cache wouldn't yet contain the
+			 * eval costs for the final scan/join target, which would've been
+			 * updated by apply_scanjoin_target_to_paths(); add the eval costs
+			 * now.
+			 */
+			if (fpextra && !IS_UPPER_REL(foreignrel))
+			{
+				/* Shouldn't get here unless we have LIMIT */
+				Assert(fpextra->has_limit);
+				Assert(foreignrel->reloptkind == RELOPT_BASEREL ||
+					   foreignrel->reloptkind == RELOPT_JOINREL);
+				startup_cost += foreignrel->reltarget->cost.startup;
+				run_cost += foreignrel->reltarget->cost.per_tuple * rows;
+			}
 		}
 
 		/*
@@ -2067,6 +3308,68 @@ griddb_free_column_info(GridDBFdwFieldInfo * field_info)
 	if (field_info->column_types)
 		pfree(field_info->column_types);
 	memset(field_info, 0, sizeof(GridDBFdwFieldInfo));
+}
+
+/*
+ * Return Griddb type for aggregate function of GridDB
+ */
+static Oid
+griddb_get_agg_type(GridDBFdwFieldInfo field_info, GridDBAggref *aggref)
+{
+	char *aggname = aggref->aggname->data;
+	size_t i;
+	GSType type = -1;
+
+	/* count returns LONG type */
+	if (strcmp(aggname, "count") == 0)
+	{
+		type = GS_TYPE_LONG;
+	}
+	/* avg, variance, stddev returns DOUBLE */
+	else if ((strcmp(aggname, "avg") == 0) ||
+			(strcmp(aggname, "variance") == 0) ||
+			(strcmp(aggname, "stddev") == 0))
+	{
+		type = GS_TYPE_DOUBLE;
+	}
+	/* max, min, sum depends on the type of the specified column */
+	else if ((strcmp(aggname, "max") == 0) ||
+			(strcmp(aggname, "min") == 0) ||
+			(strcmp(aggname, "sum") == 0))
+	{
+		for (i = 0; i < field_info.column_count; i++)
+		{
+			if (strcmp(aggref->columnname->data, field_info.column_names[i]) == 0)
+			{
+				type = field_info.column_types[i];
+				break;
+			}
+		}
+		/*
+		 * sum returns LONG if the column is integer type, returns DOUBLE if the column is floating-point type
+		 */
+		if (strcmp(aggname, "sum") == 0)
+		{
+			if (type == GS_TYPE_BYTE ||
+				type == GS_TYPE_SHORT ||
+				type == GS_TYPE_INTEGER ||
+				type == GS_TYPE_LONG)
+				return GS_TYPE_LONG;
+			else if (type == GS_TYPE_FLOAT ||
+					type == GS_TYPE_DOUBLE)
+				type = GS_TYPE_DOUBLE;
+		}
+	}
+	else if (strcmp(aggname, "time_avg") == 0)
+	{
+		type = GS_TYPE_DOUBLE;
+	}
+	/* Unsupported aggregate function */
+	else
+	{
+		elog(ERROR, "GridDB does not support aggregate function %s", aggname);
+	}
+	return type;
 }
 
 /*
@@ -2203,6 +3506,26 @@ griddb_convert_gs2pg_timestamp(GSTimestamp ts)
 	return timestamp;
 }
 
+static char*
+griddb_convert_gs2pg_timestamp_to_string(GSTimestamp ts)
+{
+	char		buf[MAXDATELEN + 1];
+	struct pg_tm tm;
+	fsec_t		fsec;			/* Micro seconds */
+	Timestamp	timestamp;
+
+	gsFormatTime(ts, buf, sizeof(buf));
+	sscanf(buf, "%4d-%2d-%2dT%2d:%2d:%2d.%3dZ", &tm.tm_year, &tm.tm_mon,
+		   &tm.tm_mday, &tm.tm_hour, &tm.tm_min, &tm.tm_sec, &fsec);
+	fsec *= 1000;				/* Because of micro second */
+
+	if (tm2timestamp(&tm, fsec, NULL, &timestamp) != 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_DATETIME_VALUE_OUT_OF_RANGE),
+				 errmsg("timestamp out of range")));
+
+	return strdup(buf);
+}
 
 /* Convert to GridDB timestamp format as a string.
  * USE_XSD_DATES format is YYYY-MM-DDThh:mm:ss.SSSSSS.
@@ -2240,7 +3563,8 @@ griddb_convert_pg2gs_timestamp_string(Timestamp dt, char *buf)
 	strcat(buf, "Z");
 }
 
-/* Convert from Timestamp to GSTimestamp.
+/*
+ * Convert from Timestamp to GSTimestamp.
  */
 static GSTimestamp
 griddb_convert_pg2gs_timestamp(Timestamp dt)
@@ -2263,7 +3587,7 @@ griddb_convert_pg2gs_timestamp(Timestamp dt)
  * They are used for data type conversion.
  */
 static void
-griddb_get_datatype_for_convertion(Oid pg_type, regproc *typeinput,
+griddb_get_datatype_for_conversion(Oid pg_type, regproc *typeinput,
 								   int *typemod)
 {
 	HeapTuple	hptuple;
@@ -2279,7 +3603,7 @@ griddb_get_datatype_for_convertion(Oid pg_type, regproc *typeinput,
 
 Datum
 griddb_make_datum_from_row(GSRow * row, int32_t attid, GSType gs_type,
-						   Oid pg_type)
+						   Oid pg_type, GSRowSetType row_type, GSAggregationResult *agg_res, GridDBAggref *aggref)
 {
 	GSResult	ret;
 	regproc		typeinput;
@@ -2290,8 +3614,32 @@ griddb_make_datum_from_row(GSRow * row, int32_t attid, GSType gs_type,
 	size_t		i;
 	ArrayType  *arry;
 	Datum		valueDatum = 0;
+	bool		skip_check_match_type = false;
 
-	if (pg_type != griddb_pgtyp_from_gstyp(gs_type, NULL))
+	if (row_type == GS_ROW_SET_AGGREGATION_RESULT)
+	{
+		char 		*aggname = aggref->aggname->data;
+
+		/*
+		 * avg, stddev, variance of postgres expects NUMERIC type, while GridDB returns DOUBLE type.
+		 * => skip check type.
+		 */
+		if (pg_type == NUMERICOID &&
+			(strcmp(aggname, "avg") == 0 ||
+			strcmp(aggname, "stddev") == 0 ||
+			strcmp(aggname, "variance") == 0))
+			skip_check_match_type = true;
+
+		/* For sum, postgres expects:
+		 *   + NUMERIC type for BIGINT arguments. GridDB returns LONG type => skip check type.
+		 *   + REAL type for REAL arguments. GridDB returns DOUBLE type => skip check type.
+		 *   + Other cases are equal to GridDB type => no need to skip check type.
+		 */
+		if ((pg_type == FLOAT4OID || pg_type == NUMERICOID) && (strcmp(aggname, "sum") == 0))
+			skip_check_match_type = true;
+	}
+
+	if (pg_type != griddb_pgtyp_from_gstyp(gs_type, NULL) && skip_check_match_type == false)
 		elog(ERROR, "Type conversion mismatch");
 
 	switch (gs_type)
@@ -2300,7 +3648,7 @@ griddb_make_datum_from_row(GSRow * row, int32_t attid, GSType gs_type,
 			{
 				const		GSChar *strVal;
 
-				griddb_get_datatype_for_convertion(pg_type, &typeinput, &typemod);
+				griddb_get_datatype_for_conversion(pg_type, &typeinput, &typemod);
 				ret = gsGetRowFieldAsString(row, attid, &strVal);
 				if (!GS_SUCCEEDED(ret))
 					griddb_REPORT_ERROR(ERROR, ret, row);
@@ -2315,7 +3663,7 @@ griddb_make_datum_from_row(GSRow * row, int32_t attid, GSType gs_type,
 			{
 				const		GSChar *strVal;
 
-				griddb_get_datatype_for_convertion(pg_type, &typeinput, &typemod);
+				griddb_get_datatype_for_conversion(pg_type, &typeinput, &typemod);
 				ret = gsGetRowFieldAsGeometry(row, attid, &strVal);
 				if (!GS_SUCCEEDED(ret))
 					griddb_REPORT_ERROR(ERROR, ret, row);
@@ -2344,29 +3692,53 @@ griddb_make_datum_from_row(GSRow * row, int32_t attid, GSType gs_type,
 				ret = gsGetRowFieldAsByte(row, attid, &byteVal);
 				if (!GS_SUCCEEDED(ret))
 					griddb_REPORT_ERROR(ERROR, ret, row);
-				valueDatum = Int16GetDatum((int16_t)byteVal);
+				valueDatum = Int16GetDatum((int16_t) byteVal);
 				break;
 			}
 
 		case GS_TYPE_SHORT:
 			{
-				int16_t		shortVal;
+				if (row_type == GS_ROW_SET_AGGREGATION_RESULT && agg_res)
+				{
+					int64_t		longVal;
 
-				ret = gsGetRowFieldAsShort(row, attid, &shortVal);
-				if (!GS_SUCCEEDED(ret))
-					griddb_REPORT_ERROR(ERROR, ret, row);
-				valueDatum = Int16GetDatum(shortVal);
+					ret = gsGetAggregationValueAsLong(agg_res, &longVal, NULL);
+					if (!GS_SUCCEEDED(ret))
+						griddb_REPORT_ERROR(ERROR, ret, agg_res);
+					valueDatum = Int64GetDatum(longVal);
+				}
+				else
+				{
+					int16_t		shortVal;
+
+					ret = gsGetRowFieldAsShort(row, attid, &shortVal);
+					if (!GS_SUCCEEDED(ret))
+						griddb_REPORT_ERROR(ERROR, ret, row);
+					valueDatum = Int16GetDatum(shortVal);
+				}
 				break;
 			}
 
 		case GS_TYPE_INTEGER:
 			{
-				int32_t		intVal;
+				if (row_type == GS_ROW_SET_AGGREGATION_RESULT && agg_res)
+				{
+					int64_t		longVal;
 
-				ret = gsGetRowFieldAsInteger(row, attid, &intVal);
-				if (!GS_SUCCEEDED(ret))
-					griddb_REPORT_ERROR(ERROR, ret, row);
-				valueDatum = Int32GetDatum(intVal);
+					ret = gsGetAggregationValueAsLong(agg_res, &longVal, NULL);
+					if (!GS_SUCCEEDED(ret))
+						griddb_REPORT_ERROR(ERROR, ret, agg_res);
+					valueDatum = Int64GetDatum(longVal);
+				}
+				else
+				{
+					int32_t		intVal;
+
+					ret = gsGetRowFieldAsInteger(row, attid, &intVal);
+					if (!GS_SUCCEEDED(ret))
+						griddb_REPORT_ERROR(ERROR, ret, row);
+					valueDatum = Int32GetDatum(intVal);
+				}
 				break;
 			}
 
@@ -2374,21 +3746,46 @@ griddb_make_datum_from_row(GSRow * row, int32_t attid, GSType gs_type,
 			{
 				int64_t		longVal;
 
-				ret = gsGetRowFieldAsLong(row, attid, &longVal);
-				if (!GS_SUCCEEDED(ret))
-					griddb_REPORT_ERROR(ERROR, ret, row);
-				valueDatum = Int64GetDatum(longVal);
+				if (row_type == GS_ROW_SET_AGGREGATION_RESULT && agg_res)
+				{
+					ret = gsGetAggregationValueAsLong(agg_res, &longVal, NULL);
+					if (!GS_SUCCEEDED(ret))
+						griddb_REPORT_ERROR(ERROR, ret, agg_res);
+				}
+				else
+				{
+					ret = gsGetRowFieldAsLong(row, attid, &longVal);
+					if (!GS_SUCCEEDED(ret))
+						griddb_REPORT_ERROR(ERROR, ret, row);
+				}
+				if (pg_type == NUMERICOID)
+					valueDatum = DirectFunctionCall1(int8_numeric, Int64GetDatum((int64) longVal));
+				else
+					valueDatum = Int64GetDatum(longVal);
+
 				break;
 			}
 
 		case GS_TYPE_FLOAT:
 			{
-				float		floatVal;
+				if (row_type == GS_ROW_SET_AGGREGATION_RESULT && agg_res)
+				{
+					double		doubleVal;
 
-				ret = gsGetRowFieldAsFloat(row, attid, &floatVal);
-				if (!GS_SUCCEEDED(ret))
-					griddb_REPORT_ERROR(ERROR, ret, row);
-				valueDatum = Float4GetDatum(floatVal);
+					ret = gsGetAggregationValueAsDouble(agg_res, &doubleVal, NULL);
+					if (!GS_SUCCEEDED(ret))
+						griddb_REPORT_ERROR(ERROR, ret, agg_res);
+					valueDatum = DirectFunctionCall1(dtof, Float8GetDatum((float8) doubleVal));
+				}
+				else
+				{
+					float		floatVal;
+
+					ret = gsGetRowFieldAsFloat(row, attid, &floatVal);
+					if (!GS_SUCCEEDED(ret))
+						griddb_REPORT_ERROR(ERROR, ret, row);
+					valueDatum = Float4GetDatum(floatVal);
+				}
 				break;
 			}
 
@@ -2396,10 +3793,25 @@ griddb_make_datum_from_row(GSRow * row, int32_t attid, GSType gs_type,
 			{
 				double		doubleVal;
 
-				ret = gsGetRowFieldAsDouble(row, attid, &doubleVal);
-				if (!GS_SUCCEEDED(ret))
-					griddb_REPORT_ERROR(ERROR, ret, row);
-				valueDatum = Float8GetDatum(doubleVal);
+				if (row_type == GS_ROW_SET_AGGREGATION_RESULT && agg_res)
+				{
+					ret = gsGetAggregationValueAsDouble(agg_res, &doubleVal, NULL);
+					if (!GS_SUCCEEDED(ret))
+						griddb_REPORT_ERROR(ERROR, ret, agg_res);
+				}
+				else
+				{
+					ret = gsGetRowFieldAsDouble(row, attid, &doubleVal);
+					if (!GS_SUCCEEDED(ret))
+						griddb_REPORT_ERROR(ERROR, ret, row);
+				}
+				if (pg_type == NUMERICOID)
+					valueDatum = DirectFunctionCall1(float8_numeric, Float8GetDatum((float8) doubleVal));
+				else if (pg_type == FLOAT4OID)
+					valueDatum = DirectFunctionCall1(dtof, Float8GetDatum((float8) doubleVal));
+				else
+					valueDatum = Float8GetDatum(doubleVal);
+
 				break;
 			}
 
@@ -2408,9 +3820,18 @@ griddb_make_datum_from_row(GSRow * row, int32_t attid, GSType gs_type,
 				GSTimestamp tsVal;
 				Timestamp	timestamp;
 
-				ret = gsGetRowFieldAsTimestamp(row, attid, &tsVal);
-				if (!GS_SUCCEEDED(ret))
-					griddb_REPORT_ERROR(ERROR, ret, row);
+				if (row_type == GS_ROW_SET_AGGREGATION_RESULT && agg_res)
+				{
+					ret = gsGetAggregationValueAsTimestamp(agg_res, &tsVal, NULL);
+					if (!GS_SUCCEEDED(ret))
+						griddb_REPORT_ERROR(ERROR, ret, agg_res);
+				}
+				else
+				{
+					ret = gsGetRowFieldAsTimestamp(row, attid, &tsVal);
+					if (!GS_SUCCEEDED(ret))
+						griddb_REPORT_ERROR(ERROR, ret, row);
+				}
 
 				timestamp = griddb_convert_gs2pg_timestamp(tsVal);
 				valueDatum = TimestampGetDatum(timestamp);
@@ -2435,7 +3856,7 @@ griddb_make_datum_from_row(GSRow * row, int32_t attid, GSType gs_type,
 			{
 				const		GSChar *const *strVal;
 
-				griddb_get_datatype_for_convertion(TEXTOID, &typeinput, &typemod);
+				griddb_get_datatype_for_conversion(TEXTOID, &typeinput, &typemod);
 				ret = gsGetRowFieldAsStringArray(row, attid, &strVal, &size);
 				if (!GS_SUCCEEDED(ret))
 					griddb_REPORT_ERROR(ERROR, ret, row);
@@ -2481,7 +3902,7 @@ griddb_make_datum_from_row(GSRow * row, int32_t attid, GSType gs_type,
 
 				value_datums = (Datum *) palloc0(sizeof(Datum) * size);
 				for (i = 0; i < size; i++)
-					value_datums[i] = Int16GetDatum((int16_t)byteVal[i]);
+					value_datums[i] = Int16GetDatum((int16_t) byteVal[i]);
 				arry = construct_array(value_datums, size, INT2OID,
 									   sizeof(int16_t), true, 's');
 				valueDatum = PointerGetDatum(arry);
@@ -2606,6 +4027,339 @@ griddb_make_datum_from_row(GSRow * row, int32_t attid, GSType gs_type,
 	return valueDatum;
 }
 
+static Datum
+griddb_make_datum_record(StringInfoData *values, TupleDesc tupdesc, GSType *column_types,
+						GSRow * row, regproc typeinput, int typemod)
+{
+	int index;
+	Datum		value_datum;	/* Temporary datum */
+	Datum		valueDatum;
+	size_t		size;
+	size_t		i;
+	regproc		tmp_typeinput;
+	int			tmp_typemod;
+
+	appendStringInfoChar(values, '(');
+	for (index = 0; index < tupdesc->natts; index++)
+	{
+		GSResult	ret;
+		Oid			pg_type = TupleDescAttr(tupdesc, index)->atttypid;
+
+		if (index != 0)
+			appendStringInfo(values, ",");
+
+		switch(column_types[index])
+		{
+			case GS_TYPE_STRING:
+				{
+					const		GSChar *strVal;
+
+					griddb_get_datatype_for_conversion(pg_type, &tmp_typeinput, &tmp_typemod);
+					ret = gsGetRowFieldAsString(row, index, &strVal);
+					if (!GS_SUCCEEDED(ret))
+						griddb_REPORT_ERROR(ERROR, ret, row);
+					appendStringInfo(values, "%s", (char *) quote_identifier(strVal));
+					break;
+				}
+			case GS_TYPE_GEOMETRY:
+				{
+					const		GSChar *strVal;
+
+					griddb_get_datatype_for_conversion(pg_type, &tmp_typeinput, &tmp_typemod);
+					ret = gsGetRowFieldAsGeometry(row, index, &strVal);
+					if (!GS_SUCCEEDED(ret))
+						griddb_REPORT_ERROR(ERROR, ret, row);
+					appendStringInfo(values, "%s", (char *) strVal);
+					break;
+				}
+			case GS_TYPE_BOOL:
+				{
+					GSBool		boolVal;
+
+					ret = gsGetRowFieldAsBool(row, index, &boolVal);
+					if (!GS_SUCCEEDED(ret))
+						griddb_REPORT_ERROR(ERROR, ret, row);
+					appendStringInfo(values, "%c", boolVal?'t':'f');
+					break;
+				}
+			case GS_TYPE_BYTE:
+				{
+					int8_t		byteVal;
+
+					ret = gsGetRowFieldAsByte(row, index, &byteVal);
+					if (!GS_SUCCEEDED(ret))
+						griddb_REPORT_ERROR(ERROR, ret, row);
+					appendStringInfo(values, "%d", byteVal);
+					break;
+				}
+			case GS_TYPE_SHORT:
+				{
+					int16_t		shortVal;
+
+					ret = gsGetRowFieldAsShort(row, index, &shortVal);
+					if (!GS_SUCCEEDED(ret))
+						griddb_REPORT_ERROR(ERROR, ret, row);
+					appendStringInfo(values, "%d", shortVal);
+					break;
+				}
+			case GS_TYPE_INTEGER:
+				{
+					int32_t		intVal;
+
+					ret = gsGetRowFieldAsInteger(row, index, &intVal);
+					if (!GS_SUCCEEDED(ret))
+						griddb_REPORT_ERROR(ERROR, ret, row);
+					appendStringInfo(values, "%d", intVal);
+					break;
+				}
+			case GS_TYPE_LONG:
+				{
+					int64_t		longVal;
+
+					ret = gsGetRowFieldAsLong(row, index, &longVal);
+					if (!GS_SUCCEEDED(ret))
+						griddb_REPORT_ERROR(ERROR, ret, row);
+					appendStringInfo(values, "%ld", longVal);
+					break;
+				}
+			case GS_TYPE_FLOAT:
+				{
+					float		floatVal;
+
+					ret = gsGetRowFieldAsFloat(row, index, &floatVal);
+					if (!GS_SUCCEEDED(ret))
+						griddb_REPORT_ERROR(ERROR, ret, row);
+					appendStringInfo(values, "%g", floatVal);
+					break;
+				}
+			case GS_TYPE_DOUBLE:
+				{
+					double		doubleVal;
+
+					ret = gsGetRowFieldAsDouble(row, index, &doubleVal);
+					if (!GS_SUCCEEDED(ret))
+						griddb_REPORT_ERROR(ERROR, ret, row);
+					appendStringInfo(values, "%g", doubleVal);
+					break;
+				}
+			case GS_TYPE_TIMESTAMP:
+				{
+					GSTimestamp tsVal;
+					char*	buf;
+
+					ret = gsGetRowFieldAsTimestamp(row, index, &tsVal);
+					if (!GS_SUCCEEDED(ret))
+						griddb_REPORT_ERROR(ERROR, ret, row);
+
+					buf = griddb_convert_gs2pg_timestamp_to_string(tsVal);
+					appendStringInfo(values, "%s", buf);
+					break;
+				}
+			case GS_TYPE_BLOB:
+				{
+					GSBlob		blobVal;
+					char*	buf;
+					Datum tmpDatum;
+					ret = gsGetRowFieldAsBlob(row, index, &blobVal);
+					if (!GS_SUCCEEDED(ret))
+						griddb_REPORT_ERROR(ERROR, ret, row);
+
+					tmpDatum = (Datum) palloc0(blobVal.size + VARHDRSZ);
+					memcpy(VARDATA(tmpDatum), blobVal.data, blobVal.size);
+					SET_VARSIZE(tmpDatum, blobVal.size + VARHDRSZ);
+
+					buf = DatumGetCString(DirectFunctionCall1(byteaout, tmpDatum));
+					/* Append \\ to buf because record_in function will remove original \\ and then make wrong input for byteain function */
+					appendStringInfo(values, "\\%s", buf);
+					break;
+				}
+			case GS_TYPE_STRING_ARRAY:
+				{
+					const		GSChar *const *strVal;
+
+					griddb_get_datatype_for_conversion(pg_type, &tmp_typeinput, &tmp_typemod);
+					ret = gsGetRowFieldAsStringArray(row, index, &strVal, &size);
+					if (!GS_SUCCEEDED(ret))
+						griddb_REPORT_ERROR(ERROR, ret, row);
+
+					appendStringInfoChar(values, '{');
+					for (i = 0; i < size; i++)
+					{
+						if (i > 0)
+							appendStringInfo(values, "\\,");
+						appendStringInfo(values, "'%s'", (char *) strVal[i]);
+					}
+					appendStringInfoChar(values, '}');
+					break;
+				}
+			case GS_TYPE_BOOL_ARRAY:
+				{
+					const		GSBool *boolVal;
+
+					ret = gsGetRowFieldAsBoolArray(row, index, &boolVal, &size);
+					if (!GS_SUCCEEDED(ret))
+						griddb_REPORT_ERROR(ERROR, ret, row);
+
+					appendStringInfoChar(values, '{');
+					for (i = 0; i < size; i++)
+					{
+						if (i > 0)
+							appendStringInfo(values, "\\,");
+						appendStringInfo(values, "%c", boolVal[i]?'t':'f');
+					}
+					appendStringInfoChar(values, '}');
+					break;
+				}
+			case GS_TYPE_BYTE_ARRAY:
+				{
+					const		int8_t *byteVal;
+
+					ret = gsGetRowFieldAsByteArray(row, index, &byteVal, &size);
+					if (!GS_SUCCEEDED(ret))
+						griddb_REPORT_ERROR(ERROR, ret, row);
+
+					appendStringInfoChar(values, '{');
+					for (i = 0; i < size; i++)
+					{
+						if (i > 0)
+							appendStringInfo(values, "\\,");
+						appendStringInfo(values, "%d", (int16_t)byteVal[i]);
+					}
+					appendStringInfoChar(values, '}');
+					break;
+				}
+
+			case GS_TYPE_SHORT_ARRAY:
+				{
+					const		int16_t *shortVal;
+
+					ret = gsGetRowFieldAsShortArray(row, index, &shortVal, &size);
+					if (!GS_SUCCEEDED(ret))
+						griddb_REPORT_ERROR(ERROR, ret, row);
+
+					appendStringInfoChar(values, '{');
+					for (i = 0; i < size; i++)
+					{
+						if (i > 0)
+							appendStringInfo(values, "\\,");
+						appendStringInfo(values, "%d", (int16_t)shortVal[i]);
+					}
+					appendStringInfoChar(values, '}');
+					break;
+				}
+
+			case GS_TYPE_INTEGER_ARRAY:
+				{
+					const int32_t *intVal;
+
+					ret = gsGetRowFieldAsIntegerArray(row, index, &intVal, &size);
+					if (!GS_SUCCEEDED(ret))
+						griddb_REPORT_ERROR(ERROR, ret, row);
+
+					appendStringInfoChar(values, '{');
+					for (i = 0; i < size; i++)
+					{
+						if (i > 0)
+							appendStringInfo(values, "\\,");
+						appendStringInfo(values, "%d", (int32_t)intVal[i]);
+					}
+					appendStringInfoChar(values, '}');
+					break;
+				}
+
+			case GS_TYPE_LONG_ARRAY:
+				{
+					const		int64_t *longVal;
+
+					ret = gsGetRowFieldAsLongArray(row, index, &longVal, &size);
+					if (!GS_SUCCEEDED(ret))
+						griddb_REPORT_ERROR(ERROR, ret, row);
+
+					appendStringInfoChar(values, '{');
+					for (i = 0; i < size; i++)
+					{
+						if (i > 0)
+							appendStringInfo(values, "\\,");
+						appendStringInfo(values, "%ld", (int64_t)longVal[i]);
+					}
+					appendStringInfoChar(values, '}');
+					break;
+				}
+
+			case GS_TYPE_FLOAT_ARRAY:
+				{
+					const float *floatVal;
+
+					ret = gsGetRowFieldAsFloatArray(row, index, &floatVal, &size);
+					if (!GS_SUCCEEDED(ret))
+						griddb_REPORT_ERROR(ERROR, ret, row);
+
+					appendStringInfoChar(values, '{');
+					for (i = 0; i < size; i++)
+					{
+						if (i > 0)
+							appendStringInfo(values, "\\,");
+						appendStringInfo(values, "%f", (float4)floatVal[i]);
+					}
+					appendStringInfoChar(values, '}');
+					break;
+				}
+
+			case GS_TYPE_DOUBLE_ARRAY:
+				{
+					const double *doubleVal;
+					size_t		size;
+					size_t		i;
+
+
+					ret = gsGetRowFieldAsDoubleArray(row, index, &doubleVal, &size);
+					if (!GS_SUCCEEDED(ret))
+						griddb_REPORT_ERROR(ERROR, ret, row);
+
+					appendStringInfoChar(values, '{');
+					for (i = 0; i < size; i++)
+					{
+						if (i > 0)
+							appendStringInfo(values, "\\,");
+						appendStringInfo(values, "%f", (float8)doubleVal[i]);
+					}
+					appendStringInfoChar(values, '}');
+					break;
+				}
+
+			case GS_TYPE_TIMESTAMP_ARRAY:
+				{
+					const		GSTimestamp *tsVal;
+					char*	buf;
+
+					ret = gsGetRowFieldAsTimestampArray(row, index, &tsVal, &size);
+					if (!GS_SUCCEEDED(ret))
+						griddb_REPORT_ERROR(ERROR, ret, row);
+
+					appendStringInfoChar(values, '{');
+					for (i = 0; i < size; i++)
+					{
+						if (i > 0)
+							appendStringInfo(values, "\\,");
+						buf = griddb_convert_gs2pg_timestamp_to_string(tsVal[i]);
+						appendStringInfo(values, "%s", buf);
+					}
+					appendStringInfoChar(values, '}');
+					break;
+				}
+			default:
+				/* Should not happen, we have just check this above */
+				elog(ERROR, "unsupported field type %d", column_types[index]);
+		}
+	}
+	appendStringInfoChar(values, ')');
+	value_datum = CStringGetDatum((char *) values->data);
+	valueDatum = OidFunctionCall3(typeinput, value_datum,
+												RECORDOID,
+												Int32GetDatum(typemod));
+	return valueDatum;
+}
+
 /*
  * Execute TQL on foreign server and fetch row set.
  */
@@ -2624,7 +4378,8 @@ griddb_execute_and_fetch(ForeignScanState *node)
 	if (!GS_SUCCEEDED(ret))
 		griddb_REPORT_ERROR(ERROR, ret, fsstate->cont);
 
-	if (griddb_enable_partial_execution) {
+	if (griddb_enable_partial_execution)
+	{
 		ret = gsSetFetchOption(query, GS_FETCH_PARTIAL_EXECUTION, &option, GS_TYPE_BOOL);
 		if (!GS_SUCCEEDED(ret))
 			griddb_REPORT_ERROR(ERROR, ret, fsstate->cont);
@@ -2789,10 +4544,11 @@ griddb_set_row_field(GSRow * row, Datum value, GSType gs_type, int pindex)
 		case GS_TYPE_BYTE:
 			{
 				int16		byteVal = DatumGetInt16(value);
+
 				if (byteVal < INT8_MIN || byteVal > INT8_MAX)
 					elog(ERROR, "Integer %d is out of range of BYTE", byteVal);
 
-				ret = gsSetRowFieldByByte(row, pindex, (int8_t)byteVal);
+				ret = gsSetRowFieldByByte(row, pindex, (int8_t) byteVal);
 				if (!GS_SUCCEEDED(ret))
 					griddb_REPORT_ERROR(ERROR, ret, row);
 				break;
@@ -2956,7 +4712,7 @@ griddb_set_row_field(GSRow * row, Datum value, GSType gs_type, int pindex)
 					if (byteVal < INT8_MIN || byteVal > INT8_MAX)
 						elog(ERROR, "Integer %d is out of range of BYTE", byteVal);
 
-					byteaData[i] = (int8_t)byteVal;
+					byteaData[i] = (int8_t) byteVal;
 				}
 
 				ret = gsSetRowFieldByByteArray(row, pindex, byteaData, num_elems);
@@ -3254,11 +5010,11 @@ griddb_check_rowkey_update(GridDBFdwModifyState * fmstate, TupleTableSlot *new_s
 {
 	GridDBFdwSMRelay *smrelay = fmstate->smrelay;
 	int			(*comparator) (const void *, const void *);
-	ListCell	*lc;
+	ListCell   *lc;
 
-	foreach (lc, fmstate->target_attrs)
+	foreach(lc, fmstate->target_attrs)
 	{
-		int	attnum = lfirst_int(lc);
+		int			attnum = lfirst_int(lc);
 		bool		isnull;
 		Datum		value;
 		GSType		type;

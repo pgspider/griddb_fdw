@@ -11,9 +11,9 @@ PG_CPPFLAGS = -I$(libpq_srcdir) -I$(GRIDDB_INCLUDE)
 SHLIB_LINK = $(libpq) -L$(GRIDDB_LIBRARY) -lgridstore
 
 EXTENSION = griddb_fdw
-DATA = griddb_fdw--1.0.sql
+DATA = griddb_fdw--1.0.sql griddb_fdw--1.1.sql
 
-REGRESS = griddb_fdw griddb_fdw_data_type float4 float8 int4 int8 numeric join limit aggregates prepare select_having select insert update griddb_fdw_post 
+REGRESS = griddb_fdw selectfunc griddb_fdw_data_type float4 float8 int4 int8 numeric join limit aggregates prepare select_having select insert update griddb_fdw_post
 
 ifdef USE_PGXS
 PG_CONFIG = pg_config
@@ -26,3 +26,12 @@ top_builddir = ../..
 include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk
 endif
+
+ifdef REGRESS_PREFIX
+REGRESS_PREFIX_SUB = $(REGRESS_PREFIX)
+else
+REGRESS_PREFIX_SUB = $(VERSION)
+endif
+
+REGRESS := $(addprefix $(REGRESS_PREFIX_SUB)/,$(REGRESS))
+$(shell mkdir -p results/$(REGRESS_PREFIX_SUB))

@@ -62,6 +62,9 @@ static GridDBFdwOption griddb_options[] =
 		OPTION_TABLE, ForeignTableRelationId
 	},
 	{
+		OPTION_COLUMN, AttributeRelationId
+	},
+	{
 		OPTION_ROWKEY, AttributeRelationId
 	},
 	/* updatable is available on both server and table */
@@ -217,7 +220,7 @@ griddb_get_options(Oid foreignoid)
 
 		if (strcmp(def->defname, OPTION_CLUSTER) == 0)
 			opt->svr_clustername = defGetString(def);
-			
+
 		if (strcmp(def->defname, OPTION_DATABASE) == 0)
 			opt->svr_database = defGetString(def);
 

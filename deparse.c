@@ -15,6 +15,7 @@
 #include "access/heapam.h"
 #include "access/htup_details.h"
 #include "access/sysattr.h"
+#include "catalog/pg_aggregate.h"
 #include "catalog/pg_collation.h"
 #include "catalog/pg_namespace.h"
 #include "catalog/pg_operator.h"
@@ -25,6 +26,7 @@
 #include "nodes/plannodes.h"
 #include "optimizer/clauses.h"
 #include "optimizer/prep.h"
+#include "optimizer/tlist.h"
 #include "parser/parsetree.h"
 #include "utils/builtins.h"
 #include "utils/datetime.h"
@@ -32,6 +34,7 @@
 #include "utils/rel.h"
 #include "utils/relcache.h"
 #include "utils/syscache.h"
+#include "utils/typcache.h"
 #include "time.h"
 
 /*
@@ -41,6 +44,11 @@ typedef struct foreign_glob_cxt
 {
 	PlannerInfo *root;			/* global planner state */
 	RelOptInfo *foreignrel;		/* the foreign relation we are planning for */
+	Relids		relids;			/* relids of base relations in the underlying
+								 * scan */
+	bool		for_tlist;		/* whether evaluation for the expression of
+								 * tlist */
+	bool		is_inner_func;	/* exist or not in inner exprs */
 } foreign_glob_cxt;
 
 /*
@@ -58,24 +66,41 @@ typedef struct foreign_loc_cxt
 {
 	Oid			collation;		/* OID of current collation, if any */
 	FDWCollateState state;		/* state of current collation choice */
+	bool		can_skip_cast;	/* outer function can skip int2/int4/int8/float4/float8 cast */
+	bool		can_pushdown_stable;	/* true if query contains time series functions */
 } foreign_loc_cxt;
 
 /*
- * Context for deparseExpr
+ * Context for griddb_deparse_expr
  */
 typedef struct deparse_expr_cxt
 {
 	PlannerInfo *root;			/* global planner state */
 	RelOptInfo *foreignrel;		/* the foreign relation we are planning for */
+	RelOptInfo *scanrel;		/* the underlying scan relation. Same as
+								 * foreignrel, when that represents a join or
+								 * a base relation. */
+
 	StringInfo	buf;			/* output buffer to append to */
 	List	  **params_list;	/* exprs that will become remote Params */
+	bool		require_regex;	/* require regex for LIKE operator */
+	bool		is_tlist;		/* deparse during target list exprs */
+	bool		can_skip_cast;	/* outer function can skip int2/int4/int8/float4/float8 cast */
+	GridDBAggref *aggref;
 } deparse_expr_cxt;
 
+/*
+ * Struct to pull out function
+ */
+typedef struct pull_func_clause_context
+{
+	List	   *funclist;
+} pull_func_clause_context;
 
 /*
  * Functions to construct string representation of a node tree.
  */
-static void deparseExpr(Expr *expr, deparse_expr_cxt *context);
+static void griddb_deparse_expr(Expr *expr, deparse_expr_cxt *context);
 static void griddb_deparse_var(Var *node, deparse_expr_cxt *context);
 static void griddb_deparse_const(Const *node, deparse_expr_cxt *context);
 
@@ -84,24 +109,70 @@ static void griddb_deparse_op_expr(OpExpr *node, deparse_expr_cxt *context);
 static void griddb_deparse_operator_name(StringInfo buf, Form_pg_operator opform);
 static void griddb_deparse_distinct_expr(DistinctExpr *node, deparse_expr_cxt *context);
 static void griddb_deparse_scalar_array_op_expr(ScalarArrayOpExpr *node,
-									deparse_expr_cxt *context);
+												deparse_expr_cxt *context);
 static void griddb_deparse_relabel_type(RelabelType *node, deparse_expr_cxt *context);
 static void griddb_deparse_bool_expr(BoolExpr *node, deparse_expr_cxt *context);
 static void griddb_deparse_null_test(NullTest *node, deparse_expr_cxt *context);
-
-
-
+static void griddb_append_limit_clause(deparse_expr_cxt *context);
+static void griddb_deparse_row_expr(RowExpr *node, deparse_expr_cxt *context);
+static void griddb_deparse_field_select_expr(FieldSelect *node, deparse_expr_cxt *context);
 
 static void griddb_deparse_relation(StringInfo buf, Relation rel);
 static void griddb_deparse_target_list(StringInfo buf, PlannerInfo *root, Index rtindex, Relation rel,
-						   Bitmapset *attrs_used, List **retrieved_attrs);
+									   Bitmapset *attrs_used, List **retrieved_attrs);
 static void griddb_deparse_column_ref(StringInfo buf, int varno, int varattno,
-						  PlannerInfo *root);
-
+						  deparse_expr_cxt *context);
+static void griddb_deparse_aggref(Aggref *node, deparse_expr_cxt *context);
 static void griddb_append_order_by_clause(List *pathkeys, deparse_expr_cxt *context);
 static void griddb_append_where_clause(List *exprs, deparse_expr_cxt *context);
-static bool is_griddb_func(FuncExpr *fe);
+static bool griddb_contain_immutable_stable_functions_walker(Node *node, void *context);
+static void griddb_append_agg_order_by(List *orderList, List *targetList,
+							 deparse_expr_cxt *context);
+static Node *griddb_deparse_sort_group_clause(Index ref, List *tlist, bool force_colno,
+									deparse_expr_cxt *context);
+static void griddb_append_function_name(Oid funcid, deparse_expr_cxt *context);
 
+/*
+ * Deparse given targetlist and append it to context->buf.
+ *
+ * tlist is list of TargetEntry's which in turn contain Var nodes.
+ *
+ * retrieved_attrs is the list of continuously increasing integers starting
+ * from 1. It has same number of entries as tlist.
+ *
+ * This is used for both SELECT and RETURNING targetlists; the is_returning
+ * parameter is true only for a RETURNING targetlist.
+ */
+static void
+griddb_deparse_explicit_targetList(List *tlist,
+						  bool is_returning,
+						  List **retrieved_attrs,
+						  deparse_expr_cxt *context)
+{
+	ListCell   *lc;
+	StringInfo	buf = context->buf;
+	int			i = 0;
+
+	*retrieved_attrs = NIL;
+
+	foreach(lc, tlist)
+	{
+		TargetEntry *tle = lfirst_node(TargetEntry, lc);
+
+		if (i > 0)
+			appendStringInfoString(buf, ", ");
+		else if (is_returning)
+			appendStringInfoString(buf, " RETURNING ");
+
+		griddb_deparse_expr((Expr *) tle->expr, context);
+
+		*retrieved_attrs = lappend_int(*retrieved_attrs, i + 1);
+		i++;
+	}
+
+	if (i == 0 && !is_returning)
+		appendStringInfoString(buf, "NULL");
+}
 
 /*
  * Append remote name of specified foreign table to buf.
@@ -164,19 +235,29 @@ griddb_deparse_select(StringInfo buf,
 					  List *remote_conds,
 					  List *pathkeys,
 					  List **retrieved_attrs,
-					  List **params_list)
+					  List **params_list,
+					  List *tlist,
+					  bool has_limit)
 {
-	RangeTblEntry *rte = planner_rt_fetch(baserel->relid, root);
+	RangeTblEntry *rte;
 	Relation	rel;
 	GriddbFdwRelationInfo *fpinfo = (GriddbFdwRelationInfo *) baserel->fdw_private;
 	deparse_expr_cxt context;
+	GridDBAggref *aggref;
+	List	   *quals;
 
 	/* Fill portions of context common to join and base relation */
 	context.buf = buf;
 	context.root = root;
 	context.foreignrel = baserel;
 	context.params_list = params_list;
+	context.scanrel = IS_UPPER_REL(baserel) ? fpinfo->outerrel : baserel;
+	aggref = palloc0(sizeof(GridDBAggref));
+	aggref->columnname = makeStringInfo();
+	aggref->aggname = makeStringInfo();
+	context.aggref = aggref;
 
+	rte = planner_rt_fetch(context.scanrel->relid, root);
 	/*
 	 * Core code already has some lock on each rel being planned, so we can
 	 * use NoLock here.
@@ -184,8 +265,16 @@ griddb_deparse_select(StringInfo buf,
 	rel = table_open(rte->relid, NoLock);
 
 	appendStringInfoString(buf, "SELECT ");
-	griddb_deparse_target_list(buf, root, baserel->relid, rel,
-							   fpinfo->attrs_used, retrieved_attrs);
+	if (IS_UPPER_REL(baserel) || fpinfo->is_tlist_func_pushdown == true)
+	{
+		griddb_deparse_explicit_targetList(tlist, false, retrieved_attrs, &context);
+		fpinfo->aggref = context.aggref;
+	}
+	else
+	{
+		griddb_deparse_target_list(buf, root, baserel->relid, rel,
+								fpinfo->attrs_used, retrieved_attrs);
+	}
 
 	/*
 	 * Construct FROM clause
@@ -194,14 +283,33 @@ griddb_deparse_select(StringInfo buf,
 	griddb_deparse_relation(buf, rel);
 
 	/*
+	 * For upper relations, the WHERE clause is built from the remote
+	 * conditions of the underlying scan relation; otherwise, we can use the
+	 * supplied list of remote conditions directly.
+	 */
+	if (IS_UPPER_REL(baserel))
+	{
+		GriddbFdwRelationInfo *ofpinfo;
+
+		ofpinfo = (GriddbFdwRelationInfo *) fpinfo->outerrel->fdw_private;
+		quals = ofpinfo->remote_conds;
+	}
+	else
+		quals = remote_conds;
+
+	/*
 	 * Construct WHERE clause
 	 */
-	if (remote_conds)
-		griddb_append_where_clause(remote_conds, &context);
+	if (quals)
+		griddb_append_where_clause(quals, &context);
 
 	/* Add ORDER BY clause if we found any useful pathkeys */
 	if (pathkeys)
 		griddb_append_order_by_clause(pathkeys, &context);
+
+	/* Add LIMIT clause if necessary */
+	if (has_limit)
+		griddb_append_limit_clause(&context);
 
 	table_close(rel, NoLock);
 }
@@ -270,7 +378,7 @@ griddb_append_where_clause(List *exprs, deparse_expr_cxt *context)
 			appendStringInfoString(buf, " AND ");
 
 		appendStringInfoChar(buf, '(');
-		deparseExpr(ri->clause, context);
+		griddb_deparse_expr(ri->clause, context);
 		appendStringInfoChar(buf, ')');
 
 		is_first = false;
@@ -282,12 +390,13 @@ griddb_append_where_clause(List *exprs, deparse_expr_cxt *context)
  * If it has a column_name FDW option, use that instead of attribute name.
  */
 static void
-griddb_deparse_column_ref(StringInfo buf, int varno, int varattno, PlannerInfo *root)
+griddb_deparse_column_ref(StringInfo buf, int varno, int varattno, deparse_expr_cxt *context)
 {
 	RangeTblEntry *rte;
 	char	   *colname = NULL;
 	List	   *options;
 	ListCell   *lc;
+	PlannerInfo *root = context->root;
 
 	/* varno must not be any of OUTER_VAR, INNER_VAR and INDEX_VAR. */
 	Assert(!IS_SPECIAL_VARNO(varno));
@@ -316,13 +425,18 @@ griddb_deparse_column_ref(StringInfo buf, int varno, int varattno, PlannerInfo *
 	 * option, use attribute name.
 	 */
 	if (colname == NULL)
-		colname = get_attname(rte->relid, varattno 
+		colname = get_attname(rte->relid, varattno
 #if (PG_VERSION_NUM >= 110000)
-							  ,false 
+							  ,false
 #endif
 			);
 
 	appendStringInfoString(buf, quote_identifier(colname));
+	if (context->aggref)
+	{
+		if (strcmp(context->aggref->columnname->data, "") == 0)
+			appendStringInfoString(context->aggref->columnname, colname);
+	}
 }
 
 
@@ -357,8 +471,10 @@ griddb_deparse_string_literal(StringInfo buf, const char *val)
  * should be self-parenthesized.
  */
 static void
-deparseExpr(Expr *node, deparse_expr_cxt *context)
+griddb_deparse_expr(Expr *node, deparse_expr_cxt *context)
 {
+	bool		outer_can_skip_cast = context->can_skip_cast;
+
 	if (node == NULL)
 		return;
 
@@ -385,6 +501,7 @@ deparseExpr(Expr *node, deparse_expr_cxt *context)
 			Assert(false);
 			break;
 		case T_FuncExpr:
+			context->can_skip_cast = outer_can_skip_cast;
 			griddb_deparse_func_expr((FuncExpr *) node, context);
 			break;
 		case T_OpExpr:
@@ -410,6 +527,15 @@ deparseExpr(Expr *node, deparse_expr_cxt *context)
 			elog(ERROR, "ARRAY[...] is not supported");
 			Assert(false);
 			break;
+		case T_RowExpr:
+			griddb_deparse_row_expr((RowExpr *) node, context);
+			break;
+		case T_FieldSelect:
+			griddb_deparse_field_select_expr((FieldSelect *) node, context);
+			break;
+		case T_Aggref:
+			griddb_deparse_aggref((Aggref *) node, context);
+			break;
 		default:
 			elog(ERROR, "unsupported expression type for deparse: %d",
 				 (int) nodeTag(node));
@@ -429,12 +555,12 @@ static void
 griddb_deparse_var(Var *node, deparse_expr_cxt *context)
 {
 	StringInfo	buf = context->buf;
+	Relids		relids = context->scanrel->relids;
 
-	if (node->varno == context->foreignrel->relid &&
-		node->varlevelsup == 0)
+	if (bms_is_member(node->varno, relids) && node->varlevelsup == 0)
 	{
 		/* Var belongs to foreign table */
-		griddb_deparse_column_ref(buf, node->varno, node->varattno, context->root);
+		griddb_deparse_column_ref(buf, node->varno, node->varattno, context);
 	}
 	else
 	{
@@ -511,14 +637,16 @@ griddb_deparse_const(Const *node, deparse_expr_cxt *context)
 			elog(ERROR, "INTERVALOID is unsupported");
 			Assert(false);
 			break;
-		case TIMESTAMPOID: {
-			char timestamp[MAXDATELEN + 1];
-			griddb_convert_pg2gs_timestamp_string(node->constvalue, timestamp);
-			appendStringInfoString(buf, "TIMESTAMP(");
-			griddb_deparse_string_literal(buf, timestamp);
-			appendStringInfoString(buf, ")");
-			break;
-		}
+		case TIMESTAMPOID:
+			{
+				char		timestamp[MAXDATELEN + 1];
+
+				griddb_convert_pg2gs_timestamp_string(node->constvalue, timestamp);
+				appendStringInfoString(buf, "TIMESTAMP(");
+				griddb_deparse_string_literal(buf, timestamp);
+				appendStringInfoString(buf, ")");
+				break;
+			}
 		default:
 			extval = OidOutputFunctionCall(typoutput, node->constvalue);
 			griddb_deparse_string_literal(buf, extval);
@@ -536,10 +664,18 @@ griddb_replace_function(char *in)
 {
 	if (strcmp(in, "ceil") == 0)
 		return "ceiling";
+	else if (strcmp(in, "griddb_timestamp") == 0)
+		/* Change name to function TIMESTAMP of GridDB */
+		return "timestamp";
+	else if (strcmp(in, "substr") == 0)
+		/* Change name to function SUBSTR of GridDB */
+		return "substring";
 
 	/* Explicit datatype conversion is unnecessary */
-	if (strcmp(in, "int4") == 0 ||
+	if (strcmp(in, "int2") == 0 ||
+		strcmp(in, "int4") == 0 ||
 		strcmp(in, "int8") == 0 ||
+		strcmp(in, "float4") == 0 ||
 		strcmp(in, "float8") == 0)
 		return "";
 
@@ -571,11 +707,34 @@ griddb_deparse_func_expr(FuncExpr *node, deparse_expr_cxt *context)
 	/* Check if need to print VARIADIC (cf. ruleutils.c) */
 	use_variadic = node->funcvariadic;
 
+	/* remove cast function if parent function is can handle without cast */
+	if (context->can_skip_cast == true &&
+		(strcmp(NameStr(procform->proname), "float8") == 0 ||
+		 strcmp(NameStr(procform->proname), "float4") == 0 ||
+		 strcmp(NameStr(procform->proname), "int2") == 0 ||
+		 strcmp(NameStr(procform->proname), "int4") == 0 ||
+		 strcmp(NameStr(procform->proname), "int8") == 0))
+	{
+		ReleaseSysCache(proctup);
+		arg = list_head(node->args);
+		context->can_skip_cast = false;
+		griddb_deparse_expr((Expr *) lfirst(arg), context);
+		return;
+	}
+
 	/* Translate PostgreSQL function into GridDB function */
 	proname = griddb_replace_function(NameStr(procform->proname));
 
 	/* Deparse the function name ... */
-	appendStringInfo(buf, "%s(", proname);
+	if (strcmp(proname, "time_next") == 0 ||
+		strcmp(proname, "time_next_only") == 0 ||
+		strcmp(proname, "time_prev") == 0 ||
+		strcmp(proname, "time_prev_only") == 0 ||
+		(strcmp(proname, "time_sampling") == 0 && list_length(node->args) == 4))
+		/* Append * as input parameter */
+		appendStringInfo(buf, "%s(*, ", proname);
+	else
+		appendStringInfo(buf, "%s(", proname);
 
 	/* ... and all the arguments */
 	first = true;
@@ -583,13 +742,15 @@ griddb_deparse_func_expr(FuncExpr *node, deparse_expr_cxt *context)
 	{
 		if (!first)
 			appendStringInfoString(buf, ", ");
+
 #if (PG_VERSION_NUM >= 130000)
 		if (use_variadic && lnext(node->args, arg) == NULL)
 #else
 		if (use_variadic && lnext(arg) == NULL)
 #endif
 			elog(ERROR, "VARIADIC is not supported");
-		deparseExpr((Expr *) lfirst(arg), context);
+
+		griddb_deparse_expr((Expr *) lfirst(arg), context);
 		first = false;
 	}
 	appendStringInfoChar(buf, ')');
@@ -628,7 +789,7 @@ griddb_deparse_op_expr(OpExpr *node, deparse_expr_cxt *context)
 	if (oprkind == 'r' || oprkind == 'b')
 	{
 		arg = list_head(node->args);
-		deparseExpr((Expr *) lfirst(arg), context);
+		griddb_deparse_expr((Expr *) lfirst(arg), context);
 		appendStringInfoChar(buf, ' ');
 	}
 
@@ -640,7 +801,7 @@ griddb_deparse_op_expr(OpExpr *node, deparse_expr_cxt *context)
 	{
 		arg = list_tail(node->args);
 		appendStringInfoChar(buf, ' ');
-		deparseExpr((Expr *) lfirst(arg), context);
+		griddb_deparse_expr((Expr *) lfirst(arg), context);
 	}
 
 	appendStringInfoChar(buf, ')');
@@ -702,9 +863,9 @@ griddb_deparse_distinct_expr(DistinctExpr *node, deparse_expr_cxt *context)
 	Assert(list_length(node->args) == 2);
 
 	appendStringInfoChar(buf, '(');
-	deparseExpr((Expr *) linitial(node->args), context);
+	griddb_deparse_expr((Expr *) linitial(node->args), context);
 	appendStringInfoString(buf, " <> ");
-	deparseExpr((Expr *) lsecond(node->args), context);
+	griddb_deparse_expr((Expr *) lsecond(node->args), context);
 	appendStringInfoChar(buf, ')');
 }
 
@@ -798,7 +959,7 @@ griddb_deparse_scalar_array_op_expr(ScalarArrayOpExpr *node, deparse_expr_cxt *c
 				deparseLeft = false;
 				continue;
 			}
-			deparseExpr(arg1, context);
+			griddb_deparse_expr(arg1, context);
 			if (notIn)
 				appendStringInfo(buf, " <> ");
 			else
@@ -849,13 +1010,16 @@ griddb_deparse_scalar_array_op_expr(ScalarArrayOpExpr *node, deparse_expr_cxt *c
 			continue;
 		}
 
-		/* When compare with timestamp column, need to convert and cast to TIMESTAMP */
+		/*
+		 * When compare with timestamp column, need to convert and cast to
+		 * TIMESTAMP
+		 */
 		if (c->consttype == TIMESTAMPARRAYOID || c->consttype == TIMESTAMPTZARRAYOID)
 		{
 			char		timestamp[MAXDATELEN + 1];
 			char		chtime[MAXDATELEN + 1] = {0};
 			struct tm	tm;
-			int 		j = 0;
+			int			j = 0;
 
 			for (;; valptr++)
 			{
@@ -879,8 +1043,8 @@ griddb_deparse_scalar_array_op_expr(ScalarArrayOpExpr *node, deparse_expr_cxt *c
 		}
 
 		/*
-		 * GridDB not support compare bool column with true, false.
-		 * Only support column or NOT column
+		 * GridDB not support compare bool column with true, false. Only
+		 * support column or NOT column
 		 */
 		if (c->consttype == BOOLARRAYOID)
 		{
@@ -888,7 +1052,7 @@ griddb_deparse_scalar_array_op_expr(ScalarArrayOpExpr *node, deparse_expr_cxt *c
 			if (ch == 'f')
 				appendStringInfoString(buf, "NOT ");
 
-			deparseExpr(arg1, context);
+			griddb_deparse_expr(arg1, context);
 			appendStringInfoChar(buf, ')');
 			continue;
 		}
@@ -906,7 +1070,7 @@ griddb_deparse_scalar_array_op_expr(ScalarArrayOpExpr *node, deparse_expr_cxt *c
 static void
 griddb_deparse_relabel_type(RelabelType *node, deparse_expr_cxt *context)
 {
-	deparseExpr(node->arg, context);
+	griddb_deparse_expr(node->arg, context);
 }
 
 /*
@@ -933,7 +1097,7 @@ griddb_deparse_bool_expr(BoolExpr *node, deparse_expr_cxt *context)
 			break;
 		case NOT_EXPR:
 			appendStringInfoString(buf, "(NOT ");
-			deparseExpr((Expr *) linitial(node->args), context);
+			griddb_deparse_expr((Expr *) linitial(node->args), context);
 			appendStringInfoChar(buf, ')');
 			return;
 	}
@@ -944,7 +1108,7 @@ griddb_deparse_bool_expr(BoolExpr *node, deparse_expr_cxt *context)
 	{
 		if (!first)
 			appendStringInfo(buf, " %s ", op);
-		deparseExpr((Expr *) lfirst(lc), context);
+		griddb_deparse_expr((Expr *) lfirst(lc), context);
 		first = false;
 	}
 	appendStringInfoChar(buf, ')');
@@ -959,7 +1123,7 @@ griddb_deparse_null_test(NullTest *node, deparse_expr_cxt *context)
 	StringInfo	buf = context->buf;
 
 	appendStringInfoChar(buf, '(');
-	deparseExpr(node->arg, context);
+	griddb_deparse_expr(node->arg, context);
 
 	if (node->nulltesttype == IS_NULL)
 		appendStringInfoString(buf, " IS NULL)");
@@ -967,6 +1131,56 @@ griddb_deparse_null_test(NullTest *node, deparse_expr_cxt *context)
 		appendStringInfoString(buf, " IS NOT NULL)");
 }
 
+
+/*
+ * Deparse a RowExpr node.
+ *
+ * For time-series function of GridDB, need to deparse Row type expression to build query to send to GridDB
+ */
+static void
+griddb_deparse_row_expr(RowExpr *node, deparse_expr_cxt *context)
+{
+	StringInfo	buf = context->buf;
+	bool		first = true;
+	ListCell   *lc;
+
+	appendStringInfoChar(buf, '(');
+	foreach(lc, node->colnames)
+	{
+		if (!first)
+			appendStringInfoString(buf, ", ");
+		appendStringInfo(buf, "%s", strVal(lfirst(lc)));
+		first = false;
+	}
+	appendStringInfoChar(buf, ')');
+}
+
+/*
+ * Deparse a FieldSelect node
+ *
+ * To be able to access to a value of a record type data, need to deparse syntax ((xxx(arguments)::text)::table_name).* to push down function only
+ */
+static void
+griddb_deparse_field_select_expr(FieldSelect *node, deparse_expr_cxt *context)
+{
+	StringInfo	buf = context->buf;
+
+	appendStringInfoChar(buf, '(');
+	if (IsA(node->arg, CoerceViaIO))
+	{
+		/* Handle casting to table name type (Example: ::time_series_tbl)*/
+		CoerceViaIO *cast_table = (CoerceViaIO*) node->arg;
+		if (IsA(cast_table->arg, CoerceViaIO))
+		{
+			/* Handle casting to text type (Example: ::time_series_tbl)*/
+			CoerceViaIO *cast_text = (CoerceViaIO*) cast_table->arg;
+			if (IsA(cast_text->arg, FuncExpr))
+				griddb_deparse_func_expr((FuncExpr*) cast_text->arg, context);
+		}
+	}
+
+	appendStringInfoChar(buf, ')');
+}
 
 /*
  * Return true if given object is one of PostgreSQL's built-in objects.
@@ -1066,6 +1280,7 @@ foreign_expr_walker(Node *node,
 	foreign_loc_cxt inner_cxt;
 	Oid			collation;
 	FDWCollateState state;
+	HeapTuple	tuple;
 
 	/* Need do nothing for empty subexpressions */
 	if (node == NULL)
@@ -1074,6 +1289,8 @@ foreign_expr_walker(Node *node,
 	/* Set up inner_cxt for possible recursion to child nodes */
 	inner_cxt.collation = InvalidOid;
 	inner_cxt.state = FDW_COLLATE_NONE;
+	inner_cxt.can_skip_cast = false;
+	inner_cxt.can_pushdown_stable = false;
 
 	switch (nodeTag(node))
 	{
@@ -1088,10 +1305,22 @@ foreign_expr_walker(Node *node,
 				 * Param's collation, ie it's not safe for it to have a
 				 * non-default collation.
 				 */
-				if (var->varno == glob_cxt->foreignrel->relid &&
+				if (bms_is_member(var->varno, glob_cxt->relids) &&
 					var->varlevelsup == 0 && var->varattno > 0)
 				{
 					/* Var belongs to foreign table */
+
+					/*
+					 * System columns other than ctid should not be sent to
+					 * the remote, since we don't make any effort to ensure
+					 * that local and remote values match (tableoid, in
+					 * particular, almost certainly doesn't match).
+					 */
+					if (var->varattno < 0 &&
+						var->varattno != SelfItemPointerAttributeNumber)
+						return false;
+
+					/* Else check the collation */
 					collation = var->varcollid;
 					state = OidIsValid(collation) ? FDW_COLLATE_SAFE : FDW_COLLATE_NONE;
 				}
@@ -1105,11 +1334,31 @@ foreign_expr_walker(Node *node,
 		case T_Const:
 			{
 				Const	   *c = (Const *) node;
+				HeapTuple	tuple;
 
 				if (c->consttype == INTERVALOID ||
 					c->consttype == BITOID ||
 					c->consttype == VARBITOID)
 					return false;
+
+				/*
+				 * Get type name based on the const value.
+				 * If the type name is "griddb_time_unit", allow it to push down to remote.
+				 */
+				tuple = SearchSysCache1(TYPEOID, ObjectIdGetDatum(c->consttype));
+				if (HeapTupleIsValid(tuple))
+				{
+					Form_pg_type type;
+					char*	type_name;
+
+					type = (Form_pg_type) GETSTRUCT(tuple);
+					type_name = (char*) type->typname.data;
+
+					if (strcmp(type_name, "griddb_time_unit") == 0)
+						check_type = false;
+
+					ReleaseSysCache(tuple);
+				}
 
 				/*
 				 * If the constant has nondefault collation, either it's of a
@@ -1144,14 +1393,94 @@ foreign_expr_walker(Node *node,
 		case T_FuncExpr:
 			{
 				FuncExpr   *fe = (FuncExpr *) node;
+				HeapTuple	proctup;
+				const char *proname;
+				bool		is_cast_func = false;
+
+				/* get function name and schema */
+				proctup = SearchSysCache1(PROCOID, ObjectIdGetDatum(fe->funcid));
+				if (!HeapTupleIsValid(proctup))
+				{
+					elog(ERROR, "cache lookup failed for function %u", fe->funcid);
+				}
+				proname = pstrdup(((Form_pg_proc) GETSTRUCT(proctup))->proname.data);
+				ReleaseSysCache(proctup);
+
+				if (strcmp(proname, "int2") == 0 ||
+					strcmp(proname, "int4") == 0 ||
+					strcmp(proname, "int8") == 0 ||
+					strcmp(proname, "float4") == 0 ||
+					strcmp(proname, "float8") == 0)
+				{
+					is_cast_func = true;
+				}
+
+				/* push down to GridDB */
+				if (!(strcmp(proname, "char_length") == 0 ||
+					strcmp(proname, "concat") == 0 ||
+					strcmp(proname, "lower") == 0 ||
+					strcmp(proname, "upper") == 0 ||
+					strcmp(proname, "substr") == 0 ||
+					strcmp(proname, "round") == 0 ||
+					strcmp(proname, "ceiling") == 0 ||
+					strcmp(proname, "ceil") == 0 ||
+					strcmp(proname, "floor") == 0 ||
+					strcmp(proname, "now") == 0 ||
+					strcmp(proname, "to_timestamp_ms") == 0 ||
+					strcmp(proname, "to_epoch_ms") == 0 ||
+					strcmp(proname, "array_length") == 0 ||
+					strcmp(proname, "element") == 0 ||
+					strcmp(proname, "griddb_timestamp") == 0 ||
+					strcmp(proname, "timestampadd") == 0 ||
+					strcmp(proname, "timestampdiff") == 0 ||
+					strcmp(proname, "time_next") == 0 ||
+					strcmp(proname, "time_next_only") == 0 ||
+					strcmp(proname, "time_prev") == 0 ||
+					strcmp(proname, "time_prev_only") == 0 ||
+					strcmp(proname, "time_interpolated") == 0 ||
+					strcmp(proname, "time_sampling") == 0 ||
+					strcmp(proname, "max_rows") == 0 ||
+					strcmp(proname, "min_rows") == 0) &&
+					is_cast_func != true)
+				{
+					return false;
+				}
 
 				/*
-				 * If function used by the expression is not built-in, it
-				 * can't be sent to remote because it might have incompatible
-				 * semantics on remote side.
+				 * The following functions are common function of GridDB and Postgresql.
+				 * However, GridDB only support them in WHERE clause, so do not push down when they are in SELECT clause
 				 */
-				if (!is_builtin(fe->funcid))
+				if ((strcmp(proname, "char_length") == 0 ||
+					strcmp(proname, "concat") == 0 ||
+					strcmp(proname, "lower") == 0 ||
+					strcmp(proname, "upper") == 0 ||
+					strcmp(proname, "substr") == 0 ||
+					strcmp(proname, "round") == 0 ||
+					strcmp(proname, "ceiling") == 0 ||
+					strcmp(proname, "ceil") == 0 ||
+					strcmp(proname, "floor") == 0) && glob_cxt->for_tlist == true)
+				{
 					return false;
+				}
+
+				/* Allow push down concat function even though volatility is stable */
+				if (strcmp(proname, "concat") == 0)
+					outer_cxt->can_pushdown_stable = true;
+
+				/* inner function can skip cast if any */
+				if (strcmp(proname, "to_timestamp_ms") == 0)
+					inner_cxt.can_skip_cast = true;
+
+				/* Accept type cast functions if outer is specific functions */
+				if (is_cast_func)
+				{
+					if (outer_cxt->can_skip_cast == false)
+						return false;
+				}
+				else
+				{
+					glob_cxt->is_inner_func = true;
+				}
 
 				/*
 				 * Recurse to input subexpressions.
@@ -1160,36 +1489,51 @@ foreign_expr_walker(Node *node,
 										 glob_cxt, &inner_cxt))
 					return false;
 
-				/*
-				 * If function's input collation is not derived from a foreign
-				 * Var, it can't be sent to remote.
-				 */
-				if (fe->inputcollid == InvalidOid)
-					 /* OK, inputs are all noncollatable */ ;
-				else if (inner_cxt.state != FDW_COLLATE_SAFE ||
-						 fe->inputcollid != inner_cxt.collation)
-					return false;
+				if (!is_cast_func)
+					glob_cxt->is_inner_func = false;
 
-				/*
-				 * Check if GridDB can use the function.
-				 */
-				if (!is_griddb_func(fe))
-					return false;
-
-				/*
-				 * Detect whether node is introducing a collation not derived
-				 * from a foreign Var.  (If so, we just mark it unsafe for now
-				 * rather than immediately returning false, since the parent
-				 * node might not care.)
-				 */
-				collation = fe->funccollid;
-				if (collation == InvalidOid)
+				/* Skip collation check for time series function */
+				if (strcmp(proname, "time_next") == 0 ||
+					strcmp(proname, "time_next_only") == 0 ||
+					strcmp(proname, "time_prev") == 0 ||
+					strcmp(proname, "time_prev_only") == 0 ||
+					strcmp(proname, "time_interpolated") == 0 ||
+					strcmp(proname, "max_rows") == 0 ||
+					strcmp(proname, "min_rows") == 0 ||
+					strcmp(proname, "time_sampling") == 0)
+				{
+					collation = InvalidOid;
 					state = FDW_COLLATE_NONE;
-				else if (inner_cxt.state == FDW_COLLATE_SAFE &&
-						 collation == inner_cxt.collation)
-					state = FDW_COLLATE_SAFE;
+					check_type = false;
+					outer_cxt->can_pushdown_stable = true;
+				}
 				else
-					state = FDW_COLLATE_UNSAFE;
+				{
+					/*
+					 * If function's input collation is not derived from a foreign
+					 * Var, it can't be sent to remote.
+					 */
+					if (fe->inputcollid == InvalidOid)
+						/* OK, inputs are all noncollatable */ ;
+					else if (inner_cxt.state != FDW_COLLATE_SAFE ||
+							fe->inputcollid != inner_cxt.collation)
+						return false;
+
+					/*
+					 * Detect whether node is introducing a collation not derived
+					 * from a foreign Var.  (If so, we just mark it unsafe for now
+					 * rather than immediately returning false, since the parent
+					 * node might not care.)
+					 */
+					collation = fe->funccollid;
+					if (collation == InvalidOid)
+						state = FDW_COLLATE_NONE;
+					else if (inner_cxt.state == FDW_COLLATE_SAFE &&
+							collation == inner_cxt.collation)
+						state = FDW_COLLATE_SAFE;
+					else
+						state = FDW_COLLATE_UNSAFE;
+				}
 			}
 			break;
 		case T_OpExpr:
@@ -1205,6 +1549,8 @@ foreign_expr_walker(Node *node,
 				if (!is_builtin(oe->opno))
 					return false;
 
+				if (glob_cxt->for_tlist)
+					return false;
 				/*
 				 * Recurse to input subexpressions.
 				 */
@@ -1212,29 +1558,44 @@ foreign_expr_walker(Node *node,
 										 glob_cxt, &inner_cxt))
 					return false;
 
-				/*
-				 * If operator's input collation is not derived from a foreign
-				 * Var, it can't be sent to remote.
-				 */
-				if (oe->inputcollid == InvalidOid)
-					 /* OK, inputs are all noncollatable */ ;
-				else if (inner_cxt.state != FDW_COLLATE_SAFE ||
-						 oe->inputcollid != inner_cxt.collation)
-					return false;
+				if (inner_cxt.can_pushdown_stable == false)
+				{
+					/*
+					* If operator's input collation is not derived from a foreign
+					* Var, it can't be sent to remote.
+					*/
+					if (oe->inputcollid == InvalidOid)
+						/* OK, inputs are all noncollatable */ ;
+					else if (inner_cxt.state != FDW_COLLATE_SAFE ||
+							oe->inputcollid != inner_cxt.collation)
+						return false;
+				}
+				else
+				{
+					outer_cxt->can_pushdown_stable = true;
+				}
 
 				/* Check inequality is safe to execute remotely. */
 				if (!foreign_inequality_walker(oe))
 					return false;
 
-				/* Result-collation handling is same as for functions */
-				collation = oe->opcollid;
-				if (collation == InvalidOid)
+				if (inner_cxt.can_pushdown_stable == true)
+				{
 					state = FDW_COLLATE_NONE;
-				else if (inner_cxt.state == FDW_COLLATE_SAFE &&
-						 collation == inner_cxt.collation)
-					state = FDW_COLLATE_SAFE;
+					collation = oe->opcollid;
+				}
 				else
-					state = FDW_COLLATE_UNSAFE;
+				{
+					/* Result-collation handling is same as for functions */
+					collation = oe->opcollid;
+					if (collation == InvalidOid)
+						state = FDW_COLLATE_NONE;
+					else if (inner_cxt.state == FDW_COLLATE_SAFE &&
+							collation == inner_cxt.collation)
+						state = FDW_COLLATE_SAFE;
+					else
+						state = FDW_COLLATE_UNSAFE;
+				}
 			}
 			break;
 		case T_ScalarArrayOpExpr:
@@ -1334,14 +1695,18 @@ foreign_expr_walker(Node *node,
 			break;
 		case T_ArrayExpr:
 			{
-				/* Array expr is unsupported */
-				return false;
+					/* Array expr is unsupported */
+					return false;
 			}
 			break;
 		case T_List:
 			{
 				List	   *l = (List *) node;
 				ListCell   *lc;
+
+				/* inherit can_skip_cast flag */
+				inner_cxt.can_skip_cast = outer_cxt->can_skip_cast;
+				inner_cxt.can_pushdown_stable = outer_cxt->can_pushdown_stable;
 
 				/*
 				 * Recurse to component subexpressions.
@@ -1353,6 +1718,9 @@ foreign_expr_walker(Node *node,
 						return false;
 				}
 
+				if (inner_cxt.can_pushdown_stable == true)
+					outer_cxt->can_pushdown_stable = true;
+
 				/*
 				 * When processing a list, collation state just bubbles up
 				 * from the list elements.
@@ -1362,6 +1730,141 @@ foreign_expr_walker(Node *node,
 
 				/* Don't apply exprType() to the list. */
 				check_type = false;
+			}
+			break;
+		case T_RowExpr:		/* Allow pushdown RowExpr to support time-series functions */
+		case T_FieldSelect:	/* Allow pushdown FieldSelect to support accessing value of record of time-series functions */
+			{
+				collation = InvalidOid;
+				state = FDW_COLLATE_NONE;
+				check_type = false;
+			}
+			break;
+		case T_Aggref:
+			{
+				Aggref	   *agg = (Aggref *) node;
+				ListCell   *lc;
+				char	   *opername = NULL;
+				bool		is_math_func = false;
+				bool		is_selector_func = false;
+				bool		is_count_func = false;
+
+				/* get function name */
+				tuple = SearchSysCache1(PROCOID, ObjectIdGetDatum(agg->aggfnoid));
+				if (!HeapTupleIsValid(tuple))
+				{
+					elog(ERROR, "cache lookup failed for function %u", agg->aggfnoid);
+				}
+				opername = pstrdup(((Form_pg_proc) GETSTRUCT(tuple))->proname.data);
+				ReleaseSysCache(tuple);
+
+				/* these function can be passed to Griddb */
+				if (strcmp(opername, "sum") == 0 ||
+					strcmp(opername, "avg") == 0 ||
+					strcmp(opername, "stddev") == 0 ||
+					strcmp(opername, "variance") == 0 ||
+					strcmp(opername, "time_avg") == 0)
+					is_math_func = true;
+
+				if (strcmp(opername, "max") == 0 ||
+					strcmp(opername, "min") == 0)
+					is_selector_func = true;
+
+				if (strcmp(opername, "count") == 0)
+					is_count_func = true;
+
+				if (!(is_math_func || is_selector_func || is_count_func))
+					return false;
+
+				/* Not safe to pushdown when not in grouping context */
+				if (glob_cxt->foreignrel->reloptkind != RELOPT_UPPER_REL)
+					return false;
+
+				/* Only non-split aggregates are pushable. */
+				if (agg->aggsplit != AGGSPLIT_SIMPLE)
+					return false;
+
+				/*
+				 * Recurse to input args. aggdirectargs, aggorder and
+				 * aggdistinct are all present in args, so no need to check
+				 * their shippability explicitly.
+				 */
+				foreach(lc, agg->args)
+				{
+					Node	   *n = (Node *) lfirst(lc);
+					/* If TargetEntry, extract the expression from it */
+					if (IsA(n, TargetEntry))
+					{
+						TargetEntry *tle = (TargetEntry *) n;
+						Var			*tmp_var;
+						n = (Node *) tle->expr;
+						tmp_var = (Var *) n;
+						switch (tmp_var->vartype)
+						{
+							case INT2OID:
+							case INT4OID:
+							case INT8OID:
+							case OIDOID:
+							case FLOAT4OID:
+							case FLOAT8OID:
+							case NUMERICOID:
+							{
+								if (!(is_math_func || is_selector_func))
+								{
+									return false;
+								}
+								break;
+							}
+							case TIMESTAMPOID:
+							case TIMESTAMPTZOID:
+							{
+								if (!is_selector_func)
+								{
+									return false;
+								}
+								break;
+							}
+							default: return false;
+						}
+					}
+					else if (!(agg->aggstar == true && is_count_func))
+						return false;
+
+					if (!foreign_expr_walker(n, glob_cxt, &inner_cxt))
+						return false;
+				}
+
+				if (agg->aggorder || agg->aggfilter)
+				{
+					return false;
+				}
+
+				/*
+				 * If aggregate's input collation is not derived from a
+				 * foreign Var, it can't be sent to remote.
+				 */
+				if (agg->inputcollid == InvalidOid)
+					 /* OK, inputs are all noncollatable */ ;
+				else if (inner_cxt.state != FDW_COLLATE_SAFE ||
+						 agg->inputcollid != inner_cxt.collation)
+					return false;
+
+				/*
+				 * Detect whether node is introducing a collation not derived
+				 * from a foreign Var.  (If so, we just mark it unsafe for now
+				 * rather than immediately returning false, since the parent
+				 * node might not care.)
+				 */
+				collation = agg->aggcollid;
+				if (collation == InvalidOid)
+					state = FDW_COLLATE_NONE;
+				else if (inner_cxt.state == FDW_COLLATE_SAFE &&
+						 collation == inner_cxt.collation)
+					state = FDW_COLLATE_SAFE;
+				else if (collation == DEFAULT_COLLATION_OID)
+					state = FDW_COLLATE_NONE;
+				else
+					state = FDW_COLLATE_UNSAFE;
 			}
 			break;
 		default:
@@ -1430,15 +1933,53 @@ foreign_expr_walker(Node *node,
 }
 
 /*
+ * pull_func_clause_walker
+ *
+ * Recursively search for functions within a clause.
+ */
+static bool
+pull_func_clause_walker(Node *node, pull_func_clause_context *context)
+{
+	if (node == NULL)
+		return false;
+	if (IsA(node, FuncExpr))
+	{
+		context->funclist = lappend(context->funclist, node);
+		return false;
+	}
+
+	return expression_tree_walker(node, pull_func_clause_walker,
+								  (void *) context);
+}
+
+/*
+ * pull_func_clause
+ *
+ * Pull out function from a clause and then add to target list
+ */
+List *
+griddb_pull_func_clause(Node *node)
+{
+	pull_func_clause_context context;
+	context.funclist = NIL;
+
+	pull_func_clause_walker(node, &context);
+
+	return context.funclist;
+}
+
+/*
  * Returns true if given expr is safe to evaluate on the foreign server.
  */
 bool
 griddb_is_foreign_expr(PlannerInfo *root,
-				RelOptInfo *baserel,
-				Expr *expr)
+					   RelOptInfo *baserel,
+					   Expr *expr,
+					   bool for_tlist)
 {
 	foreign_glob_cxt glob_cxt;
 	foreign_loc_cxt loc_cxt;
+	GriddbFdwRelationInfo *fpinfo = (GriddbFdwRelationInfo *) (baserel->fdw_private);
 
 	/*
 	 * Check that the expression consists of nodes that are safe to execute
@@ -1446,8 +1987,23 @@ griddb_is_foreign_expr(PlannerInfo *root,
 	 */
 	glob_cxt.root = root;
 	glob_cxt.foreignrel = baserel;
+	/*
+	 * For an upper relation, use relids from its underneath scan relation,
+	 * because the upperrel's own relids currently aren't set to anything
+	 * meaningful by the core code.  For other relation, use their own relids.
+	 */
+	if (IS_UPPER_REL(baserel))
+		glob_cxt.relids = fpinfo->outerrel->relids;
+	else
+		glob_cxt.relids = baserel->relids;
+
 	loc_cxt.collation = InvalidOid;
 	loc_cxt.state = FDW_COLLATE_NONE;
+	loc_cxt.can_skip_cast = false;
+	loc_cxt.can_pushdown_stable = false;
+	glob_cxt.for_tlist = for_tlist;
+	glob_cxt.is_inner_func = false;
+
 	if (!foreign_expr_walker((Node *) expr, &glob_cxt, &loc_cxt))
 		return false;
 
@@ -1465,13 +2021,47 @@ griddb_is_foreign_expr(PlannerInfo *root,
 	 * be able to make this choice with more granularity.  (We check this last
 	 * because it requires a lot of expensive catalog lookups.)
 	 */
-	if (contain_mutable_functions((Node *) expr))
-		return false;
+	if (loc_cxt.can_pushdown_stable == true)
+	{
+		if (contain_volatile_functions((Node *) expr))
+			return false;
+	}
+	else
+	{
+		if (contain_mutable_functions((Node *) expr))
+			return false;
+	}
 
 	/* OK to evaluate on the remote server */
 	return true;
 }
 
+/*
+ * Deparse LIMIT/OFFSET clause.
+ */
+static void
+griddb_append_limit_clause(deparse_expr_cxt *context)
+{
+	PlannerInfo *root = context->root;
+	StringInfo	buf = context->buf;
+	int			nestlevel;
+
+	/* Make sure any constants in the exprs are printed portably */
+	nestlevel = griddb_set_transmission_modes();
+
+	if (root->parse->limitCount)
+	{
+		appendStringInfoString(buf, " LIMIT ");
+		griddb_deparse_expr((Expr *) root->parse->limitCount, context);
+	}
+	if (root->parse->limitOffset)
+	{
+		appendStringInfoString(buf, " OFFSET ");
+		griddb_deparse_expr((Expr *) root->parse->limitOffset, context);
+	}
+
+	griddb_reset_transmission_modes(nestlevel);
+}
 
 /*
  * Deparse ORDER BY clause according to the given pathkeys for given base
@@ -1496,7 +2086,7 @@ griddb_append_order_by_clause(List *pathkeys, deparse_expr_cxt *context)
 		Assert(em_expr != NULL);
 
 		appendStringInfoString(buf, delim);
-		deparseExpr(em_expr, context);
+		griddb_deparse_expr(em_expr, context);
 		if (pathkey->pk_strategy == BTLessStrategyNumber)
 			appendStringInfoString(buf, " ASC");
 		else
@@ -1596,45 +2186,478 @@ griddb_classify_conditions(PlannerInfo *root,
 	{
 		RestrictInfo *ri = (RestrictInfo *) lfirst(lc);
 
-		if (griddb_is_foreign_expr(root, baserel, ri->clause))
+		if (griddb_is_foreign_expr(root, baserel, ri->clause, false))
 			*remote_conds = lappend(*remote_conds, ri);
 		else
 			*local_conds = lappend(*local_conds, ri);
 	}
 }
 
-bool
-is_griddb_func(FuncExpr *fe)
+/*****************************************************************************
+ *		Check clauses for immutable functions
+ *****************************************************************************/
+
+/*
+ * contain_immutable_functions
+ *	  Recursively search for immutable functions within a clause.
+ *
+ * Returns true if any immutable function (or operator implemented by a
+ * immutable function) is found.
+ *
+ * We will recursively look into TargetEntry exprs.
+ */
+static bool
+griddb_contain_immutable_stable_functions(Node *clause)
 {
+	return griddb_contain_immutable_stable_functions_walker(clause, NULL);
+}
+
+static bool
+griddb_contain_immutable_stable_functions_walker(Node *node, void *context)
+{
+	if (node == NULL)
+		return false;
+	/* Check for stable functions in node itself */
+	if (nodeTag(node) == T_FuncExpr)
+	{
+		FuncExpr *expr = (FuncExpr *) node;
+		if (func_volatile(expr->funcid) == PROVOLATILE_IMMUTABLE ||
+			func_volatile(expr->funcid) == PROVOLATILE_STABLE)
+			return true;
+	}
+
+	/*
+	 * It should be safe to treat MinMaxExpr as immutable, because it will
+	 * depend on a non-cross-type btree comparison function, and those should
+	 * always be immutable.  Treating XmlExpr as immutable is more dubious,
+	 * and treating CoerceToDomain as immutable is outright dangerous.  But we
+	 * have done so historically, and changing this would probably cause more
+	 * problems than it would fix.  In practice, if you have a non-immutable
+	 * domain constraint you are in for pain anyhow.
+	 */
+
+	/* Recurse to check arguments */
+	if (IsA(node, Query))
+	{
+		/* Recurse into subselects */
+		return query_tree_walker((Query *) node,
+								 griddb_contain_immutable_stable_functions_walker,
+								 context, 0);
+	}
+	return expression_tree_walker(node, griddb_contain_immutable_stable_functions_walker,
+								  context);
+}
+
+/*
+ * Returns true if given tlist is safe to evaluate on the foreign server.
+ */
+bool griddb_is_foreign_function_tlist(PlannerInfo *root,
+									  RelOptInfo *baserel,
+									  List *tlist)
+{
+	foreign_glob_cxt glob_cxt;
+	foreign_loc_cxt  loc_cxt;
+	ListCell        *lc;
+	bool             is_contain_function;
+
+	if (!(baserel->reloptkind == RELOPT_BASEREL ||
+		  baserel->reloptkind == RELOPT_OTHER_MEMBER_REL))
+		return false;
+
+	/*
+	 * Check that the expression consists of any immutable function.
+	 */
+	is_contain_function = false;
+	foreach(lc, tlist)
+	{
+		TargetEntry *tle = lfirst_node(TargetEntry, lc);
+
+		if (griddb_contain_immutable_stable_functions((Node *) tle->expr))
+		{
+			is_contain_function = true;
+			break;
+		}
+	}
+
+	if (!is_contain_function)
+		return false;
+
+	/*
+	 * Check that the expression consists of nodes that are safe to execute
+	 * remotely.
+	 */
+	foreach(lc, tlist)
+	{
+		TargetEntry *tle = lfirst_node(TargetEntry, lc);
+
+		glob_cxt.root = root;
+		glob_cxt.foreignrel = baserel;
+		glob_cxt.relids = baserel->relids;
+		glob_cxt.for_tlist = true;
+		loc_cxt.collation = InvalidOid;
+		loc_cxt.state = FDW_COLLATE_NONE;
+		loc_cxt.can_skip_cast = false;
+		loc_cxt.can_pushdown_stable = false;
+		if (!foreign_expr_walker((Node *) tle->expr, &glob_cxt, &loc_cxt))
+			return false;
+
+		/*
+		 * If the expression has a valid collation that does not arise from a
+		 * foreign var, the expression can not be sent over.
+		 */
+		if (loc_cxt.state == FDW_COLLATE_UNSAFE)
+			return false;
+
+		/*
+		 * An expression which includes any mutable functions can't be sent over
+		 * because its result is not stable.  For example, sending now() remote
+		 * side could cause confusion from clock offsets.  Future versions might
+		 * be able to make this choice with more granularity.  (We check this last
+		 * because it requires a lot of expensive catalog lookups.)
+		 * Do not check mutable function if expression is FieldSelect
+		 */
+		if (!IsA(tle->expr, FieldSelect))
+		{
+			if (loc_cxt.can_pushdown_stable == true)
+			{
+				if (contain_volatile_functions((Node *) tle->expr))
+					return false;
+			}
+			else
+			{
+				if (contain_mutable_functions((Node *) tle->expr))
+					return false;
+			}
+		}
+	}
+
+	/* OK for the target list with functions to evaluate on the remote server */
+	return true;
+}
+
+/*
+ * Build the targetlist for given relation to be deparsed as SELECT clause.
+ *
+ * The output targetlist contains the columns that need to be fetched from the
+ * foreign server for the given relation.  If foreignrel is an upper relation,
+ * then the output targetlist can also contain expressions to be evaluated on
+ * foreign server.
+ */
+List *
+griddb_build_tlist_to_deparse(RelOptInfo *foreignrel)
+{
+	List	   *tlist = NIL;
+	GriddbFdwRelationInfo *fpinfo = (GriddbFdwRelationInfo *) foreignrel->fdw_private;
+	ListCell   *lc;
+
+	/*
+	 * For an upper relation, we have already built the target list while
+	 * checking shippability, so just return that.
+	 */
+	if (IS_UPPER_REL(foreignrel))
+		return fpinfo->grouped_tlist;
+
+	/*
+	 * We require columns specified in foreignrel->reltarget->exprs and those
+	 * required for evaluating the local conditions.
+	 */
+	tlist = add_to_flat_tlist(tlist,
+							  pull_var_clause((Node *) foreignrel->reltarget->exprs,
+											  PVC_RECURSE_PLACEHOLDERS));
+	foreach(lc, fpinfo->local_conds)
+	{
+		RestrictInfo *rinfo = lfirst_node(RestrictInfo, lc);
+
+		tlist = add_to_flat_tlist(tlist,
+								  pull_var_clause((Node *) rinfo->clause,
+												  PVC_RECURSE_PLACEHOLDERS));
+	}
+
+	return tlist;
+}
+
+/*
+ * Deparse an Aggref node.
+ */
+static void
+griddb_deparse_aggref(Aggref *node, deparse_expr_cxt *context)
+{
+	StringInfo	buf = context->buf;
+	bool		use_variadic;
+	GridDBAggref *aggref = context->aggref;
+
+	elog(DEBUG1, "griddb_fdw: %s", __func__);
+
+	initStringInfo(aggref->aggname);
+	initStringInfo(aggref->columnname);
+
+	/* Only basic, non-split aggregation accepted. */
+	Assert(node->aggsplit == AGGSPLIT_SIMPLE);
+
+	/* Check if need to print VARIADIC (cf. ruleutils.c) */
+	use_variadic = node->aggvariadic;
+
+	/* Find aggregate name from aggfnoid which is a pg_proc entry */
+	griddb_append_function_name(node->aggfnoid, context);
+	appendStringInfoChar(buf, '(');
+
+	/* Add DISTINCT */
+	appendStringInfoString(buf, (node->aggdistinct != NIL) ? "DISTINCT " : "");
+
+	if (AGGKIND_IS_ORDERED_SET(node->aggkind))
+	{
+		/* Add WITHIN GROUP (ORDER BY ..) */
+		ListCell   *arg;
+		bool		first = true;
+
+		Assert(!node->aggvariadic);
+		Assert(node->aggorder != NIL);
+
+		foreach(arg, node->aggdirectargs)
+		{
+			if (!first)
+				appendStringInfoString(buf, ", ");
+			first = false;
+
+			griddb_deparse_expr((Expr *) lfirst(arg), context);
+		}
+
+		appendStringInfoString(buf, ") WITHIN GROUP (ORDER BY ");
+		griddb_append_agg_order_by(node->aggorder, node->args, context);
+	}
+	else
+	{
+		/* aggstar can be set only in zero-argument aggregates */
+		if (node->aggstar)
+		{
+			appendStringInfoChar(buf, '*');
+		}
+		else
+		{
+			ListCell   *arg;
+			bool		first = true;
+
+			/* Add all the arguments */
+			foreach(arg, node->args)
+			{
+				TargetEntry *tle = (TargetEntry *) lfirst(arg);
+				Node	   *n = (Node *) tle->expr;
+
+				if (tle->resjunk)
+					continue;
+
+				if (!first)
+					appendStringInfoString(buf, ", ");
+				first = false;
+
+				/* Add VARIADIC */
+#if PG_VERSION_NUM < 130000
+				if (use_variadic && lnext(arg) == NULL)
+#else
+				if (use_variadic && lnext(node->args, arg) == NULL)
+#endif
+					appendStringInfoString(buf, "VARIADIC ");
+
+				griddb_deparse_expr((Expr *) n, context);
+			}
+		}
+
+		/* Add ORDER BY */
+		if (node->aggorder != NIL)
+		{
+			appendStringInfoString(buf, " ORDER BY ");
+			griddb_append_agg_order_by(node->aggorder, node->args, context);
+		}
+	}
+
+	/* Add FILTER (WHERE ..) */
+	if (node->aggfilter != NULL)
+	{
+		appendStringInfoString(buf, ") FILTER (WHERE ");
+		griddb_deparse_expr((Expr *) node->aggfilter, context);
+	}
+
+	appendStringInfoChar(buf, ')');
+}
+
+/*
+ * Append ORDER BY within aggregate function.
+ */
+static void
+griddb_append_agg_order_by(List *orderList, List *targetList, deparse_expr_cxt *context)
+{
+	StringInfo	buf = context->buf;
+	ListCell   *lc;
+	bool		first = true;
+
+	elog(DEBUG1, "griddb_fdw: %s", __func__);
+
+	foreach(lc, orderList)
+	{
+		SortGroupClause *srt = (SortGroupClause *) lfirst(lc);
+		Node	   *sortexpr;
+		Oid			sortcoltype;
+		TypeCacheEntry *typentry;
+
+		if (!first)
+			appendStringInfoString(buf, ", ");
+		first = false;
+
+		sortexpr = griddb_deparse_sort_group_clause(srt->tleSortGroupRef, targetList,
+										  false, context);
+		sortcoltype = exprType(sortexpr);
+		/* See whether operator is default < or > for datatype */
+		typentry = lookup_type_cache(sortcoltype,
+									 TYPECACHE_LT_OPR | TYPECACHE_GT_OPR);
+		if (srt->sortop == typentry->lt_opr)
+			appendStringInfoString(buf, " ASC");
+		else if (srt->sortop == typentry->gt_opr)
+			appendStringInfoString(buf, " DESC");
+		else
+		{
+			HeapTuple	opertup;
+			Form_pg_operator operform;
+
+			appendStringInfoString(buf, " USING ");
+
+			/* Append operator name. */
+			opertup = SearchSysCache1(OPEROID, ObjectIdGetDatum(srt->sortop));
+			if (!HeapTupleIsValid(opertup))
+				elog(ERROR, "cache lookup failed for operator %u", srt->sortop);
+			operform = (Form_pg_operator) GETSTRUCT(opertup);
+			griddb_deparse_operator_name(buf, operform);
+			ReleaseSysCache(opertup);
+		}
+
+		if (srt->nulls_first)
+			appendStringInfoString(buf, " NULLS FIRST");
+		else
+			appendStringInfoString(buf, " NULLS LAST");
+	}
+}
+
+/*
+ * Appends a sort or group clause.
+ *
+ * Like get_rule_sortgroupclause(), returns the expression tree, so caller
+ * need not find it again.
+ */
+static Node *
+griddb_deparse_sort_group_clause(Index ref, List *tlist, bool force_colno,
+					   deparse_expr_cxt *context)
+{
+	StringInfo	buf = context->buf;
+	TargetEntry *tle;
+	Expr	   *expr;
+
+	elog(DEBUG1, "griddb_fdw: %s", __func__);
+
+	tle = get_sortgroupref_tle(ref, tlist);
+	expr = tle->expr;
+
+	if (force_colno)
+	{
+		/* Use column-number form when requested by caller. */
+		Assert(!tle->resjunk);
+		appendStringInfo(buf, "%d", tle->resno);
+	}
+	else if (expr && IsA(expr, Const))
+	{
+		/*
+		 * Force a typecast here so that we don't emit something like "GROUP
+		 * BY 2", which will be misconstrued as a column position rather than
+		 * a constant.
+		 */
+		griddb_deparse_const((Const *) expr, context);
+	}
+	else if (!expr || IsA(expr, Var))
+		griddb_deparse_expr(expr, context);
+	else
+	{
+		/* Always parenthesize the expression. */
+		appendStringInfoChar(buf, '(');
+		griddb_deparse_expr(expr, context);
+		appendStringInfoChar(buf, ')');
+	}
+
+	return (Node *) expr;
+}
+
+/*
+ * griddb_append_function_name
+ *		Deparses function name from given function oid.
+ */
+static void
+griddb_append_function_name(Oid funcid, deparse_expr_cxt *context)
+{
+	StringInfo	buf = context->buf;
 	HeapTuple	proctup;
 	Form_pg_proc procform;
 	const char *proname;
-	bool		ret = false;
 
-	proctup = SearchSysCache1(PROCOID, ObjectIdGetDatum(fe->funcid));
+	elog(DEBUG1, "griddb_fdw: %s", __func__);
+
+	proctup = SearchSysCache1(PROCOID, ObjectIdGetDatum(funcid));
 	if (!HeapTupleIsValid(proctup))
-		elog(ERROR, "cache lookup failed for function %u", fe->funcid);
+		elog(ERROR, "cache lookup failed for function %u", funcid);
 	procform = (Form_pg_proc) GETSTRUCT(proctup);
 
-	/* Get PostgreSQL function name */
+	/* Always print the function name */
 	proname = NameStr(procform->proname);
-
-	if (strcmp(proname, "char_length") == 0 ||
-		strcmp(proname, "concat") == 0 ||
-		strcmp(proname, "lower") == 0 ||
-		strcmp(proname, "upper") == 0 ||
-		strcmp(proname, "substring") == 0 ||
-		strcmp(proname, "round") == 0 ||
-		strcmp(proname, "ceiling") == 0 ||
-		strcmp(proname, "ceil") == 0 ||
-		strcmp(proname, "floor") == 0 ||
-		strcmp(proname, "int4") == 0 ||
-		strcmp(proname, "int8") == 0 ||
-		strcmp(proname, "float8") == 0 ||
-		strcmp(proname, "now") == 0
-		)
-		ret = true;
+	appendStringInfoString(buf, quote_identifier(proname));
+	if (context->aggref)
+		appendStringInfoString(context->aggref->aggname, quote_identifier(proname));
 
 	ReleaseSysCache(proctup);
-	return ret;
+}
+
+/*
+ * Returns true if given expr is something we'd have to send the value of
+ * to the foreign server.
+ *
+ * This should return true when the expression is a shippable node that
+ * griddb_deparse_expr would add to context->params_list.  Note that we don't care
+ * if the expression *contains* such a node, only whether one appears at top
+ * level.  We need this to detect cases where setrefs.c would recognize a
+ * false match between an fdw_exprs item (which came from the params_list)
+ * and an entry in fdw_scan_tlist (which we're considering putting the given
+ * expression into).
+ */
+bool
+griddb_is_foreign_param(PlannerInfo *root,
+				 RelOptInfo *baserel,
+				 Expr *expr)
+{
+	elog(DEBUG1, "griddb_fdw: %s", __func__);
+
+	if (expr == NULL)
+		return false;
+
+	switch (nodeTag(expr))
+	{
+		case T_Var:
+			{
+				/* It would have to be sent unless it's a foreign Var */
+				Var		   *var = (Var *) expr;
+				GriddbFdwRelationInfo *fpinfo = (GriddbFdwRelationInfo *) (baserel->fdw_private);
+				Relids		relids;
+
+				if (IS_UPPER_REL(baserel))
+					relids = fpinfo->outerrel->relids;
+				else
+					relids = baserel->relids;
+
+				if (bms_is_member(var->varno, relids) && var->varlevelsup == 0)
+					return false;	/* foreign Var, so not a param */
+				else
+					return true;	/* it'd have to be a param */
+				break;
+			}
+		case T_Param:
+			/* Params always have to be sent to the foreign server */
+			return true;
+		default:
+			break;
+	}
+	return false;
 }
