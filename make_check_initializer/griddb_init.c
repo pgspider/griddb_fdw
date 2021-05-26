@@ -86,6 +86,64 @@ set_tableInfo(GSGridStore * store,
 }
 
 /**
+ * Create table info
+ * Arguments: GridStore instance, table name, table info, number of column, [ column1_name, column1_type, column1_options, column2_name, column2_type, column2_options,...
+ */
+GSResult
+set_tableInfo_timeseries(GSGridStore * store,
+			  const GSChar * tbl_name,
+			  table_info * tbl_info,
+			  size_t column_count,...)
+{
+	GSResult	ret = GS_RESULT_OK;
+	int			i;
+	va_list		valist;
+
+	/* Set column info */
+	GSColumnInfo column_info = GS_COLUMN_INFO_INITIALIZER;
+	GSColumnInfo *column_info_list = calloc(column_count, sizeof(GSColumnInfo));
+
+	tbl_info->info = (GSContainerInfo) GS_CONTAINER_INFO_INITIALIZER;
+	tbl_info->info.type = GS_CONTAINER_TIME_SERIES;
+	tbl_info->info.name = tbl_name;
+	tbl_info->info.columnCount = column_count;
+	va_start(valist, column_count);
+	for (i = 0; i < column_count; i++)
+	{
+		column_info.name = va_arg(valist, GSChar *);
+		column_info.type = va_arg(valist, GSType);
+		column_info.options = va_arg(valist, GSTypeOption);
+		column_info_list[i] = column_info;
+	}
+	va_end(valist);
+	tbl_info->info.columnInfoList = column_info_list;
+	tbl_info->info.rowKeyAssigned = GS_TRUE;
+	/* Drop the old container if it existed */
+	ret = gsDropContainer(store, tbl_info->info.name);
+	if (!GS_SUCCEEDED(ret))
+	{
+		printf("Can not drop container \"%s\"\n", tbl_name);
+		return ret;
+	}
+	/* Create a Collection (Delete if schema setting is NULL) */
+	ret = gsPutContainerGeneral(store, NULL, &(tbl_info->info), GS_FALSE, &(tbl_info->container));
+	if (!GS_SUCCEEDED(ret))
+	{
+		printf("Create container \"%s\" failed\n", tbl_name);
+		return ret;
+	}
+	/* Set the autocommit mode to OFF */
+	ret = gsSetAutoCommit(tbl_info->container, GS_FALSE);
+	if (!GS_SUCCEEDED(ret))
+	{
+		printf("Set autocommit for container %s failed\n", tbl_name);
+		return ret;
+	}
+
+	return GS_RESULT_OK;
+}
+
+/**
  * Insert records from TSV file
  * Arguments: GridStore instance, table info, TSV file path
  */
@@ -177,6 +235,14 @@ insert_recordsFromTSV(GSGridStore * store,
 				case GS_TYPE_DOUBLE:
 					ret = gsSetRowFieldByDouble(row, i, strtod(record_cols[i], NULL));
 					break;
+				case GS_TYPE_TIMESTAMP:
+				{
+					GSBool status;
+					GSTimestamp timestamp;
+					status = gsParseTime(record_cols[i], &timestamp);
+					ret = gsSetRowFieldByTimestamp(row, i, timestamp);
+					break;
+				}
 				default:
 					break;
 					/* if needed */
@@ -240,7 +306,9 @@ griddb_init(const char *addr,
 				numbers,
 				evennumbers,
 				shorty,
-				rowkey_tbl;
+				rowkey_tbl,
+				time_series_tbl,
+				time_series2;
 
 	/* For griddb_fdw_data_type */
 	table_info	type_string,
@@ -540,6 +608,43 @@ griddb_init(const char *addr,
 		goto EXIT;
 
 	/*
+	 * CREATE TABLE time_series (date timestamp,
+	 * value1 integer, value2 double, blobCol Blob)
+	 */
+	ret = set_tableInfo_timeseries(store, "time_series", &time_series_tbl,
+						3,
+						"date", GS_TYPE_TIMESTAMP, GS_TYPE_OPTION_NOT_NULL,
+						"value1", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
+						"value2", GS_TYPE_DOUBLE, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo_timeseries(store, "time_series2", &time_series2,
+						20,
+						"date", GS_TYPE_TIMESTAMP, GS_TYPE_OPTION_NOT_NULL,
+						"date2", GS_TYPE_TIMESTAMP, GS_TYPE_OPTION_NOT_NULL,
+						"strcol", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE,
+						"booleancol", GS_TYPE_BOOL, GS_TYPE_OPTION_NULLABLE,
+						"bytecol", GS_TYPE_BYTE, GS_TYPE_OPTION_NULLABLE,
+						"shortcol", GS_TYPE_SHORT, GS_TYPE_OPTION_NULLABLE,
+						"intcol", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
+						"longcol", GS_TYPE_LONG, GS_TYPE_OPTION_NULLABLE,
+						"floatcol", GS_TYPE_FLOAT, GS_TYPE_OPTION_NULLABLE,
+						"doublecol", GS_TYPE_DOUBLE, GS_TYPE_OPTION_NULLABLE,
+						"blobcol", GS_TYPE_BLOB, GS_TYPE_OPTION_NULLABLE,
+						"stringarray", GS_TYPE_STRING_ARRAY, GS_TYPE_OPTION_NULLABLE,
+						"boolarray", GS_TYPE_BOOL_ARRAY, GS_TYPE_OPTION_NULLABLE,
+						"bytearray", GS_TYPE_BYTE_ARRAY, GS_TYPE_OPTION_NULLABLE,
+						"shortarray", GS_TYPE_SHORT_ARRAY, GS_TYPE_OPTION_NULLABLE,
+						"integerarray", GS_TYPE_INTEGER_ARRAY, GS_TYPE_OPTION_NULLABLE,
+						"longarray", GS_TYPE_LONG_ARRAY, GS_TYPE_OPTION_NULLABLE,
+						"floatarray", GS_TYPE_FLOAT_ARRAY, GS_TYPE_OPTION_NULLABLE,
+						"doublearray", GS_TYPE_DOUBLE_ARRAY, GS_TYPE_OPTION_NULLABLE,
+						"timestamparray", GS_TYPE_TIMESTAMP_ARRAY, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	/*
 	 * CREATE TABLE employee (emp_id integer primary key, emp_name text,
 	 * emp_dept_id integer)
 	 */
@@ -578,13 +683,13 @@ griddb_init(const char *addr,
 						"c", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE);
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
-        /* CREATE TABLE rowkey_tbl (a integer primary key, b integer) */
-        ret = set_tableInfo(store, "rowkey_tbl", &rowkey_tbl,
-                                                2,
-                                                "a", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
-                                                "b", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE);
-        if (!GS_SUCCEEDED(ret))
-                goto EXIT;
+	/* CREATE TABLE rowkey_tbl (a integer primary key, b integer) */
+	ret = set_tableInfo(store, "rowkey_tbl", &rowkey_tbl,
+						2,
+						"a", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"b", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
 	/* CREATE TABLE type_string (col1 text primary key, col2 text) */
 	ret = set_tableInfo(store, "type_string", &type_string,
 						2,
@@ -737,7 +842,7 @@ griddb_init(const char *addr,
 
 	ret = set_tableInfo(store, "T0", &T0,
 						8,
-						"c1", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"C_1", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
 						"c2", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
 						"c3", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE,
 						"c4", GS_TYPE_TIMESTAMP, GS_TYPE_OPTION_NULLABLE,
@@ -750,7 +855,7 @@ griddb_init(const char *addr,
 
 	ret = set_tableInfo(store, "T1", &T1,
 						8,
-						"c1", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"C_1", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
 						"c2", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
 						"c3", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE,
 						"c4", GS_TYPE_TIMESTAMP, GS_TYPE_OPTION_NULLABLE,
@@ -842,7 +947,7 @@ griddb_init(const char *addr,
 						"f2", GS_TYPE_STRING, GS_TYPE_OPTION_NOT_NULL);
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
-	
+
 	ret = set_tableInfo(store, "loct13", &loct13,
 						3,
 						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
@@ -933,7 +1038,7 @@ griddb_init(const char *addr,
 						"b", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE);
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
-	
+
 	ret = set_tableInfo(store, "loct21", &loct21,
 						3,
 						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
@@ -2548,6 +2653,10 @@ griddb_init(const char *addr,
 
 	/* Initialize data for some tables */
 	ret = insert_recordsFromTSV(store, &INT2_TBL, "/tmp/int2.data");
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = insert_recordsFromTSV(store, &time_series_tbl, "/tmp/time_series.data");
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
 

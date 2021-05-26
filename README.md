@@ -77,7 +77,7 @@ The container must have rowkey on [GridDB][1] in order to execute update and del
 
 
 ## 3. Features
-- Supprt SELECT and INSERT
+- Support SELECT
 
 For SELECT, you can enable partial execution mode as follows:
 
@@ -85,8 +85,15 @@ For SELECT, you can enable partial execution mode as follows:
 SET griddbfdw.enable_partial_execution TO TRUE;
 ```
 
-- Supprt UPDATE and DELETE
-- WHERE clauses are push downed
+- Support INSERT, DELETE, UPDATE
+- Support function push down in WHERE clause: 
+    * Common functions of Postgres and Griddb (same as for PostgreSQL): char_length, concat, substring, upper, lower, round, floor, ceiling
+    * Unique function of Griddb: timestamp, timestampadd, timestampdiff, to_timestamp_ms, to_epoch_ms, array_length, element
+- Support LIMIT...OFFSET pushdown when having LIMIT clause only or both LIMIT and OFFSET.
+- Support ORDER BY pushdown with column, except ORDER BY column ASC NULLS FIRST, ORDER BY column DESC NULLS LAST and ORDER BY functions/formulas
+- Support aggregation push down:
+    * Common functions of Postgres and Griddb are pushed down: min, max, count(*), sum, avg, variance, stddev.
+    * Unique function of Griddb are pushed down: time_avg<br>
 
 ## 4. Limitations
 #### Record is updated by INSERT command if a record with same rowkey as new record exists in GridDB.
@@ -106,8 +113,8 @@ griddb_fdw uses it for identifying a record.
 #### Don't support SAVEPOINT.
 Savepoint does not work. Warning is returned.
 
-#### Don't support the query execution which is satisfied with all of follwoing conditions:  
-- It requres to get record locks in a transaction.
+#### Don't support the query execution which is satisfied with all of following conditions:  
+- It requires to get record locks in a transaction.
 - Records are locked by the other foreign table which links the same container in GridDB.
 
 If such query is executed, it is no response.
@@ -170,7 +177,7 @@ INSERT INTO ft1 (c0, c1) VALUES (1, 2) RETURNING c0, c1;
 ```
 
 ## 5. License
-Copyright (c) 2017-2020, TOSHIBA Corporation  
+Copyright (c) 2017-2021, TOSHIBA Corporation  
 Copyright (c) 2011-2016, EnterpriseDB Corporation
 
 Permission to use, copy, modify, and distribute this software and its
@@ -182,5 +189,4 @@ See the [`LICENSE`][2] file for full details.
 
 [1]: https://github.com/griddb
 [2]: LICENSE
-
 

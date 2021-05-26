@@ -28,9 +28,16 @@
 *.so.*
 *.dylib
 
+# Log, results folder
+/log/
+/results/
+
+# C client folder
+/griddb/
+
 # Executables
+make_check_initializer/griddb_init
 *.exe
-*.out
 *.app
 *.i*86
 *.x86_64

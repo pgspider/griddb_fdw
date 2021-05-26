@@ -68,10 +68,10 @@ static GSGridStore * griddb_connect_server(char *address, char *port,
 										   char *passwd);
 static void griddb_begin_xact(ConnCacheEntry *entry);
 static void griddb_end_xact(ConnCacheEntry *entry, bool isCommit,
-				GSGridStore * store);
+							GSGridStore * store);
 static void griddb_xact_callback(XactEvent event, void *arg);
 static void griddb_subxact_callback(SubXactEvent event, SubTransactionId mySubid,
-						SubTransactionId parentSubid, void *arg);
+									SubTransactionId parentSubid, void *arg);
 
 /*
  * griddb_get_connection:
@@ -164,19 +164,20 @@ griddb_get_connection(UserMapping *user, bool will_prep_stmt, Oid foreigntableid
  * Connect to remote server using specified server and user mapping properties.
  */
 static GSGridStore *
-griddb_connect_server(char *address, char *port, char *member, char *database, 
+griddb_connect_server(char *address, char *port, char *member, char *database,
 					  char *cluster, char *user, char *passwd)
 {
 	GSGridStore *store = NULL;
-	size_t propCount;
+	size_t		propCount;
 	GSResult	ret;
 
 	if (database == NULL)
 		database = "public";
 
-	if (member == NULL) {
+	if (member == NULL)
+	{
 		/* multicast mode */
-		const GSPropertyEntry props[] = {
+		const		GSPropertyEntry props[] = {
 			{"database", database},
 			{"clusterName", cluster},
 			{"user", user},
@@ -185,11 +186,14 @@ griddb_connect_server(char *address, char *port, char *member, char *database,
 			{"notificationAddress", address},
 			{"notificationPort", port},
 		};
+
 		propCount = sizeof(props) / sizeof(*props);
 		ret = gsGetGridStore(gsGetDefaultFactory(), props, propCount, &store);
-	} else {
+	}
+	else
+	{
 		/* fixed list mode */
-		const GSPropertyEntry props[] = {
+		const		GSPropertyEntry props[] = {
 			{"clusterName", cluster},
 			{"database", database},
 			{"user", user},
@@ -197,7 +201,8 @@ griddb_connect_server(char *address, char *port, char *member, char *database,
 			/* list of address and port */
 			{"notificationMember", member},
 		};
-		propCount = sizeof(props) / sizeof(*props);	
+
+		propCount = sizeof(props) / sizeof(*props);
 		ret = gsGetGridStore(gsGetDefaultFactory(), props, propCount, &store);
 	}
 
@@ -444,7 +449,7 @@ griddb_end_xact(ConnCacheEntry *entry, bool isCommit, GSGridStore * store)
 
 			gsCloseContainer(&cont, true);
 		}
-		
+
 		/* Remove container from the hash list even if it is NULL or not */
 		hash_search(entry->cont_hash, &cont_entry->key, HASH_REMOVE, NULL);
 	}

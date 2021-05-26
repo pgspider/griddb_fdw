@@ -92,8 +92,7 @@ griddb_compare_tuplekey_timestamp(const void *a, const void *b)
 }
 
 /* Return comparator based on gs_type for pg_qsort used in griddb_fdw. */
-int			(*
-			 griddb_get_comparator_tuplekey(GSType gs_type)) (const void *, const void *)
+int			(*griddb_get_comparator_tuplekey(GSType gs_type)) (const void *, const void *)
 {
 	switch (gs_type)
 	{
@@ -177,8 +176,7 @@ griddb_compare_datum_timestamp(const void *a, const void *b)
 }
 
 /* Return comparator based on gs_type for hash used in griddb_fdw. */
-int			(*
-			 griddb_get_comparator_datum(GSType gs_type)) (const void *, const void *)
+int			(*griddb_get_comparator_datum(GSType gs_type)) (const void *, const void *)
 {
 	switch (gs_type)
 	{

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#GRIDDB_HOME=${HOME}/src/griddb-4.5.1
+#GRIDDB_HOME=${HOME}/src/griddb-4.5.3
 
 if [[ ! -d "${GRIDDB_HOME}" ]]; then
   echo "GRIDDB_HOME environment variable not set"

@@ -30,6 +30,13 @@
 #include "utils/relcache.h"
 #include "utils/timestamp.h"
 
+#if (PG_VERSION_NUM < 100000)
+/* Is the given relation an "other" relation? */
+#define IS_OTHER_REL(rel) ((rel)->reloptkind == RELOPT_OTHER_MEMBER_REL)
+#define IS_JOIN_REL(rel) ((rel)->reloptkind == RELOPT_JOINREL)
+#define IS_UPPER_REL(rel) ((rel)->reloptkind == RELOPT_UPPER_REL)
+#endif
+
 /* Default CPU cost to start up a foreign query. */
 #define DEFAULT_FDW_STARTUP_COST	100.0
 
@@ -87,6 +94,7 @@
 
 /* Option name for CREATE FOREIGN TABLE. */
 #define OPTION_TABLE	"table_name"
+#define OPTION_COLUMN	"column_name"
 #define OPTION_ROWKEY	"rowkey"
 
 #define OPTION_UPDATABLE	   "updatable"
@@ -110,6 +118,28 @@
 #define table_open(rel, lock)	heap_open(rel, lock)
 #endif
 
+#if (PG_VERSION_NUM < 100000)
+/*
+ * Is the given relation a simple relation i.e a base or "other" member
+ * relation?
+ */
+#define IS_SIMPLE_REL(rel) \
+	((rel)->reloptkind == RELOPT_BASEREL || \
+	 (rel)->reloptkind == RELOPT_OTHER_MEMBER_REL)
+
+/* Is the given relation a join relation? */
+#define IS_JOIN_REL(rel)	\
+	((rel)->reloptkind == RELOPT_JOINREL)
+
+/* Is the given relation an upper relation? */
+#define IS_UPPER_REL(rel)	\
+	((rel)->reloptkind == RELOPT_UPPER_REL)
+
+/* Is the given relation an "other" relation? */
+#define IS_OTHER_REL(rel) \
+	((rel)->reloptkind == RELOPT_OTHER_MEMBER_REL)
+#endif
+
 /*
  * Options structure to store the MySQL
  * server information
@@ -122,12 +152,30 @@ typedef struct griddb_opt
 	char	   *svr_password;	/* GridDB password */
 	char	   *svr_clustername;	/* GridDB cluster name */
 	char	   *svr_database;	/* GridDB database name */
-	char	   *svr_notification_member;	/* GridDB notification member for fixed list */
-	
+	char	   *svr_notification_member;	/* GridDB notification member for
+											 * fixed list */
+
 	bool		use_remote_estimate;	/* use remote estimate for rows */
 	Cost		fdw_startup_cost;
 	Cost		fdw_tuple_cost;
 }			griddb_opt;
+
+/* Struct for extra information passed to estimate_path_cost_size() */
+typedef struct
+{
+	PathTarget *target;
+	bool		has_final_sort;
+	bool		has_limit;
+	double		limit_tuples;
+	int64		count_est;
+	int64		offset_est;
+}			GriddbFdwPathExtraData;
+
+typedef struct GridDBAggref
+{
+	StringInfo	aggname;
+	StringInfo	columnname;
+}			GridDBAggref;
 
 /*
  * FDW-specific planner information kept in RelOptInfo.fdw_private for a
@@ -135,6 +183,12 @@ typedef struct griddb_opt
  */
 typedef struct GriddbFdwRelationInfo
 {
+	/*
+	 * True means that the relation can be pushed down. Always true for simple
+	 * foreign scan.
+	 */
+	bool		pushdown_safe;
+
 	/*
 	 * Restriction clauses, divided into safe and unsafe to pushdown subsets.
 	 *
@@ -154,6 +208,9 @@ typedef struct GriddbFdwRelationInfo
 	/* Bitmap of attr numbers we need to fetch from the remote server. */
 	Bitmapset  *attrs_used;
 
+	/* True means that the query_pathkeys is safe to push down */
+	bool		qp_is_pushdown_safe;
+
 	/* Cost and selectivity of local_conds. */
 	Selectivity local_conds_sel;
 
@@ -168,13 +225,39 @@ typedef struct GriddbFdwRelationInfo
 
 	/* Options extracted from catalogs. */
 	bool		use_remote_estimate;
+	double		retrieved_rows;
 	Cost		fdw_startup_cost;
 	Cost		fdw_tuple_cost;
+	List	   *shippable_extensions;	/* OIDs of whitelisted extensions */
 
 	/* Cached catalog information. */
 	ForeignTable *table;
 	ForeignServer *server;
 	UserMapping *user;			/* only set in use_remote_estimate mode */
+
+	int			fetch_size;		/* fetch size for this remote table */
+	/*
+	 * Name of the relation, for use while EXPLAINing ForeignScan.  It is used
+	 * for join and upper relations but is set for all relations.  For a base
+	 * relation, this is really just the RT index as a string; we convert that
+	 * while producing EXPLAIN output.  For join and upper relations, the name
+	 * indicates which base foreign tables are included and the join type or
+	 * aggregation type used.
+	 */
+	StringInfo	relation_name;
+
+	RelOptInfo *outerrel;
+
+	/* Upper relation information */
+	UpperRelationKind stage;
+	/* Grouping information */
+	List	   *grouped_tlist;
+
+	/* Function pushdown surppot in target list */
+	bool		is_tlist_func_pushdown;
+
+	/* Aggregate function information */
+	GridDBAggref	*aggref;
 }			GriddbFdwRelationInfo;
 
 /*
@@ -213,8 +296,11 @@ typedef struct GridDBFdwModifiedRows
 /* in griddb_fdw.c */
 extern void griddb_convert_pg2gs_timestamp_string(Timestamp dt, char *buf);
 extern void griddb_check_slot_type(TupleTableSlot *slot, int attnum, GridDBFdwFieldInfo * field_info);
-extern Datum griddb_make_datum_from_row(GSRow * row, int32_t attid, GSType gs_type, Oid pg_type);
+extern Datum griddb_make_datum_from_row(GSRow * row, int32_t attid, GSType gs_type, Oid pg_type,
+						GSRowSetType row_type, GSAggregationResult *agg_res, GridDBAggref *aggref);
 extern void griddb_set_row_field(GSRow * row, Datum value, GSType gs_type, int pindex);
+extern int	griddb_set_transmission_modes(void);
+extern void griddb_reset_transmission_modes(int nestlevel);
 
 /* in option.c */
 extern bool griddb_is_valid_option(const char *option, Oid context);
@@ -227,7 +313,7 @@ extern char *griddb_get_rel_name(Oid relid);
 extern GSContainer * griddb_get_container(UserMapping *user, Oid relid, GSGridStore * store);
 extern void griddb_release_connection(GSGridStore * store);
 extern void griddb_report(int elevel, GSResult res, void *gsResource,
-			  const char *fname, unsigned int line);
+						  const char *fname, unsigned int line);
 extern void griddb_cleanup_connection(void);
 extern void griddb_error_message(void *gsResource, StringInfoData *str);
 #define griddb_REPORT_ERROR(elevel, res, gsResource) \
@@ -235,20 +321,30 @@ extern void griddb_error_message(void *gsResource, StringInfoData *str);
 
 /* in deparse.c */
 extern void griddb_classify_conditions(PlannerInfo *root,
-						   RelOptInfo *baserel,
-						   List *input_conds,
-						   List **remote_conds,
-						   List **local_conds);
+									   RelOptInfo *baserel,
+									   List *input_conds,
+									   List **remote_conds,
+									   List **local_conds);
 extern bool griddb_is_foreign_expr(PlannerInfo *root,
-				RelOptInfo *baserel,
-				Expr *expr);
+								   RelOptInfo *baserel,
+								   Expr *expr,
+								   bool for_tlist);
+extern bool griddb_is_foreign_param(PlannerInfo *root,
+							 RelOptInfo *baserel,
+							 Expr *expr);
 extern Expr *griddb_find_em_expr_for_rel(EquivalenceClass *ec, RelOptInfo *rel);
 extern void griddb_deparse_select(StringInfo buf, PlannerInfo *root,
-					  RelOptInfo *foreignrel, List *remote_conds,
-					  List *pathkeys, List **retrieved_attrs,
-					  List **params_list);
+								  RelOptInfo *foreignrel, List *remote_conds,
+								  List *pathkeys, List **retrieved_attrs,
+								  List **params_list, List *tlist, bool has_limit);
 extern void griddb_deparse_locking_clause(PlannerInfo *root, RelOptInfo *rel,
-							  int *for_update);
+										  int *for_update);
+extern List *griddb_build_tlist_to_deparse(RelOptInfo *foreignrel);
+
+extern bool griddb_is_foreign_function_tlist(PlannerInfo *root,
+											 RelOptInfo *baserel,
+											 List *tlist);
+extern List *griddb_pull_func_clause(Node *node);
 
 /* in store.c */
 extern HTAB *griddb_rowkey_hash_create(GridDBFdwFieldInfo * field_info);
@@ -259,14 +355,14 @@ extern void griddb_modify_target_init(GridDBFdwModifiedRows * modified_rows, int
 extern void griddb_modify_target_expand(GridDBFdwModifiedRows * modified_rows);
 extern void griddb_modify_target_fini(GridDBFdwModifiedRows * modified_rows);
 extern Datum griddb_modify_target_insert(GridDBFdwModifiedRows * modified_rows,
-							TupleTableSlot *slot, TupleTableSlot *planSlot,
-							AttrNumber junk_att_no, List *target_attrs,
-							GridDBFdwFieldInfo * field_info);
+										 TupleTableSlot *slot, TupleTableSlot *planSlot,
+										 AttrNumber junk_att_no, List *target_attrs,
+										 GridDBFdwFieldInfo * field_info);
 extern void griddb_modify_target_sort(GridDBFdwModifiedRows * modified_rows,
-						  GridDBFdwFieldInfo * field_info);
+									  GridDBFdwFieldInfo * field_info);
 extern void griddb_modify_targets_apply(GridDBFdwModifiedRows * modified_rows,
-							char *cont_name, GSContainer * cont, List *target_attrs,
-							GridDBFdwFieldInfo * field_info, Oid pgkeytype, CmdType operation);
+										char *cont_name, GSContainer * cont, List *target_attrs,
+										GridDBFdwFieldInfo * field_info, Oid pgkeytype, CmdType operation);
 
 /* in compare.c */
 extern int	(*griddb_get_comparator_tuplekey(GSType gs_type)) (const void *, const void *);
