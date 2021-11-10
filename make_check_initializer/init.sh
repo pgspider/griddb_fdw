@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#GRIDDB_HOME=${HOME}/src/griddb-4.5.3
+GRIDDB_HOME=${HOME}/src/griddb-4.6.0
 
 if [[ ! -d "${GRIDDB_HOME}" ]]; then
   echo "GRIDDB_HOME environment variable not set"
@@ -31,3 +31,7 @@ result="$?"
 if [[ "$result" -eq 0 ]]; then
 	./griddb_init host=239.0.0.1 port=31999 cluster=griddbfdwTestCluster user=admin passwd=testadmin
 fi
+
+#Update restart script
+sed -i 's|GRIDDB_HOME=.*|GRIDDB_HOME='"$GRIDDB_HOME"'|' ../griddb_restart_service.sh
+chmod +x ../griddb_restart_service.sh

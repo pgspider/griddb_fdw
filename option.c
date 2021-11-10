@@ -1,7 +1,7 @@
 /*
  * GridDB Foreign Data Wrapper
  *
- * Portions Copyright (c) 2020, TOSHIBA CORPORATION
+ * Portions Copyright (c) 2021, TOSHIBA CORPORATION
  *
  * IDENTIFICATION
  *		  option.c
@@ -18,6 +18,7 @@
 #include "catalog/pg_user_mapping.h"
 #include "commands/defrem.h"
 #include "miscadmin.h"
+#include "utils/inval.h"
 #include "utils/lsyscache.h"
 
 /*
@@ -81,6 +82,17 @@ static GridDBFdwOption griddb_options[] =
 	{
 		OPTION_TUPLE_COST, ForeignServerRelationId
 	},
+	/* batch_size available on both server and table */
+	{
+		OPTION_BATCH_SIZE, ForeignTableRelationId
+	},
+	{
+		OPTION_BATCH_SIZE, ForeignServerRelationId
+	},
+	/* keep connection */
+	{
+		OPTION_KEEP_CONN, ForeignServerRelationId
+	},
 	/* Sentinel */
 	{
 		NULL, InvalidOid
@@ -135,6 +147,27 @@ griddb_fdw_validator(PG_FUNCTION_ARGS)
 					 errmsg("invalid option \"%s\"", def->defname),
 					 errhint("Valid options in this context are: %s", buf.len ? buf.data : "<none>")
 					 ));
+		}
+
+		/*
+		 * Validate option value, when we can do so without any context.
+		 */
+		if (strcmp(def->defname, OPTION_KEEP_CONN) == 0)
+		{
+			/* these accept only boolean values */
+			(void) defGetBoolean(def);
+		}
+
+		if (strcmp(def->defname, OPTION_BATCH_SIZE) == 0)
+		{
+			int			fetch_size;
+
+			fetch_size = strtol(defGetString(def), NULL, 10);
+			if (fetch_size <= 0)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("%s requires a non-negative integer value",
+								def->defname)));
 		}
 	}
 	PG_RETURN_VOID();
@@ -201,6 +234,11 @@ griddb_get_options(Oid foreignoid)
 	opt->fdw_startup_cost = DEFAULT_FDW_STARTUP_COST;
 	opt->fdw_tuple_cost = DEFAULT_FDW_TUPLE_COST;
 
+	/*
+	 * By default, all the connections to any foreign servers are kept open.
+	 */
+	opt->keep_connections = true;
+
 	/* Loop through the options, and get the server/port */
 	foreach(lc, options)
 	{
@@ -236,6 +274,8 @@ griddb_get_options(Oid foreignoid)
 		if (strcmp(def->defname, OPTION_TUPLE_COST) == 0)
 			opt->use_remote_estimate = strtod(defGetString(def), NULL);
 
+		if (strcmp(def->defname, OPTION_KEEP_CONN) == 0)
+			opt->keep_connections = defGetBoolean(def);
 	}
 	/* Default values, if required */
 	if (!opt->svr_address)

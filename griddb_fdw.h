@@ -2,7 +2,7 @@
  *
  * GridDB Foreign Data Wrapper
  *
- * Portions Copyright (c) 2020, TOSHIBA CORPORATION
+ * Portions Copyright (c) 2021, TOSHIBA CORPORATION
  *
  * IDENTIFICATION
  *		  griddb_fdw.h
@@ -19,6 +19,7 @@
 #include "foreign/foreign.h"
 #if (PG_VERSION_NUM >= 120000)
 #include "nodes/pathnodes.h"
+#include "nodes/execnodes.h"
 #include "access/table.h"
 #include "utils/float.h"
 #include "optimizer/optimizer.h"
@@ -101,9 +102,16 @@
 #define OPTION_REMOTE_ESTIMATE "use_remote_estimate"
 #define OPTION_STARTUP_COST    "fdw_startup_cost"
 #define OPTION_TUPLE_COST	   "fdw_tuple_cost"
-
+#define OPTION_BATCH_SIZE	   "batch_size"
+#define OPTION_KEEP_CONN	   "keep_connections"
+#define CODE_VERSION 20100
 /* Attribute number of rowkey column. 1st column is assigned rowkey in GridDB. */
 #define ROWKEY_ATTNO 1
+/*
+ * GridDB c-API has no limit with max number of row (rowCount) in gsPutMultipleRows(),
+ * but rowCount should be limited to 65535 (uint16) same as postgres_fdw for safe.
+ */
+#define DEFAULT_QUERY_PARAM_MAX_LIMIT 65535
 
 /* The index of rowkey for array storing rowkey and modified record values. It cannot be changed. */
 #define ROWKEY_IDX 0
@@ -158,6 +166,8 @@ typedef struct griddb_opt
 	bool		use_remote_estimate;	/* use remote estimate for rows */
 	Cost		fdw_startup_cost;
 	Cost		fdw_tuple_cost;
+	bool		keep_connections;	/* connections to foreign server is kept
+									 * open or not */
 }			griddb_opt;
 
 /* Struct for extra information passed to estimate_path_cost_size() */
@@ -236,6 +246,7 @@ typedef struct GriddbFdwRelationInfo
 	UserMapping *user;			/* only set in use_remote_estimate mode */
 
 	int			fetch_size;		/* fetch size for this remote table */
+
 	/*
 	 * Name of the relation, for use while EXPLAINing ForeignScan.  It is used
 	 * for join and upper relations but is set for all relations.  For a base
@@ -257,7 +268,7 @@ typedef struct GriddbFdwRelationInfo
 	bool		is_tlist_func_pushdown;
 
 	/* Aggregate function information */
-	GridDBAggref	*aggref;
+	GridDBAggref *aggref;
 }			GriddbFdwRelationInfo;
 
 /*
@@ -297,7 +308,7 @@ typedef struct GridDBFdwModifiedRows
 extern void griddb_convert_pg2gs_timestamp_string(Timestamp dt, char *buf);
 extern void griddb_check_slot_type(TupleTableSlot *slot, int attnum, GridDBFdwFieldInfo * field_info);
 extern Datum griddb_make_datum_from_row(GSRow * row, int32_t attid, GSType gs_type, Oid pg_type,
-						GSRowSetType row_type, GSAggregationResult *agg_res, GridDBAggref *aggref);
+										GSRowSetType row_type, GSAggregationResult * agg_res, GridDBAggref * aggref);
 extern void griddb_set_row_field(GSRow * row, Datum value, GSType gs_type, int pindex);
 extern int	griddb_set_transmission_modes(void);
 extern void griddb_reset_transmission_modes(int nestlevel);
@@ -330,8 +341,8 @@ extern bool griddb_is_foreign_expr(PlannerInfo *root,
 								   Expr *expr,
 								   bool for_tlist);
 extern bool griddb_is_foreign_param(PlannerInfo *root,
-							 RelOptInfo *baserel,
-							 Expr *expr);
+									RelOptInfo *baserel,
+									Expr *expr);
 extern Expr *griddb_find_em_expr_for_rel(EquivalenceClass *ec, RelOptInfo *rel);
 extern void griddb_deparse_select(StringInfo buf, PlannerInfo *root,
 								  RelOptInfo *foreignrel, List *remote_conds,
