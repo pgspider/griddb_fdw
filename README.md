@@ -1,7 +1,7 @@
 # GridDB Foreign Data Wrapper for PostgreSQL
 
 This PostgreSQL extension is a Foreign Data Wrapper (FDW) for [GridDB][1].  
-This version of griddb_fdw can work for PostgreSQL 9.6, 10, 11, 12 and 13. It is confirmed in GridDB 4.5.
+This version of griddb_fdw can work for PostgreSQL 10, 11, 12, 13 and 14. It is confirmed in GridDB 4.6.0.
 
 ## 1. Installation
 griddb_fdw requires GridDB's C client library. This library can be downloaded from the [GridDB][1] website on github[1].
@@ -87,13 +87,24 @@ SET griddbfdw.enable_partial_execution TO TRUE;
 
 - Support INSERT, DELETE, UPDATE
 - Support function push down in WHERE clause: 
-    * Common functions of Postgres and Griddb (same as for PostgreSQL): char_length, concat, substring, upper, lower, round, floor, ceiling
-    * Unique function of Griddb: timestamp, timestampadd, timestampdiff, to_timestamp_ms, to_epoch_ms, array_length, element
+    * Common functions of Postgres and GridDB (same as for PostgreSQL): char_length, concat, lower, upper, substr, round, ceiling, ceil, floor.
+    * Unique function of Griddb: to_timestamp_ms, to_epoch_ms, array_length, element, timestamp, timestampadd, timestampdiff,       
+                                 time_next, time_next_only, time_prev, time_prev_only, time_interpolated, time_sampling, max_rows, min_rows, now.
+    * For the push down of now() and timestamp() function, please add prefix `griddb_` for these functions.     
+      Example: now() -> griddb_now()
+
 - Support LIMIT...OFFSET pushdown when having LIMIT clause only or both LIMIT and OFFSET.
 - Support ORDER BY pushdown with column, except ORDER BY column ASC NULLS FIRST, ORDER BY column DESC NULLS LAST and ORDER BY functions/formulas
 - Support aggregation push down:
     * Common functions of Postgres and Griddb are pushed down: min, max, count(*), sum, avg, variance, stddev.
     * Unique function of Griddb are pushed down: time_avg<br>
+
+For PostgreSQL version 14 or later:
+- Support bulk INSERT by using batch_size option.
+- Support keep connections open by use keep_connections option:
+    * keep_connections option that controls whether griddb_fdw keeps the connections to the foreign server open so that the subsequent queries can re-use them. This option can only be specified for a foreign server. The default is on. If set to off, all connections to the foreign server will be discarded at the end of transaction. losed connections will be re-established when they are necessary by future queries using a foreign table.
+- Support list cached connections to foreign servers by using function griddb_get_connection().
+- Support discard cached connections to foreign servers by using function griddb_disconnect('server_name'), griddb_disconnect_all().
 
 ## 4. Limitations
 #### Record is updated by INSERT command if a record with same rowkey as new record exists in GridDB.

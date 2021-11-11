@@ -11,7 +11,7 @@ PG_CPPFLAGS = -I$(libpq_srcdir) -I$(GRIDDB_INCLUDE)
 SHLIB_LINK = $(libpq) -L$(GRIDDB_LIBRARY) -lgridstore
 
 EXTENSION = griddb_fdw
-DATA = griddb_fdw--1.0.sql griddb_fdw--1.1.sql
+DATA = griddb_fdw--1.0.sql griddb_fdw--1.0--1.1.sql griddb_fdw--1.1.sql griddb_fdw--1.2.sql
 
 REGRESS = griddb_fdw selectfunc griddb_fdw_data_type float4 float8 int4 int8 numeric join limit aggregates prepare select_having select insert update griddb_fdw_post
 

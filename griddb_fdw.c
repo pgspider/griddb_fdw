@@ -1,7 +1,7 @@
 /*
  * GridDB Foreign Data Wrapper
  *
- * Portions Copyright (c) 2020, TOSHIBA CORPORATION
+ * Portions Copyright (c) 2021, TOSHIBA CORPORATION
  *
  * IDENTIFICATION
  *		  griddb_fdw.c
@@ -25,6 +25,9 @@
 #include "foreign/foreign.h"
 #include "funcapi.h"
 #include "miscadmin.h"
+#if (PG_VERSION_NUM >= 140000)
+#include "optimizer/appendinfo.h"
+#endif
 #include "optimizer/cost.h"
 #include "optimizer/paths.h"
 #include "optimizer/pathnode.h"
@@ -80,7 +83,7 @@ typedef struct ec_member_foreign_arg
 {
 	Expr	   *current;		/* current expr, or NULL if not yet found */
 	List	   *already_used;	/* expressions already dealt with */
-}			ec_member_foreign_arg;
+} ec_member_foreign_arg;
 
 /*
  * Similarly, this enum describes what's kept in the fdw_private list for
@@ -164,7 +167,7 @@ typedef struct GridDBFdwScanState
 	/* extracted fdw_private data */
 	char	   *query;			/* text of SELECT command */
 	List	   *retrieved_attrs;	/* list of retrieved attribute numbers */
-	List	   *fdw_scan_tlist;		/* optional tlist describing scan tuple */
+	List	   *fdw_scan_tlist; /* optional tlist describing scan tuple */
 
 	/* for remote query execution */
 	GSGridStore *store;			/* connection for the scan */
@@ -174,7 +177,7 @@ typedef struct GridDBFdwScanState
 	GridDBFdwFieldInfo field_info;	/* field information */
 	GSRowSet   *row_set;		/* result set */
 	GSRow	   *row;			/* row for the update */
-	GridDBAggref	*aggref;	/* aggregate function information */
+	GridDBAggref *aggref;		/* aggregate function information */
 
 	/* for storing result tuples */
 	unsigned int cursor;		/* result set cursor pointing current index */
@@ -206,6 +209,9 @@ typedef struct GridDBFdwModifyState
 
 	/* for sharing data with ForeignScan */
 	GridDBFdwSMRelay *smrelay;	/* cache of the relay */
+	int			batch_size;		/* value of FDW option "batch_size" */
+	struct GridDBFdwModifyState *aux_fmstate;	/* foreign-insert state, if
+												 * created */
 }			GridDBFdwModifyState;
 
 /*
@@ -214,6 +220,7 @@ typedef struct GridDBFdwModifyState
 extern Datum griddb_fdw_handler(PG_FUNCTION_ARGS);
 
 PG_FUNCTION_INFO_V1(griddb_fdw_handler);
+PG_FUNCTION_INFO_V1(griddb_fdw_version);
 
 void		_PG_init(void);
 void		_PG_fini(void);
@@ -239,9 +246,17 @@ static void griddbBeginForeignScan(ForeignScanState *node, int eflags);
 static TupleTableSlot *griddbIterateForeignScan(ForeignScanState *node);
 static void griddbReScanForeignScan(ForeignScanState *node);
 static void griddbEndForeignScan(ForeignScanState *node);
+
+#if PG_VERSION_NUM < 140000
 static void griddbAddForeignUpdateTargets(Query *parsetree,
 										  RangeTblEntry *target_rte,
 										  Relation target_relation);
+#else
+static void griddbAddForeignUpdateTargets(PlannerInfo *root,
+										  Index rtindex,
+										  RangeTblEntry *target_rte,
+										  Relation target_relation);
+#endif
 static List *griddbPlanForeignModify(PlannerInfo *root,
 									 ModifyTable *plan,
 									 Index resultRelation,
@@ -255,6 +270,14 @@ static TupleTableSlot *griddbExecForeignInsert(EState *estate,
 											   ResultRelInfo *resultRelInfo,
 											   TupleTableSlot *slot,
 											   TupleTableSlot *planSlot);
+#if PG_VERSION_NUM >= 140000
+static TupleTableSlot **griddbExecForeignBatchInsert(EState *estate,
+													 ResultRelInfo *resultRelInfo,
+													 TupleTableSlot **slots,
+													 TupleTableSlot **planSlots,
+													 int *numSlots);
+static int	griddbGetForeignModifyBatchSize(ResultRelInfo *resultRelInfo);
+#endif
 static TupleTableSlot *griddbExecForeignUpdate(EState *estate,
 											   ResultRelInfo *resultRelInfo,
 											   TupleTableSlot *slot,
@@ -297,15 +320,16 @@ static void griddbGetForeignUpperPaths(PlannerInfo *root,
 #endif
 );
 static void griddb_get_datatype_for_conversion(Oid pg_type, regproc *typeinput,
-								   int *typemod);
+											   int *typemod);
 static bool griddb_foreign_grouping_ok(PlannerInfo *root, RelOptInfo *grouped_rel);
 static void griddb_add_foreign_grouping_paths(PlannerInfo *root,
-									   RelOptInfo *input_rel,
-									   RelOptInfo *grouped_rel
+											  RelOptInfo *input_rel,
+											  RelOptInfo *grouped_rel
 #if (PG_VERSION_NUM >= 110000)
-									   ,GroupPathExtraData *extra
+											  ,GroupPathExtraData *extra
 #endif
 );
+
 /*
  * Helper functions
  */
@@ -323,7 +347,7 @@ static void griddb_make_column_info(GSContainerInfo * cont_info,
 static void griddb_free_column_info(GridDBFdwFieldInfo * field_info);
 static Oid	griddb_pgtyp_from_gstyp(GSType gs_type, const char **name);
 static Timestamp griddb_convert_gs2pg_timestamp(GSTimestamp ts);
-static char* griddb_convert_gs2pg_timestamp_to_string(GSTimestamp ts);
+static char *griddb_convert_gs2pg_timestamp_to_string(GSTimestamp ts);
 static GSTimestamp griddb_convert_pg2gs_timestamp(Timestamp dt);
 static void griddb_execute_and_fetch(ForeignScanState *node);
 static void griddb_find_junk_attno(GridDBFdwModifyState * fmstate, List *targetlist);
@@ -343,10 +367,10 @@ int			griddb_set_transmission_modes();
 void		griddb_reset_transmission_modes(int nestlevel);
 
 static void griddb_check_rowkey_update(GridDBFdwModifyState * fmstate, TupleTableSlot *new_slot);
-static Oid griddb_get_agg_type(GridDBFdwFieldInfo field_info, GridDBAggref *aggref);
+static Oid	griddb_get_agg_type(GridDBFdwFieldInfo field_info, GridDBAggref * aggref);
 
-static Datum griddb_make_datum_record(StringInfoData *values, TupleDesc tupdesc, GSType *column_types,
-						GSRow * row, regproc typeinput, int typemod);
+static Datum griddb_make_datum_record(StringInfoData *values, TupleDesc tupdesc, GSType * column_types,
+									  GSRow * row, regproc typeinput, int typemod);
 
 static List *griddb_get_useful_pathkeys_for_relation(PlannerInfo *root,
 													 RelOptInfo *rel);
@@ -359,6 +383,11 @@ static void griddb_add_foreign_final_paths(PlannerInfo *root, RelOptInfo *input_
 										   ,FinalPathExtraData *extra
 #endif
 );
+
+#if (PG_VERSION_NUM >= 140000)
+static int	get_batch_size_option(Relation rel);
+#endif
+
 void
 _PG_init()
 {
@@ -388,6 +417,12 @@ griddb_fdw_exit(int code, Datum arg)
 void
 _PG_fini()
 {
+}
+
+Datum
+griddb_fdw_version(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_INT32(CODE_VERSION);
 }
 
 Datum
@@ -432,6 +467,17 @@ griddb_fdw_handler(PG_FUNCTION_ARGS)
 
 	/* Support functions for ANALYZE */
 	routine->AnalyzeForeignTable = griddbAnalyzeForeignTable;
+#if (PG_VERSION_NUM >= 140000)
+	/* Support function for Batch Insert */
+	routine->ExecForeignBatchInsert = griddbExecForeignBatchInsert;
+	routine->GetForeignModifyBatchSize = griddbGetForeignModifyBatchSize;
+
+	/* Curently gridDB does not support asynchronous execution */
+	routine->IsForeignPathAsyncCapable = NULL;
+	routine->ForeignAsyncRequest = NULL;
+	routine->ForeignAsyncConfigureWait = NULL;
+	routine->ForeignAsyncNotify = NULL;
+#endif
 
 	/* Support functions for IMPORT FOREIGN SCHEMA */
 	routine->ImportForeignSchema = griddbImportForeignSchema;
@@ -468,7 +514,11 @@ griddb_get_smrelay(Oid foreigntableid)
 		ctl.hcxt = CacheMemoryContext;
 		griddb_sm_share = hash_create("griddb_fdw scan modify relay", 8,
 									  &ctl,
+#if PG_VERSION_NUM >= 140000
+									  HASH_ELEM | HASH_BLOBS);
+#else
 									  HASH_ELEM | HASH_BLOBS | HASH_CONTEXT);
+#endif
 	}
 
 	/* Create hash key for the entry.  Assume no pad bytes in key struct */
@@ -520,7 +570,7 @@ griddbGetForeignRelSize(PlannerInfo *root,
 	elog(DEBUG1, "griddb_fdw: %s", __func__);
 
 	/*
-	 * We use PgFdwRelationInfo to pass various information to subsequent
+	 * We use GriddbFdwRelationInfo to pass various information to subsequent
 	 * functions.
 	 */
 	fpinfo =
@@ -633,7 +683,11 @@ griddbGetForeignRelSize(PlannerInfo *root,
 		 * estimate of 10 pages, and divide by the column-datatype-based width
 		 * estimate to get the corresponding number of tuples.
 		 */
+#if PG_VERSION_NUM < 140000
 		if (baserel->pages == 0 && baserel->tuples == 0)
+#else
+		if (baserel->tuples < 0)
+#endif
 		{
 			baserel->pages = 10;
 			baserel->tuples =
@@ -767,8 +821,7 @@ griddbGetForeignPlan(PlannerInfo *root,
 					 List *scan_clauses,
 					 Plan *outer_plan)
 {
-	GriddbFdwRelationInfo *fpinfo =
-	(GriddbFdwRelationInfo *) foreignrel->fdw_private;
+	GriddbFdwRelationInfo *fpinfo = (GriddbFdwRelationInfo *) foreignrel->fdw_private;
 	Index		scan_relid = foreignrel->relid;
 	List	   *fdw_private;
 	List	   *remote_conds = NIL;
@@ -873,11 +926,14 @@ griddbGetForeignPlan(PlannerInfo *root,
 			{
 				TargetEntry *tle = lfirst_node(TargetEntry, lc);
 
-				/* Pull out function from FieldSelect clause and add to fdw_scan_tlist to push down function portion only */
+				/*
+				 * Pull out function from FieldSelect clause and add to
+				 * fdw_scan_tlist to push down function portion only
+				 */
 				if (fpinfo->is_tlist_func_pushdown == true && IsA((Node *) tle->expr, FieldSelect))
 				{
 					fdw_scan_tlist = add_to_flat_tlist(fdw_scan_tlist,
-													griddb_pull_func_clause((Node *) tle->expr));
+													   griddb_pull_func_clause((Node *) tle->expr));
 				}
 				else
 				{
@@ -890,8 +946,8 @@ griddbGetForeignPlan(PlannerInfo *root,
 				RestrictInfo *rinfo = lfirst_node(RestrictInfo, lc);
 
 				fdw_scan_tlist = add_to_flat_tlist(fdw_scan_tlist,
-													pull_var_clause((Node *) rinfo->clause,
-																	PVC_RECURSE_PLACEHOLDERS));
+												   pull_var_clause((Node *) rinfo->clause,
+																   PVC_RECURSE_PLACEHOLDERS));
 			}
 		}
 		else
@@ -932,9 +988,10 @@ griddbGetForeignPlan(PlannerInfo *root,
 							 makeInteger(for_update));
 	fdw_private = lappend(fdw_private, fdw_scan_tlist);
 
-	if IS_UPPER_REL(foreignrel)
+	if IS_UPPER_REL
+		(foreignrel)
 	{
-		rte = planner_rt_fetch(((GriddbFdwRelationInfo *)((RelOptInfo *)foreignrel)->fdw_private)->outerrel->relid, root);
+		rte = planner_rt_fetch(((GriddbFdwRelationInfo *) ((RelOptInfo *) foreignrel)->fdw_private)->outerrel->relid, root);
 	}
 	else
 	{
@@ -947,6 +1004,7 @@ griddbGetForeignPlan(PlannerInfo *root,
 		fdw_private = lappend(fdw_private, makeString(((GriddbFdwRelationInfo *) foreignrel->fdw_private)->aggref->aggname->data));
 		fdw_private = lappend(fdw_private, makeString(((GriddbFdwRelationInfo *) foreignrel->fdw_private)->aggref->columnname->data));
 	}
+
 	/*
 	 * Create the ForeignScan node for the given relation.
 	 *
@@ -963,6 +1021,59 @@ griddbGetForeignPlan(PlannerInfo *root,
 							remote_exprs,
 							outer_plan);
 }
+
+#if PG_VERSION_NUM >= 140000
+/*
+ * Construct a tuple descriptor for the scan tuples handled by a foreign join.
+ */
+static TupleDesc
+griddb_get_tupdesc_for_join_scan_tuples(ForeignScanState *node)
+{
+	ForeignScan *fsplan = (ForeignScan *) node->ss.ps.plan;
+	EState	   *estate = node->ss.ps.state;
+	TupleDesc	tupdesc;
+	int			i;
+
+	/*
+	 * The core code has already set up a scan tuple slot based on
+	 * fsplan->fdw_scan_tlist, and this slot's tupdesc is mostly good enough,
+	 * but there's one case where it isn't.  If we have any whole-row row
+	 * identifier Vars, they may have vartype RECORD, and we need to replace
+	 * that with the associated table's actual composite type.  This ensures
+	 * that when we read those ROW() expression values from the remote server,
+	 * we can convert them to a composite type the local server knows.
+	 */
+	tupdesc = CreateTupleDescCopy(node->ss.ss_ScanTupleSlot->tts_tupleDescriptor);
+	for (i = 0; i < tupdesc->natts; i++)
+	{
+		Form_pg_attribute att = TupleDescAttr(tupdesc, i);
+		Var		   *var;
+		RangeTblEntry *rte;
+		Oid			reltype;
+
+		/* Nothing to do if it's not a generic RECORD attribute */
+		if (att->atttypid != RECORDOID || att->atttypmod >= 0)
+			continue;
+
+		/*
+		 * If we can't identify the referenced table, do nothing.  This'll
+		 * likely lead to failure later, but perhaps we can muddle through.
+		 */
+		var = (Var *) list_nth_node(TargetEntry, fsplan->fdw_scan_tlist, i)->expr;
+		if (!IsA(var, Var) || var->varattno != 0)
+			continue;
+		rte = list_nth(estate->es_range_table, var->varno - 1);
+		if (rte->rtekind != RTE_RELATION)
+			continue;
+		reltype = get_rel_type_id(rte->relid);
+		if (!OidIsValid(reltype))
+			continue;
+		att->atttypid = reltype;
+		/* shouldn't need to change anything else */
+	}
+	return tupdesc;
+}
+#endif
 
 /*
  * BeginForeignScan
@@ -1034,17 +1145,17 @@ griddbBeginForeignScan(ForeignScanState *node, int eflags)
 	for_update = intVal(list_nth(fsplan->fdw_private,
 								 FdwScanPrivateForUpdate));
 	fsstate->fdw_scan_tlist = (List *) list_nth(fsplan->fdw_private,
-												 FdwScanTlist);
+												FdwScanTlist);
 	fsstate->for_update = for_update ? GS_TRUE : GS_FALSE;
 	if (list_length(fsplan->fdw_private) - 1 == FdwScanPrivateAggRefColumn)
 	{
 		fsstate->aggref = palloc0(sizeof(GridDBAggref));
 		fsstate->aggref->aggname = makeStringInfo();
 		fsstate->aggref->aggname->data = strVal(list_nth(fsplan->fdw_private,
-										FdwScanPrivateAggRefName));
+														 FdwScanPrivateAggRefName));
 		fsstate->aggref->columnname = makeStringInfo();
 		fsstate->aggref->columnname->data = strVal(list_nth(fsplan->fdw_private,
-										FdwScanPrivateAggRefColumn));
+															FdwScanPrivateAggRefColumn));
 	}
 	if (for_update)
 		fsstate->smrelay = griddb_get_smrelay(rte->relid);
@@ -1064,7 +1175,11 @@ griddbBeginForeignScan(ForeignScanState *node, int eflags)
 	else
 	{
 		fsstate->rel = NULL;
+#if (PG_VERSION_NUM >= 140000)
+		fsstate->tupdesc = griddb_get_tupdesc_for_join_scan_tuples(node);
+#else
 		fsstate->tupdesc = node->ss.ss_ScanTupleSlot->tts_tupleDescriptor;
+#endif
 	}
 
 	griddb_execute_and_fetch(node);
@@ -1097,15 +1212,16 @@ griddbIterateForeignScan(ForeignScanState *node)
 	if (gsHasNextRow(fsstate->row_set))
 	{
 		GSResult	ret = GS_RESULT_OK;
-		ListCell   *lc = NULL, *scanlc = NULL;
+		ListCell   *lc = NULL,
+				   *scanlc = NULL;
 		GSType	   *column_types = fsstate->field_info.column_types;
 		List	   *fdw_scan_tlist = fsstate->fdw_scan_tlist;
 		GSAggregationResult *agg_res;	/* aggregation result */
-		GSRowSetType row_type;			/* Row type of result */
+		GSRowSetType row_type;	/* Row type of result */
 
 		/*
-		* In case target is aggregation only
-		*/
+		 * In case target is aggregation only
+		 */
 		row_type = gsGetRowSetType(fsstate->row_set);
 		if (row_type == GS_ROW_SET_AGGREGATION_RESULT)
 		{
@@ -1158,7 +1274,7 @@ griddbIterateForeignScan(ForeignScanState *node)
 					if (scanlc != NULL)
 					{
 						TargetEntry *tle = lfirst(scanlc);
-						Node		*node = (Node *) tle->expr;
+						Node	   *node = (Node *) tle->expr;
 
 						if (IsA(node, FuncExpr))
 						{
@@ -1188,8 +1304,8 @@ griddbIterateForeignScan(ForeignScanState *node)
 					}
 
 					/*
-					 * When is_record is true, build a record as text and return it.
-					 * Example: (value1, value2, value3)
+					 * When is_record is true, build a record as text and
+					 * return it. Example: (value1, value2, value3)
 					 */
 					if (is_record)
 					{
@@ -1202,19 +1318,19 @@ griddbIterateForeignScan(ForeignScanState *node)
 
 						tupleSlot->tts_values[attnum - 1] =
 							griddb_make_datum_record(&values, tupdesc, column_types,
-													fsstate->row, typeinput, typemod);
+													 fsstate->row, typeinput, typemod);
 						tupleSlot->tts_isnull[attnum - 1] = false;
 					}
 					else if (row_type == GS_ROW_SET_AGGREGATION_RESULT)
 					{
-						GSType type = griddb_get_agg_type(fsstate->field_info, fsstate->aggref);
+						GSType		type = griddb_get_agg_type(fsstate->field_info, fsstate->aggref);
 
 						pgtype = TupleDescAttr(tupdesc, attnum - 1)->atttypid;
 
 						tupleSlot->tts_values[attnum - 1] =
 							griddb_make_datum_from_row(fsstate->row, attnum - 1,
-													type,
-													pgtype, row_type, agg_res, fsstate->aggref);
+													   type,
+													   pgtype, row_type, agg_res, fsstate->aggref);
 						tupleSlot->tts_isnull[attnum - 1] = false;
 					}
 					else
@@ -1222,8 +1338,8 @@ griddbIterateForeignScan(ForeignScanState *node)
 						pgtype = TupleDescAttr(tupdesc, attnum - 1)->atttypid;
 						tupleSlot->tts_values[attnum - 1] =
 							griddb_make_datum_from_row(fsstate->row, attnum - 1,
-													column_types[attnum - 1],
-													pgtype, row_type, agg_res, false);
+													   column_types[attnum - 1],
+													   pgtype, row_type, agg_res, false);
 						tupleSlot->tts_isnull[attnum - 1] = false;
 					}
 				}
@@ -1302,13 +1418,22 @@ griddbEndForeignScan(ForeignScanState *node)
  *	  We add first column forcibly. So we are adding that into target list.
  */
 static void
+#if PG_VERSION_NUM < 140000
 griddbAddForeignUpdateTargets(Query *parsetree,
 							  RangeTblEntry *target_rte,
 							  Relation target_relation)
+#else
+griddbAddForeignUpdateTargets(PlannerInfo *root,
+							  Index rtindex,
+							  RangeTblEntry *target_rte,
+							  Relation target_relation)
+#endif
 {
 	Var		   *var = NULL;
 	const char *attrname = NULL;
+#if PG_VERSION_NUM < 140000
 	TargetEntry *tle = NULL;
+#endif
 	Form_pg_attribute attr = NULL;
 
 	elog(DEBUG1, "griddb_fdw: %s", __func__);
@@ -1319,7 +1444,12 @@ griddbAddForeignUpdateTargets(Query *parsetree,
 	attr = TupleDescAttr(RelationGetDescr(target_relation), ROWKEY_ATTNO - 1);
 
 	/* Make a Var representing the desired value */
-	var = makeVar(parsetree->resultRelation,
+	var = makeVar(
+#if PG_VERSION_NUM < 140000
+				  parsetree->resultRelation,
+#else
+				  rtindex,
+#endif
 				  ROWKEY_ATTNO,
 				  attr->atttypid,
 				  attr->atttypmod,
@@ -1328,7 +1458,7 @@ griddbAddForeignUpdateTargets(Query *parsetree,
 
 	/* Wrap it in a TLE with the right name ... */
 	attrname = NameStr(attr->attname);
-
+#if PG_VERSION_NUM < 140000
 	tle = makeTargetEntry((Expr *) var,
 						  list_length(parsetree->targetList) + 1,
 						  pstrdup(attrname),
@@ -1336,10 +1466,13 @@ griddbAddForeignUpdateTargets(Query *parsetree,
 
 	/* ... and add it to the query's targetlist */
 	parsetree->targetList = lappend(parsetree->targetList, tle);
+#else
+	add_row_identity_var(root, var, rtindex, attrname);
+#endif
 }
 
 /*
- * postgresPlanForeignModify
+ * griddbPlanForeignModify
  *		Plan an insert/update/delete operation on a foreign table
  */
 static List *
@@ -1498,6 +1631,13 @@ create_foreign_modify(EState *estate,
 	}
 	fmstate->operation = operation;
 
+	/* Initialize auxiliary state */
+	fmstate->aux_fmstate = NULL;
+#if PG_VERSION_NUM == 140000
+	/* Set batch_size from foreign server/table options. */
+	if (operation == CMD_INSERT)
+		fmstate->batch_size = get_batch_size_option(rel);
+#endif
 	return fmstate;
 }
 
@@ -1540,7 +1680,11 @@ griddbBeginForeignModify(ModifyTableState *mtstate,
 									rte,
 									resultRelInfo,
 									mtstate->operation,
+#if PG_VERSION_NUM < 140000
 									mtstate->mt_plans[subplan_index]->plan,
+#else
+									outerPlanState(mtstate)->plan,
+#endif
 									target_attrs);
 
 	resultRelInfo->ri_FdwState = fmstate;
@@ -1556,8 +1700,7 @@ griddbExecForeignInsert(EState *estate,
 						TupleTableSlot *slot,
 						TupleTableSlot *planSlot)
 {
-	GridDBFdwModifyState *fmstate =
-	(GridDBFdwModifyState *) resultRelInfo->ri_FdwState;
+	GridDBFdwModifyState *fmstate = (GridDBFdwModifyState *) resultRelInfo->ri_FdwState;
 	GSResult	ret;
 	GSBool		exists;
 	GSContainerInfo cont_info = GS_CONTAINER_INFO_INITIALIZER;
@@ -1565,6 +1708,15 @@ griddbExecForeignInsert(EState *estate,
 	GridDBFdwFieldInfo field_info = {0};
 
 	elog(DEBUG1, "griddb_fdw: %s", __func__);
+
+	/*
+	 * If the fmstate has aux_fmstate set, use the aux_fmstate (see
+	 * griddbBeginForeignInsert())
+	 */
+	if (fmstate->aux_fmstate)
+	{
+		fmstate = fmstate->aux_fmstate;
+	}
 
 	ret = gsCreateRowByContainer(fmstate->cont, &row);
 	if (!GS_SUCCEEDED(ret))
@@ -1596,6 +1748,123 @@ griddbExecForeignInsert(EState *estate,
 
 	return slot;
 }
+
+#if PG_VERSION_NUM >= 140000
+/*
+ * griddbExecForeignBatchInsert
+ *		Insert multiple rows into a foreign table
+ */
+static TupleTableSlot **
+griddbExecForeignBatchInsert(EState *estate,
+							 ResultRelInfo *resultRelInfo,
+							 TupleTableSlot **slots,
+							 TupleTableSlot **planSlots,
+							 int *numSlots)
+{
+	GridDBFdwModifyState *fmstate = (GridDBFdwModifyState *) resultRelInfo->ri_FdwState;
+	GSRow	  **rowList = (GSRow * *) palloc0(sizeof(GSRow *) * (*numSlots));
+	GSResult	ret;
+	GSBool		exists;
+	GSContainerInfo cont_info = GS_CONTAINER_INFO_INITIALIZER;
+	GSRow	   *row;
+	GridDBFdwFieldInfo field_info = {0};
+	int			i;
+	const void *const *rowObj;
+
+	elog(DEBUG1, "griddb_fdw: %s", __func__);
+
+	/*
+	 * If the fmstate has aux_fmstate set, use the aux_fmstate (see
+	 * griddbBeginForeignInsert())
+	 */
+	if (fmstate->aux_fmstate)
+		fmstate = fmstate->aux_fmstate;
+
+	/* Get schema information for binding */
+	ret = gsGetContainerInfo(fmstate->store, fmstate->cont_name, &cont_info,
+							 &exists);
+	if (!GS_SUCCEEDED(ret))
+		griddb_REPORT_ERROR(ERROR, ret, fmstate->cont);
+	Assert(exists == GS_TRUE);
+	griddb_make_column_info(&cont_info, &field_info);
+
+	for (i = 0; i < *numSlots; i++)
+	{
+		ret = gsCreateRowByContainer(fmstate->cont, &row);
+		if (!GS_SUCCEEDED(ret))
+			griddb_REPORT_ERROR(ERROR, ret, fmstate->cont);
+		/* Create element for rowList for gsPutMultipleRows */
+		griddb_bind_for_putrow(fmstate, slots[i], row, resultRelInfo->ri_RelationDesc,
+							   &field_info);
+		rowList[i] = row;
+	}
+	griddb_free_column_info(&field_info);
+
+	rowObj = (void *) rowList;
+
+	ret = gsPutMultipleRows(fmstate->cont, rowObj, *numSlots, &exists);
+	if (!GS_SUCCEEDED(ret))
+		griddb_REPORT_ERROR(ERROR, ret, fmstate->cont);
+
+	/* exists is alway return false by gsPutMultipleRows */
+	if (exists)
+		elog(WARNING, "row was updated instead of insert "
+			 "because same row key has already existed.");
+
+	for (i = 0; i < *numSlots; i++)
+	{
+		gsCloseRow(&rowList[i]);
+	}
+
+	return slots;
+}
+
+/*
+ * griddbGetForeignModifyBatchSize
+ *		Determine the maximum number of tuples that can be inserted in bulk
+ *
+ * Returns the batch size specified for server or table. When batching is not
+ * allowed (e.g. for tables with AFTER ROW triggers or with RETURNING clause),
+ * returns 1.
+ */
+static int
+griddbGetForeignModifyBatchSize(ResultRelInfo *resultRelInfo)
+{
+	int			batch_size;
+	GridDBFdwModifyState *fmstate = resultRelInfo->ri_FdwState ?
+	(GridDBFdwModifyState *) resultRelInfo->ri_FdwState :
+	NULL;
+
+	/* should be called only once */
+	Assert(resultRelInfo->ri_BatchSize == 0);
+
+	/*
+	 * Should never get called when the insert is being performed as part of a
+	 * row movement operation.
+	 */
+	Assert(fmstate == NULL || fmstate->aux_fmstate == NULL);
+
+	/*
+	 * In EXPLAIN without ANALYZE, ri_fdwstate is NULL, so we have to lookup
+	 * the option directly in server/table options. Otherwise just use the
+	 * value we determined earlier.
+	 */
+	if (fmstate)
+		batch_size = fmstate->batch_size;
+	else
+		batch_size = get_batch_size_option(resultRelInfo->ri_RelationDesc);
+
+	/*
+	 * GridDB c-API has no limit with max number of row (rowCount) in
+	 * gsPutMultipleRows(), but rowCount should be limited to 65535 (uint16)
+	 * same as postgres_fdw for safe.
+	 */
+	if (fmstate)
+		batch_size = Min(batch_size, DEFAULT_QUERY_PARAM_MAX_LIMIT);
+
+	return batch_size;
+}
+#endif
 
 /*
  * griddbExecForeignUpdate
@@ -1770,7 +2039,7 @@ griddbBeginForeignInsert(ModifyTableState *mtstate,
 	GridDBFdwModifyState *fmstate;
 	ModifyTable *plan = castNode(ModifyTable, mtstate->ps.plan);
 	EState	   *estate = mtstate->ps.state;
-	Index		resultRelation = resultRelInfo->ri_RangeTableIndex;
+	Index		resultRelation;
 	Relation	rel = resultRelInfo->ri_RelationDesc;
 	RangeTblEntry *rte;
 	TupleDesc	tupdesc = RelationGetDescr(rel);
@@ -1791,8 +2060,11 @@ griddbBeginForeignInsert(ModifyTableState *mtstate,
 	 */
 	if (plan && plan->operation == CMD_UPDATE &&
 		(resultRelInfo->ri_usesFdwDirectModify ||
-		 resultRelInfo->ri_FdwState) &&
-		resultRelInfo > mtstate->resultRelInfo + mtstate->mt_whichplan)
+		 resultRelInfo->ri_FdwState)
+#if PG_VERSION_NUM < 140000
+		&& resultRelInfo > mtstate->resultRelInfo + mtstate->mt_whichplan
+#endif
+		)
 	{
 		ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
@@ -1838,9 +2110,14 @@ griddbBeginForeignInsert(ModifyTableState *mtstate,
 	 * correspond to this partition if it is one of the UPDATE subplan target
 	 * rels; in that case, we can just use the existing RTE as-is.
 	 */
-	rte = (RangeTblEntry *) list_nth(estate->es_range_table, resultRelation - 1);
-	if (rte->relid != RelationGetRelid(rel))
+	if (resultRelInfo->ri_RangeTableIndex == 0)
 	{
+		ResultRelInfo *rootResultRelInfo = resultRelInfo->ri_RootResultRelInfo;
+#if (PG_VERSION_NUM >= 120000)
+		rte = exec_rt_fetch(rootResultRelInfo->ri_RangeTableIndex, estate);
+#else
+		rte = list_nth(estate->es_range_table, rootResultRelInfo->ri_RangeTableIndex - 1);
+#endif
 		rte = (RangeTblEntry *) copyObject(rte);
 		rte->relid = RelationGetRelid(rel);
 		rte->relkind = RELKIND_FOREIGN_TABLE;
@@ -1852,10 +2129,26 @@ griddbBeginForeignInsert(ModifyTableState *mtstate,
 		 * Vars contained in those expressions.
 		 */
 		if (plan && plan->operation == CMD_UPDATE &&
-			resultRelation == plan->nominalRelation)
+#if (PG_VERSION_NUM >= 120000)
+			rootResultRelInfo->ri_RangeTableIndex == plan->rootRelation
+#else
+			rootResultRelInfo->ri_RangeTableIndex == plan->nominalRelation
+#endif
+			)
 			resultRelation = mtstate->resultRelInfo[0].ri_RangeTableIndex;
-	}
+		else
+			resultRelation = rootResultRelInfo->ri_RangeTableIndex;
 
+	}
+	else
+	{
+		resultRelation = resultRelInfo->ri_RangeTableIndex;
+#if (PG_VERSION_NUM >= 120000)
+		rte = exec_rt_fetch(resultRelation, estate);
+#else
+		rte = list_nth(estate->es_range_table, resultRelation - 1);
+#endif
+	}
 	/* Construct an execution state. */
 	fmstate = create_foreign_modify(mtstate->ps.state,
 									rte,
@@ -1864,7 +2157,14 @@ griddbBeginForeignInsert(ModifyTableState *mtstate,
 									NULL,
 									targetAttrs);
 
-	resultRelInfo->ri_FdwState = fmstate;
+	if (resultRelInfo->ri_FdwState)
+	{
+		Assert(plan && plan->operation == CMD_UPDATE);
+		Assert(resultRelInfo->ri_usesFdwDirectModify == false);
+		((GridDBFdwModifyState *) resultRelInfo->ri_FdwState)->aux_fmstate = fmstate;
+	}
+	else
+		resultRelInfo->ri_FdwState = fmstate;
 }
 
 /*
@@ -1880,6 +2180,13 @@ griddbEndForeignInsert(EState *estate,
 	elog(DEBUG1, "griddb_fdw: %s", __func__);
 
 	Assert(fmstate != NULL);
+
+	/*
+	 * If the fmstate has aux_fmstate set, get the aux_fmstate (see
+	 * griddbBeginForeignInsert())
+	 */
+	if (fmstate->aux_fmstate)
+		fmstate = fmstate->aux_fmstate;
 
 	/* Release remote connection */
 	griddb_release_connection(fmstate->store);
@@ -1961,7 +2268,7 @@ griddbExplainForeignScan(ForeignScanState *node, ExplainState *es)
 	List	   *fdw_private;
 	char	   *sql;
 
-	elog(DEBUG1, "griddb_fdw: %s", __FUNCTION__);
+	elog(DEBUG1, "griddb_fdw: %s", __func__);
 
 	fdw_private = ((ForeignScan *) node->ss.ps.plan)->fdw_private;
 
@@ -1986,7 +2293,20 @@ griddbExplainForeignModify(ModifyTableState *mtstate,
 						   int subplan_index,
 						   ExplainState *es)
 {
-	/* Not support now. */
+	elog(DEBUG1, "griddb_fdw: %s", __func__);
+#if (PG_VERSION_NUM >= 140000)
+	if (es->verbose)
+	{
+		/*
+		 * For batch insert we should have batch size > 1, we only show the
+		 * property with BATCH INSERT feature
+		 */
+		if (rinfo->ri_BatchSize > 1)
+		{
+			ExplainPropertyInteger("Batch Size", NULL, rinfo->ri_BatchSize, es);
+		}
+	}
+#endif
 }
 
 /*
@@ -2436,19 +2756,19 @@ griddb_add_paths_with_pathkeys_for_rel(PlannerInfo *root, RelOptInfo *rel,
 #else
 					 create_foreignscan_path
 #endif
-											 (root, rel,
-											  NULL,
-											  rows,
-											  startup_cost,
-											  total_cost,
-											  useful_pathkeys,
+					 (root, rel,
+					  NULL,
+					  rows,
+					  startup_cost,
+					  total_cost,
+					  useful_pathkeys,
 #if (PG_VERSION_NUM >= 120000)
-											  rel->lateral_relids,
+					  rel->lateral_relids,
 #else
-											  NULL,	/* no outer rel either */
+					  NULL,		/* no outer rel either */
 #endif
-											  sorted_epq_path,
-											  NIL));
+					  sorted_epq_path,
+					  NIL));
 	}
 }
 
@@ -2517,16 +2837,19 @@ griddb_foreign_grouping_ok(PlannerInfo *root, RelOptInfo *grouped_rel)
 		ListCell   *l;
 
 		/*
-			* Non-grouping expression we need to compute.  Can we ship it
-			* as-is to the foreign server?
-			*/
+		 * Non-grouping expression we need to compute.  Can we ship it as-is
+		 * to the foreign server?
+		 */
 		if (griddb_is_foreign_expr(root, grouped_rel, expr, true) &&
 			!griddb_is_foreign_param(root, grouped_rel, expr))
 		{
 			/* Yes, so add to tlist as-is; OK to suppress duplicates */
 			tlist = add_to_flat_tlist(tlist, list_make1(expr));
 
-			/* GridDB does not support selecting multiple target, so do not push down when there are multiple items in target list. */
+			/*
+			 * GridDB does not support selecting multiple target, so do not
+			 * push down when there are multiple items in target list.
+			 */
 			if (list_length(tlist) > 1)
 				return false;
 		}
@@ -2536,27 +2859,27 @@ griddb_foreign_grouping_ok(PlannerInfo *root, RelOptInfo *grouped_rel)
 			List	   *aggvars;
 
 			aggvars = pull_var_clause((Node *) expr,
-										PVC_INCLUDE_AGGREGATES);
+									  PVC_INCLUDE_AGGREGATES);
 
 			/*
-				* If any aggregate expression is not shippable, then we
-				* cannot push down aggregation to the foreign server.  (We
-				* don't have to check is_foreign_param, since that certainly
-				* won't return true for any such expression.)
-				*/
+			 * If any aggregate expression is not shippable, then we cannot
+			 * push down aggregation to the foreign server.  (We don't have to
+			 * check is_foreign_param, since that certainly won't return true
+			 * for any such expression.)
+			 */
 			if (!griddb_is_foreign_expr(root, grouped_rel, (Expr *) aggvars, true))
 				return false;
 
 			/*
-				* Add aggregates, if any, into the targetlist.  Plain Vars
-				* outside an aggregate can be ignored, because they should be
-				* either same as some GROUP BY column or part of some GROUP
-				* BY expression.  In either case, they are already part of
-				* the targetlist and thus no need to add them again.  In fact
-				* including plain Vars in the tlist when they do not match a
-				* GROUP BY column would cause the foreign server to complain
-				* that the shipped query is invalid.
-				*/
+			 * Add aggregates, if any, into the targetlist.  Plain Vars
+			 * outside an aggregate can be ignored, because they should be
+			 * either same as some GROUP BY column or part of some GROUP BY
+			 * expression.  In either case, they are already part of the
+			 * targetlist and thus no need to add them again.  In fact
+			 * including plain Vars in the tlist when they do not match a
+			 * GROUP BY column would cause the foreign server to complain that
+			 * the shipped query is invalid.
+			 */
 			foreach(l, aggvars)
 			{
 				Expr	   *expr = (Expr *) lfirst(l);
@@ -2565,7 +2888,10 @@ griddb_foreign_grouping_ok(PlannerInfo *root, RelOptInfo *grouped_rel)
 					tlist = add_to_flat_tlist(tlist, list_make1(expr));
 			}
 
-			/* GridDB does not support selecting multiple target, so do not push down when there are multiple items in target list. */
+			/*
+			 * GridDB does not support selecting multiple target, so do not
+			 * push down when there are multiple items in target list.
+			 */
 			if (list_length(tlist) > 1)
 				return false;
 		}
@@ -2633,6 +2959,7 @@ griddb_foreign_grouping_ok(PlannerInfo *root, RelOptInfo *grouped_rel)
 	 * to the base relation name mustn't include any digits, or it'll confuse
 	 * postgresExplainForeignScan.
 	 */
+
 	/*
 	 * Set the string describing this grouped relation to be used in EXPLAIN
 	 * output of corresponding ForeignScan.
@@ -2651,11 +2978,11 @@ griddb_foreign_grouping_ok(PlannerInfo *root, RelOptInfo *grouped_rel)
  */
 static void
 griddb_add_foreign_grouping_paths(PlannerInfo *root, RelOptInfo *input_rel,
-						   RelOptInfo *grouped_rel
+								  RelOptInfo *grouped_rel
 #if (PG_VERSION_NUM >= 110000)
-							, GroupPathExtraData *extra
+								  ,GroupPathExtraData *extra
 #endif
-							)
+)
 {
 	Query	   *parse = root->parse;
 	GriddbFdwRelationInfo *ifpinfo = input_rel->fdw_private;
@@ -2667,8 +2994,9 @@ griddb_add_foreign_grouping_paths(PlannerInfo *root, RelOptInfo *input_rel,
 	Cost		total_cost;
 
 	/*
-	 * Nothing to be done, if there is no aggregation required.
-	 * Griddb does not support GROUP BY, GROUPING SET, HAVING, so also return when there are those clauses.
+	 * Nothing to be done, if there is no aggregation required. Griddb does
+	 * not support GROUP BY, GROUPING SET, HAVING, so also return when there
+	 * are those clauses.
 	 */
 	if (parse->groupClause ||
 		parse->groupingSets ||
@@ -3048,8 +3376,8 @@ griddbGetForeignUpperPaths(PlannerInfo *root, UpperRelationKind stage,
 	 * support LIMIT...OFFSET and aggregation push down
 	 */
 	if ((stage != UPPERREL_GROUP_AGG &&
-	     stage != UPPERREL_FINAL) ||
-		 output_rel->fdw_private)
+		 stage != UPPERREL_FINAL) ||
+		output_rel->fdw_private)
 		return;
 
 	fpinfo = (GriddbFdwRelationInfo *) palloc0(sizeof(GriddbFdwRelationInfo));
@@ -3062,9 +3390,9 @@ griddbGetForeignUpperPaths(PlannerInfo *root, UpperRelationKind stage,
 		case UPPERREL_GROUP_AGG:
 			griddb_add_foreign_grouping_paths(root, input_rel, output_rel
 #if (PG_VERSION_NUM >= 110000)
-									   , (GroupPathExtraData *) extra
+											  ,(GroupPathExtraData *) extra
 #endif
-									   );
+				);
 			break;
 		case UPPERREL_FINAL:
 			griddb_add_foreign_final_paths(root, input_rel, output_rel
@@ -3314,11 +3642,11 @@ griddb_free_column_info(GridDBFdwFieldInfo * field_info)
  * Return Griddb type for aggregate function of GridDB
  */
 static Oid
-griddb_get_agg_type(GridDBFdwFieldInfo field_info, GridDBAggref *aggref)
+griddb_get_agg_type(GridDBFdwFieldInfo field_info, GridDBAggref * aggref)
 {
-	char *aggname = aggref->aggname->data;
-	size_t i;
-	GSType type = -1;
+	char	   *aggname = aggref->aggname->data;
+	size_t		i;
+	GSType		type = -1;
 
 	/* count returns LONG type */
 	if (strcmp(aggname, "count") == 0)
@@ -3327,15 +3655,15 @@ griddb_get_agg_type(GridDBFdwFieldInfo field_info, GridDBAggref *aggref)
 	}
 	/* avg, variance, stddev returns DOUBLE */
 	else if ((strcmp(aggname, "avg") == 0) ||
-			(strcmp(aggname, "variance") == 0) ||
-			(strcmp(aggname, "stddev") == 0))
+			 (strcmp(aggname, "variance") == 0) ||
+			 (strcmp(aggname, "stddev") == 0))
 	{
 		type = GS_TYPE_DOUBLE;
 	}
 	/* max, min, sum depends on the type of the specified column */
 	else if ((strcmp(aggname, "max") == 0) ||
-			(strcmp(aggname, "min") == 0) ||
-			(strcmp(aggname, "sum") == 0))
+			 (strcmp(aggname, "min") == 0) ||
+			 (strcmp(aggname, "sum") == 0))
 	{
 		for (i = 0; i < field_info.column_count; i++)
 		{
@@ -3345,8 +3673,10 @@ griddb_get_agg_type(GridDBFdwFieldInfo field_info, GridDBAggref *aggref)
 				break;
 			}
 		}
+
 		/*
-		 * sum returns LONG if the column is integer type, returns DOUBLE if the column is floating-point type
+		 * sum returns LONG if the column is integer type, returns DOUBLE if
+		 * the column is floating-point type
 		 */
 		if (strcmp(aggname, "sum") == 0)
 		{
@@ -3356,7 +3686,7 @@ griddb_get_agg_type(GridDBFdwFieldInfo field_info, GridDBAggref *aggref)
 				type == GS_TYPE_LONG)
 				return GS_TYPE_LONG;
 			else if (type == GS_TYPE_FLOAT ||
-					type == GS_TYPE_DOUBLE)
+					 type == GS_TYPE_DOUBLE)
 				type = GS_TYPE_DOUBLE;
 		}
 	}
@@ -3506,7 +3836,7 @@ griddb_convert_gs2pg_timestamp(GSTimestamp ts)
 	return timestamp;
 }
 
-static char*
+static char *
 griddb_convert_gs2pg_timestamp_to_string(GSTimestamp ts)
 {
 	char		buf[MAXDATELEN + 1];
@@ -3603,7 +3933,7 @@ griddb_get_datatype_for_conversion(Oid pg_type, regproc *typeinput,
 
 Datum
 griddb_make_datum_from_row(GSRow * row, int32_t attid, GSType gs_type,
-						   Oid pg_type, GSRowSetType row_type, GSAggregationResult *agg_res, GridDBAggref *aggref)
+						   Oid pg_type, GSRowSetType row_type, GSAggregationResult * agg_res, GridDBAggref * aggref)
 {
 	GSResult	ret;
 	regproc		typeinput;
@@ -3618,22 +3948,23 @@ griddb_make_datum_from_row(GSRow * row, int32_t attid, GSType gs_type,
 
 	if (row_type == GS_ROW_SET_AGGREGATION_RESULT)
 	{
-		char 		*aggname = aggref->aggname->data;
+		char	   *aggname = aggref->aggname->data;
 
 		/*
-		 * avg, stddev, variance of postgres expects NUMERIC type, while GridDB returns DOUBLE type.
-		 * => skip check type.
+		 * avg, stddev, variance of postgres expects NUMERIC type, while
+		 * GridDB returns DOUBLE type. => skip check type.
 		 */
 		if (pg_type == NUMERICOID &&
 			(strcmp(aggname, "avg") == 0 ||
-			strcmp(aggname, "stddev") == 0 ||
-			strcmp(aggname, "variance") == 0))
+			 strcmp(aggname, "stddev") == 0 ||
+			 strcmp(aggname, "variance") == 0))
 			skip_check_match_type = true;
 
-		/* For sum, postgres expects:
-		 *   + NUMERIC type for BIGINT arguments. GridDB returns LONG type => skip check type.
-		 *   + REAL type for REAL arguments. GridDB returns DOUBLE type => skip check type.
-		 *   + Other cases are equal to GridDB type => no need to skip check type.
+		/*
+		 * For sum, postgres expects: + NUMERIC type for BIGINT arguments.
+		 * GridDB returns LONG type => skip check type. + REAL type for REAL
+		 * arguments. GridDB returns DOUBLE type => skip check type. + Other
+		 * cases are equal to GridDB type => no need to skip check type.
 		 */
 		if ((pg_type == FLOAT4OID || pg_type == NUMERICOID) && (strcmp(aggname, "sum") == 0))
 			skip_check_match_type = true;
@@ -4028,10 +4359,10 @@ griddb_make_datum_from_row(GSRow * row, int32_t attid, GSType gs_type,
 }
 
 static Datum
-griddb_make_datum_record(StringInfoData *values, TupleDesc tupdesc, GSType *column_types,
-						GSRow * row, regproc typeinput, int typemod)
+griddb_make_datum_record(StringInfoData *values, TupleDesc tupdesc, GSType * column_types,
+						 GSRow * row, regproc typeinput, int typemod)
 {
-	int index;
+	int			index;
 	Datum		value_datum;	/* Temporary datum */
 	Datum		valueDatum;
 	size_t		size;
@@ -4048,7 +4379,7 @@ griddb_make_datum_record(StringInfoData *values, TupleDesc tupdesc, GSType *colu
 		if (index != 0)
 			appendStringInfo(values, ",");
 
-		switch(column_types[index])
+		switch (column_types[index])
 		{
 			case GS_TYPE_STRING:
 				{
@@ -4079,7 +4410,7 @@ griddb_make_datum_record(StringInfoData *values, TupleDesc tupdesc, GSType *colu
 					ret = gsGetRowFieldAsBool(row, index, &boolVal);
 					if (!GS_SUCCEEDED(ret))
 						griddb_REPORT_ERROR(ERROR, ret, row);
-					appendStringInfo(values, "%c", boolVal?'t':'f');
+					appendStringInfo(values, "%c", boolVal ? 't' : 'f');
 					break;
 				}
 			case GS_TYPE_BYTE:
@@ -4145,7 +4476,7 @@ griddb_make_datum_record(StringInfoData *values, TupleDesc tupdesc, GSType *colu
 			case GS_TYPE_TIMESTAMP:
 				{
 					GSTimestamp tsVal;
-					char*	buf;
+					char	   *buf;
 
 					ret = gsGetRowFieldAsTimestamp(row, index, &tsVal);
 					if (!GS_SUCCEEDED(ret))
@@ -4158,8 +4489,9 @@ griddb_make_datum_record(StringInfoData *values, TupleDesc tupdesc, GSType *colu
 			case GS_TYPE_BLOB:
 				{
 					GSBlob		blobVal;
-					char*	buf;
-					Datum tmpDatum;
+					char	   *buf;
+					Datum		tmpDatum;
+
 					ret = gsGetRowFieldAsBlob(row, index, &blobVal);
 					if (!GS_SUCCEEDED(ret))
 						griddb_REPORT_ERROR(ERROR, ret, row);
@@ -4169,7 +4501,12 @@ griddb_make_datum_record(StringInfoData *values, TupleDesc tupdesc, GSType *colu
 					SET_VARSIZE(tmpDatum, blobVal.size + VARHDRSZ);
 
 					buf = DatumGetCString(DirectFunctionCall1(byteaout, tmpDatum));
-					/* Append \\ to buf because record_in function will remove original \\ and then make wrong input for byteain function */
+
+					/*
+					 * Append \\ to buf because record_in function will remove
+					 * original \\ and then make wrong input for byteain
+					 * function
+					 */
 					appendStringInfo(values, "\\%s", buf);
 					break;
 				}
@@ -4205,7 +4542,7 @@ griddb_make_datum_record(StringInfoData *values, TupleDesc tupdesc, GSType *colu
 					{
 						if (i > 0)
 							appendStringInfo(values, "\\,");
-						appendStringInfo(values, "%c", boolVal[i]?'t':'f');
+						appendStringInfo(values, "%c", boolVal[i] ? 't' : 'f');
 					}
 					appendStringInfoChar(values, '}');
 					break;
@@ -4223,7 +4560,7 @@ griddb_make_datum_record(StringInfoData *values, TupleDesc tupdesc, GSType *colu
 					{
 						if (i > 0)
 							appendStringInfo(values, "\\,");
-						appendStringInfo(values, "%d", (int16_t)byteVal[i]);
+						appendStringInfo(values, "%d", (int16_t) byteVal[i]);
 					}
 					appendStringInfoChar(values, '}');
 					break;
@@ -4242,7 +4579,7 @@ griddb_make_datum_record(StringInfoData *values, TupleDesc tupdesc, GSType *colu
 					{
 						if (i > 0)
 							appendStringInfo(values, "\\,");
-						appendStringInfo(values, "%d", (int16_t)shortVal[i]);
+						appendStringInfo(values, "%d", (int16_t) shortVal[i]);
 					}
 					appendStringInfoChar(values, '}');
 					break;
@@ -4261,7 +4598,7 @@ griddb_make_datum_record(StringInfoData *values, TupleDesc tupdesc, GSType *colu
 					{
 						if (i > 0)
 							appendStringInfo(values, "\\,");
-						appendStringInfo(values, "%d", (int32_t)intVal[i]);
+						appendStringInfo(values, "%d", (int32_t) intVal[i]);
 					}
 					appendStringInfoChar(values, '}');
 					break;
@@ -4280,7 +4617,7 @@ griddb_make_datum_record(StringInfoData *values, TupleDesc tupdesc, GSType *colu
 					{
 						if (i > 0)
 							appendStringInfo(values, "\\,");
-						appendStringInfo(values, "%ld", (int64_t)longVal[i]);
+						appendStringInfo(values, "%ld", (int64_t) longVal[i]);
 					}
 					appendStringInfoChar(values, '}');
 					break;
@@ -4299,7 +4636,7 @@ griddb_make_datum_record(StringInfoData *values, TupleDesc tupdesc, GSType *colu
 					{
 						if (i > 0)
 							appendStringInfo(values, "\\,");
-						appendStringInfo(values, "%f", (float4)floatVal[i]);
+						appendStringInfo(values, "%f", (float4) floatVal[i]);
 					}
 					appendStringInfoChar(values, '}');
 					break;
@@ -4321,7 +4658,7 @@ griddb_make_datum_record(StringInfoData *values, TupleDesc tupdesc, GSType *colu
 					{
 						if (i > 0)
 							appendStringInfo(values, "\\,");
-						appendStringInfo(values, "%f", (float8)doubleVal[i]);
+						appendStringInfo(values, "%f", (float8) doubleVal[i]);
 					}
 					appendStringInfoChar(values, '}');
 					break;
@@ -4330,7 +4667,7 @@ griddb_make_datum_record(StringInfoData *values, TupleDesc tupdesc, GSType *colu
 			case GS_TYPE_TIMESTAMP_ARRAY:
 				{
 					const		GSTimestamp *tsVal;
-					char*	buf;
+					char	   *buf;
 
 					ret = gsGetRowFieldAsTimestampArray(row, index, &tsVal, &size);
 					if (!GS_SUCCEEDED(ret))
@@ -4355,8 +4692,8 @@ griddb_make_datum_record(StringInfoData *values, TupleDesc tupdesc, GSType *colu
 	appendStringInfoChar(values, ')');
 	value_datum = CStringGetDatum((char *) values->data);
 	valueDatum = OidFunctionCall3(typeinput, value_datum,
-												RECORDOID,
-												Int32GetDatum(typemod));
+								  RECORDOID,
+								  Int32GetDatum(typemod));
 	return valueDatum;
 }
 
@@ -5038,6 +5375,48 @@ griddb_check_rowkey_update(GridDBFdwModifyState * fmstate, TupleTableSlot *new_s
 			elog(ERROR, "new rowkey column update is not supported");
 
 	}
-
-
 }
+
+#if (PG_VERSION_NUM >= 140000)
+/*
+ * Determine batch size for a given foreign table. The option specified for
+ * a table has precedence.
+ */
+static int
+get_batch_size_option(Relation rel)
+{
+	Oid			foreigntableid = RelationGetRelid(rel);
+	ForeignTable *table;
+	ForeignServer *server;
+	List	   *options;
+	ListCell   *lc;
+
+	/* we use 1 by default, which means "no batching" */
+	int			batch_size = 1;
+
+	/*
+	 * Load options for table and server. We append server options after table
+	 * options, because table options take precedence.
+	 */
+	table = GetForeignTable(foreigntableid);
+	server = GetForeignServer(table->serverid);
+
+	options = NIL;
+	options = list_concat(options, table->options);
+	options = list_concat(options, server->options);
+
+	/* See if either table or server specifies batch_size. */
+	foreach(lc, options)
+	{
+		DefElem    *def = (DefElem *) lfirst(lc);
+
+		if (strcmp(def->defname, OPTION_BATCH_SIZE) == 0)
+		{
+			batch_size = strtol(defGetString(def), NULL, 10);
+			break;
+		}
+	}
+
+	return batch_size;
+}
+#endif
