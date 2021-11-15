@@ -1,4 +1,4 @@
-/* contrib/griddb_fdw/griddb_fdw--1.0.sql */
+/* contrib/griddb_fdw/griddb_fdw--1.1.sql */
 
 -- complain if script is sourced in psql, rather than via CREATE EXTENSION
 \echo Use "CREATE EXTENSION griddb_fdw" to load this file. \quit
@@ -12,6 +12,10 @@ CREATE FUNCTION griddb_fdw_validator(text[], oid)
 RETURNS void
 AS 'MODULE_PATHNAME'
 LANGUAGE C STRICT;
+
+CREATE OR REPLACE FUNCTION griddb_fdw_version()
+  RETURNS pg_catalog.int4 STRICT
+  AS 'MODULE_PATHNAME' LANGUAGE C;
 
 CREATE FOREIGN DATA WRAPPER griddb_fdw
   HANDLER griddb_fdw_handler

@@ -91,9 +91,9 @@ set_tableInfo(GSGridStore * store,
  */
 GSResult
 set_tableInfo_timeseries(GSGridStore * store,
-			  const GSChar * tbl_name,
-			  table_info * tbl_info,
-			  size_t column_count,...)
+						 const GSChar * tbl_name,
+						 table_info * tbl_info,
+						 size_t column_count,...)
 {
 	GSResult	ret = GS_RESULT_OK;
 	int			i;
@@ -236,13 +236,14 @@ insert_recordsFromTSV(GSGridStore * store,
 					ret = gsSetRowFieldByDouble(row, i, strtod(record_cols[i], NULL));
 					break;
 				case GS_TYPE_TIMESTAMP:
-				{
-					GSBool status;
-					GSTimestamp timestamp;
-					status = gsParseTime(record_cols[i], &timestamp);
-					ret = gsSetRowFieldByTimestamp(row, i, timestamp);
-					break;
-				}
+					{
+						GSBool		status;
+						GSTimestamp timestamp;
+
+						status = gsParseTime(record_cols[i], &timestamp);
+						ret = gsSetRowFieldByTimestamp(row, i, timestamp);
+						break;
+					}
 				default:
 					break;
 					/* if needed */
@@ -357,6 +358,7 @@ griddb_init(const char *addr,
 				loct22,
 				loct12,
 				loct21,
+				loct_empty,
 				locp1,
 				locp2,
 				fprt1_p1,
@@ -366,7 +368,18 @@ griddb_init(const char *addr,
 				pagg_tab_p1,
 				pagg_tab_p2,
 				pagg_tab_p3,
-				local_tbl;
+				local_tbl,
+				batch_table,
+				batch_table_p0,
+				batch_table_p1,
+				batch_cp_upd_test1,
+				tru_rtable0,
+				tru_rtable1,
+				tru_pk_table,
+				tru_rtable_parent,
+				tru_rtable_child,
+				reindex_local,
+				reind_local_10_20;
 
 	/* For float4 */
 	table_info	FLOAT4_TBL;
@@ -505,11 +518,14 @@ griddb_init(const char *addr,
 				num_exp_log10,
 				num_exp_power_10_ln,
 				num_result,
+				v,
 				ceil_floor_round,
 				width_bucket_tbl,
+				width_bucket_roundoff_tbl,
 				width_bucket_test,
 				num_input_test,
 				num_test_calc,
+				num_test_int,
 				fract_only,
 				to_number_test;
 
@@ -608,39 +624,39 @@ griddb_init(const char *addr,
 		goto EXIT;
 
 	/*
-	 * CREATE TABLE time_series (date timestamp,
-	 * value1 integer, value2 double, blobCol Blob)
+	 * CREATE TABLE time_series (date timestamp, value1 integer, value2
+	 * double, blobCol Blob)
 	 */
 	ret = set_tableInfo_timeseries(store, "time_series", &time_series_tbl,
-						3,
-						"date", GS_TYPE_TIMESTAMP, GS_TYPE_OPTION_NOT_NULL,
-						"value1", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
-						"value2", GS_TYPE_DOUBLE, GS_TYPE_OPTION_NULLABLE);
+								   3,
+								   "date", GS_TYPE_TIMESTAMP, GS_TYPE_OPTION_NOT_NULL,
+								   "value1", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
+								   "value2", GS_TYPE_DOUBLE, GS_TYPE_OPTION_NULLABLE);
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
 
 	ret = set_tableInfo_timeseries(store, "time_series2", &time_series2,
-						20,
-						"date", GS_TYPE_TIMESTAMP, GS_TYPE_OPTION_NOT_NULL,
-						"date2", GS_TYPE_TIMESTAMP, GS_TYPE_OPTION_NOT_NULL,
-						"strcol", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE,
-						"booleancol", GS_TYPE_BOOL, GS_TYPE_OPTION_NULLABLE,
-						"bytecol", GS_TYPE_BYTE, GS_TYPE_OPTION_NULLABLE,
-						"shortcol", GS_TYPE_SHORT, GS_TYPE_OPTION_NULLABLE,
-						"intcol", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
-						"longcol", GS_TYPE_LONG, GS_TYPE_OPTION_NULLABLE,
-						"floatcol", GS_TYPE_FLOAT, GS_TYPE_OPTION_NULLABLE,
-						"doublecol", GS_TYPE_DOUBLE, GS_TYPE_OPTION_NULLABLE,
-						"blobcol", GS_TYPE_BLOB, GS_TYPE_OPTION_NULLABLE,
-						"stringarray", GS_TYPE_STRING_ARRAY, GS_TYPE_OPTION_NULLABLE,
-						"boolarray", GS_TYPE_BOOL_ARRAY, GS_TYPE_OPTION_NULLABLE,
-						"bytearray", GS_TYPE_BYTE_ARRAY, GS_TYPE_OPTION_NULLABLE,
-						"shortarray", GS_TYPE_SHORT_ARRAY, GS_TYPE_OPTION_NULLABLE,
-						"integerarray", GS_TYPE_INTEGER_ARRAY, GS_TYPE_OPTION_NULLABLE,
-						"longarray", GS_TYPE_LONG_ARRAY, GS_TYPE_OPTION_NULLABLE,
-						"floatarray", GS_TYPE_FLOAT_ARRAY, GS_TYPE_OPTION_NULLABLE,
-						"doublearray", GS_TYPE_DOUBLE_ARRAY, GS_TYPE_OPTION_NULLABLE,
-						"timestamparray", GS_TYPE_TIMESTAMP_ARRAY, GS_TYPE_OPTION_NULLABLE);
+								   20,
+								   "date", GS_TYPE_TIMESTAMP, GS_TYPE_OPTION_NOT_NULL,
+								   "date2", GS_TYPE_TIMESTAMP, GS_TYPE_OPTION_NOT_NULL,
+								   "strcol", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE,
+								   "booleancol", GS_TYPE_BOOL, GS_TYPE_OPTION_NULLABLE,
+								   "bytecol", GS_TYPE_BYTE, GS_TYPE_OPTION_NULLABLE,
+								   "shortcol", GS_TYPE_SHORT, GS_TYPE_OPTION_NULLABLE,
+								   "intcol", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
+								   "longcol", GS_TYPE_LONG, GS_TYPE_OPTION_NULLABLE,
+								   "floatcol", GS_TYPE_FLOAT, GS_TYPE_OPTION_NULLABLE,
+								   "doublecol", GS_TYPE_DOUBLE, GS_TYPE_OPTION_NULLABLE,
+								   "blobcol", GS_TYPE_BLOB, GS_TYPE_OPTION_NULLABLE,
+								   "stringarray", GS_TYPE_STRING_ARRAY, GS_TYPE_OPTION_NULLABLE,
+								   "boolarray", GS_TYPE_BOOL_ARRAY, GS_TYPE_OPTION_NULLABLE,
+								   "bytearray", GS_TYPE_BYTE_ARRAY, GS_TYPE_OPTION_NULLABLE,
+								   "shortarray", GS_TYPE_SHORT_ARRAY, GS_TYPE_OPTION_NULLABLE,
+								   "integerarray", GS_TYPE_INTEGER_ARRAY, GS_TYPE_OPTION_NULLABLE,
+								   "longarray", GS_TYPE_LONG_ARRAY, GS_TYPE_OPTION_NULLABLE,
+								   "floatarray", GS_TYPE_FLOAT_ARRAY, GS_TYPE_OPTION_NULLABLE,
+								   "doublearray", GS_TYPE_DOUBLE_ARRAY, GS_TYPE_OPTION_NULLABLE,
+								   "timestamparray", GS_TYPE_TIMESTAMP_ARRAY, GS_TYPE_OPTION_NULLABLE);
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
 
@@ -1047,6 +1063,14 @@ griddb_init(const char *addr,
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
 
+	ret = set_tableInfo(store, "loct_empty", &loct_empty,
+						3,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"c1", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
+						"c2", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
 	ret = set_tableInfo(store, "locp1", &locp1,
 						3,
 						"a", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
@@ -1119,6 +1143,74 @@ griddb_init(const char *addr,
 						"a", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
 						"b", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
 						"c", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "batch_table", &batch_table,
+						1,
+						"x", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "batch_table_p0", &batch_table_p0,
+						1,
+						"x", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "batch_table_p1", &batch_table_p1,
+						1,
+						"x", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "batch_cp_upd_test1", &batch_cp_upd_test1,
+						2,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"a", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "tru_rtable0", &tru_rtable0,
+						1,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "tru_rtable1", &tru_rtable1,
+						1,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "tru_pk_table", &tru_pk_table,
+						1,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "tru_rtable_parent", &tru_rtable_parent,
+						1,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "tru_rtable_child", &tru_rtable_child,
+						1,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "reindex_local", &reindex_local,
+						2,
+						"c1", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"c2", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "reind_local_10_20", &reind_local_10_20,
+						1,
+						"c1", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL);
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
 
@@ -2083,6 +2175,13 @@ griddb_init(const char *addr,
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
 
+	ret = set_tableInfo(store, "v", &v,
+						2,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"x", GS_TYPE_DOUBLE, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
 	ret = set_tableInfo(store, "ceil_floor_round", &ceil_floor_round,
 						2,
 						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
@@ -2108,6 +2207,13 @@ griddb_init(const char *addr,
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
 
+	ret = set_tableInfo(store, "width_bucket_roundoff_tbl", &width_bucket_roundoff_tbl,
+						2,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"x", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
 	ret = set_tableInfo(store, "num_input_test", &num_input_test,
 						2,
 						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
@@ -2120,6 +2226,13 @@ griddb_init(const char *addr,
 						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
 						"n1", GS_TYPE_DOUBLE, GS_TYPE_OPTION_NULLABLE,
 						"n2", GS_TYPE_DOUBLE, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "num_test_int", &num_test_int,
+						2,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"x", GS_TYPE_LONG, GS_TYPE_OPTION_NULLABLE);
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
 
