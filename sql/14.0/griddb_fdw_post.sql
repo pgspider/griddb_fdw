@@ -1854,13 +1854,15 @@ DROP TABLE reind_fdw_parent;
 ALTER FOREIGN TABLE ft1 ALTER COLUMN c8 TYPE int;
 
 --Testcase 396:
-SELECT * FROM ft1 WHERE c1 = 1;  -- ERROR
+SELECT * FROM ft1 ftx(x1,x2,x3,x4,x5,x6,x7,x8) WHERE x1 = 1;  -- ERROR
 
 --Testcase 397:
-SELECT  ft1.c1, ft2.c2, ft1.c8 FROM ft1, ft2 WHERE ft1.c1 = ft2.c1 AND ft1.c1 = 1; -- ERROR
+SELECT ftx.x1, ft2.c2, ftx.x8 FROM ft1 ftx(x1,x2,x3,x4,x5,x6,x7,x8), ft2
+  WHERE ftx.x1 = ft2.c1 AND ftx.x1 = 1; -- ERROR
 
 --Testcase 398:
-SELECT  ft1.c1, ft2.c2, ft1 FROM ft1, ft2 WHERE ft1.c1 = ft2.c1 AND ft1.c1 = 1; -- ERROR
+SELECT ftx.x1, ft2.c2, ftx FROM ft1 ftx(x1,x2,x3,x4,x5,x6,x7,x8), ft2
+  WHERE ftx.x1 = ft2.c1 AND ftx.x1 = 1; -- ERROR
 
 --Testcase 399:
 SELECT sum(c2), array_agg(c8) FROM ft1 GROUP BY c8; -- ERROR
@@ -2518,7 +2520,14 @@ select f1, f2 from rem1;
 -- ===================================================================
 -- test generated columns
 -- ===================================================================
---create table gloc1 (a int, b int);
+-- griddb does not support generated column, so data will be generated
+-- at FDW layer before inserted to remote table.
+--Testcase 1103:
+create foreign table gloc1 (
+	id serial OPTIONS (rowkey 'true'),
+	a int,
+	b int)
+  server griddb_svr;
 --alter table gloc1 set (autovacuum_enabled = 'false');
 
 --Testcase 547:
@@ -2528,14 +2537,56 @@ create foreign table grem1 (
   b int generated always as (a * 2) stored)
   server griddb_svr options(table_name 'gloc1');
 
+--Testcase 1075:
+explain (verbose, costs off)
+insert into grem1 (a) values (1), (2);
+
 --Testcase 548:
 insert into grem1 (a) values (1), (2);
+
+--Testcase 1076:
+explain (verbose, costs off)
+update grem1 set a = 22 where a = 2;
 
 --Testcase 549:
 update grem1 set a = 22 where a = 2;
 
+--Testcase 1100:
+select a,b from gloc1;
 --Testcase 550:
 select a, b from grem1;
+
+--Testcase 1077:
+delete from grem1;
+
+-- test copy from
+copy grem1(a) from stdin;
+1
+2
+\.
+--Testcase 1101:
+select a,b from gloc1;
+--Testcase 1078:
+select a, b from grem1;
+--Testcase 1079:
+delete from grem1;
+
+-- test batch insert
+--Testcase 1080:
+alter server griddb_svr options (add batch_size '10');
+--Testcase 1081:
+explain (verbose, costs off)
+insert into grem1 (a) values (1), (2);
+--Testcase 1082:
+insert into grem1 (a) values (1), (2);
+--Testcase 1102:
+select a, b from gloc1;
+--Testcase 1083:
+select a, b from grem1;
+--Testcase 1084:
+delete from grem1;
+--Testcase 1085:
+alter server griddb_svr options (drop batch_size);
 
 -- ===================================================================
 -- test local triggers
@@ -2918,6 +2969,13 @@ DROP TRIGGER trig_row_after ON rem1;
 DROP TRIGGER trig_local_before ON rem1;
 
 -- Test direct foreign table modification functionality
+-- GridDB does not support direct modification
+--Testcase 1086:
+EXPLAIN (verbose, costs off)
+DELETE FROM rem1;                 -- can't be pushed down
+--Testcase 1087:
+EXPLAIN (verbose, costs off)
+DELETE FROM rem1 WHERE false;     -- currently can't be pushed down
 
 -- Test with statement-level triggers
 
@@ -3751,6 +3809,7 @@ update utrtest set a = 3; -- ERROR
 --Testcase 850:
 explain (verbose, costs off)
 update utrtest set a = 3 from (values (2), (3)) s(x) where a = s.x;
+--Testcase 1088:
 update utrtest set a = 3 from (values (2), (3)) s(x) where a = s.x; -- ERROR
 
 --Testcase 851:
@@ -4910,13 +4969,21 @@ SELECT COUNT(*) FROM ftable;
 -- griddb_fdw can not delete the large number of rows in one query
 -- because of the transaction timeout, so we delete small parts
 -- from foreign table
+--Testcase 1089:
 DELETE FROM ftable WHERE x < 10000;
+--Testcase 1090:
 DELETE FROM ftable WHERE x < 20000;
+--Testcase 1091:
 DELETE FROM ftable WHERE x < 30000;
+--Testcase 1092:
 DELETE FROM ftable WHERE x < 40000;
+--Testcase 1093:
 DELETE FROM ftable WHERE x < 50000;
+--Testcase 1094:
 DELETE FROM ftable WHERE x < 60000;
+--Testcase 1095:
 DELETE FROM ftable WHERE x < 70000;
+--Testcase 1096:
 DELETE FROM ftable;
 
 --Testcase 1043:
@@ -5215,6 +5282,25 @@ DROP TABLE batch_table, batch_cp_upd_test CASCADE;
 
 -- ALTER SERVER griddb_svr OPTIONS (DROP async_capable);
 -- ALTER SERVER griddb_svr2 OPTIONS (DROP async_capable);
+
+-- ===================================================================
+-- test invalid server and foreign table options
+-- ===================================================================
+-- Invalid fdw_startup_cost option
+--Testcase 1097:
+CREATE SERVER inv_scst FOREIGN DATA WRAPPER griddb_fdw
+	OPTIONS(fdw_startup_cost '100$%$#$#');
+-- Invalid fdw_tuple_cost option
+--Testcase 1098:
+CREATE SERVER inv_scst FOREIGN DATA WRAPPER griddb_fdw
+	OPTIONS(fdw_tuple_cost '100$%$#$#');
+-- Invalid fetch_size option
+--CREATE FOREIGN TABLE inv_fsz (c1 int )
+--	SERVER griddb_svr OPTIONS (fetch_size '100$%$#$#');
+-- Invalid batch_size option
+--Testcase 1099:
+CREATE FOREIGN TABLE inv_bsz (c1 int )
+	SERVER griddb_svr OPTIONS (batch_size '100$%$#$#');
 
 -- Drop all foreign tables
 

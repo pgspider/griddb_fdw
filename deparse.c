@@ -88,7 +88,8 @@ typedef struct deparse_expr_cxt
 
 	StringInfo	buf;			/* output buffer to append to */
 	List	  **params_list;	/* exprs that will become remote Params */
-	bool		can_skip_cast;	/* outer function can skip int2/int4/int8/float4/float8 cast */
+	bool		can_skip_cast;	/* outer function can skip
+								 * int2/int4/int8/float4/float8 cast */
 	GridDBAggref *aggref;
 } deparse_expr_cxt;
 

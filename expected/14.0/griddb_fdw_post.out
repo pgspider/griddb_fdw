@@ -5132,13 +5132,15 @@ DROP TABLE reind_fdw_parent;
 --Testcase 395:
 ALTER FOREIGN TABLE ft1 ALTER COLUMN c8 TYPE int;
 --Testcase 396:
-SELECT * FROM ft1 WHERE c1 = 1;  -- ERROR
+SELECT * FROM ft1 ftx(x1,x2,x3,x4,x5,x6,x7,x8) WHERE x1 = 1;  -- ERROR
 ERROR:  Type conversion mismatch
 --Testcase 397:
-SELECT  ft1.c1, ft2.c2, ft1.c8 FROM ft1, ft2 WHERE ft1.c1 = ft2.c1 AND ft1.c1 = 1; -- ERROR
+SELECT ftx.x1, ft2.c2, ftx.x8 FROM ft1 ftx(x1,x2,x3,x4,x5,x6,x7,x8), ft2
+  WHERE ftx.x1 = ft2.c1 AND ftx.x1 = 1; -- ERROR
 ERROR:  Type conversion mismatch
 --Testcase 398:
-SELECT  ft1.c1, ft2.c2, ft1 FROM ft1, ft2 WHERE ft1.c1 = ft2.c1 AND ft1.c1 = 1; -- ERROR
+SELECT ftx.x1, ft2.c2, ftx FROM ft1 ftx(x1,x2,x3,x4,x5,x6,x7,x8), ft2
+  WHERE ftx.x1 = ft2.c1 AND ftx.x1 = 1; -- ERROR
 ERROR:  Type conversion mismatch
 --Testcase 399:
 SELECT sum(c2), array_agg(c8) FROM ft1 GROUP BY c8; -- ERROR
@@ -7640,7 +7642,14 @@ select f1, f2 from rem1;
 -- ===================================================================
 -- test generated columns
 -- ===================================================================
---create table gloc1 (a int, b int);
+-- griddb does not support generated column, so data will be generated
+-- at FDW layer before inserted to remote table.
+--Testcase 1103:
+create foreign table gloc1 (
+	id serial OPTIONS (rowkey 'true'),
+	a int,
+	b int)
+  server griddb_svr;
 --alter table gloc1 set (autovacuum_enabled = 'false');
 --Testcase 547:
 create foreign table grem1 (
@@ -7648,10 +7657,39 @@ create foreign table grem1 (
   a int,
   b int generated always as (a * 2) stored)
   server griddb_svr options(table_name 'gloc1');
+--Testcase 1075:
+explain (verbose, costs off)
+insert into grem1 (a) values (1), (2);
+                                      QUERY PLAN                                      
+--------------------------------------------------------------------------------------
+ Insert on public.grem1
+   ->  Values Scan on "*VALUES*"
+         Output: nextval('grem1_id_seq'::regclass), "*VALUES*".column1, NULL::integer
+(3 rows)
+
 --Testcase 548:
 insert into grem1 (a) values (1), (2);
+--Testcase 1076:
+explain (verbose, costs off)
+update grem1 set a = 22 where a = 2;
+                        QUERY PLAN                         
+-----------------------------------------------------------
+ Update on public.grem1
+   ->  Foreign Scan on public.grem1
+         Output: 22, id, grem1.*
+         Remote SQL: SELECT  *  FROM gloc1 WHERE ((a = 2))
+(4 rows)
+
 --Testcase 549:
 update grem1 set a = 22 where a = 2;
+--Testcase 1100:
+select a,b from gloc1;
+ a  | b  
+----+----
+  1 |  2
+ 22 | 44
+(2 rows)
+
 --Testcase 550:
 select a, b from grem1;
  a  | b  
@@ -7660,6 +7698,64 @@ select a, b from grem1;
  22 | 44
 (2 rows)
 
+--Testcase 1077:
+delete from grem1;
+-- test copy from
+copy grem1(a) from stdin;
+--Testcase 1101:
+select a,b from gloc1;
+ a | b 
+---+---
+ 1 | 2
+ 2 | 4
+(2 rows)
+
+--Testcase 1078:
+select a, b from grem1;
+ a | b 
+---+---
+ 1 | 2
+ 2 | 4
+(2 rows)
+
+--Testcase 1079:
+delete from grem1;
+-- test batch insert
+--Testcase 1080:
+alter server griddb_svr options (add batch_size '10');
+--Testcase 1081:
+explain (verbose, costs off)
+insert into grem1 (a) values (1), (2);
+                                      QUERY PLAN                                      
+--------------------------------------------------------------------------------------
+ Insert on public.grem1
+   Batch Size: 10
+   ->  Values Scan on "*VALUES*"
+         Output: nextval('grem1_id_seq'::regclass), "*VALUES*".column1, NULL::integer
+(4 rows)
+
+--Testcase 1082:
+insert into grem1 (a) values (1), (2);
+--Testcase 1102:
+select a, b from gloc1;
+ a | b 
+---+---
+ 1 | 2
+ 2 | 4
+(2 rows)
+
+--Testcase 1083:
+select a, b from grem1;
+ a | b 
+---+---
+ 1 | 2
+ 2 | 4
+(2 rows)
+
+--Testcase 1084:
+delete from grem1;
+--Testcase 1085:
+alter server griddb_svr options (drop batch_size);
 -- ===================================================================
 -- test local triggers
 -- ===================================================================
@@ -8095,6 +8191,29 @@ DROP TRIGGER trig_row_after ON rem1;
 --Testcase 633:
 DROP TRIGGER trig_local_before ON rem1;
 -- Test direct foreign table modification functionality
+-- GridDB does not support direct modification
+--Testcase 1086:
+EXPLAIN (verbose, costs off)
+DELETE FROM rem1;                 -- can't be pushed down
+                 QUERY PLAN                 
+--------------------------------------------
+ Delete on public.rem1
+   ->  Foreign Scan on public.rem1
+         Output: id
+         Remote SQL: SELECT  *  FROM loct13
+(4 rows)
+
+--Testcase 1087:
+EXPLAIN (verbose, costs off)
+DELETE FROM rem1 WHERE false;     -- currently can't be pushed down
+           QUERY PLAN           
+--------------------------------
+ Delete on public.rem1
+   ->  Result
+         Output: id
+         One-Time Filter: false
+(4 rows)
+
 -- Test with statement-level triggers
 --Testcase 634:
 CREATE TRIGGER trig_stmt_before
@@ -9485,6 +9604,7 @@ update utrtest set a = 3 from (values (2), (3)) s(x) where a = s.x;
                      Output: "*VALUES*".*, "*VALUES*".column1
 (16 rows)
 
+--Testcase 1088:
 update utrtest set a = 3 from (values (2), (3)) s(x) where a = s.x; -- ERROR
 ERROR:  cannot route tuples into foreign table to be updated "remp"
 --Testcase 851:
@@ -10007,9 +10127,11 @@ FROM SERVER griddb_svr INTO import_grid4;
  import_grid4 | FLOAT8_TBL                | griddb_svr |             | 
  import_grid4 | FLOAT8_TMP                | griddb_svr |             | 
  import_grid4 | INT2_TBL                  | griddb_svr |             | 
+ import_grid4 | INT2_TMP                  | griddb_svr |             | 
  import_grid4 | INT4_TBL                  | griddb_svr |             | 
  import_grid4 | INT4_TMP                  | griddb_svr |             | 
  import_grid4 | INT8_TBL                  | griddb_svr |             | 
+ import_grid4 | INT8_TMP                  | griddb_svr |             | 
  import_grid4 | J1_TBL                    | griddb_svr |             | 
  import_grid4 | J2_TBL                    | griddb_svr |             | 
  import_grid4 | T0                        | griddb_svr |             | 
@@ -10267,7 +10389,7 @@ FROM SERVER griddb_svr INTO import_grid4;
  import_grid4 | zt1                       | griddb_svr |             | 
  import_grid4 | zt2                       | griddb_svr |             | 
  import_grid4 | zt3                       | griddb_svr |             | 
-(264 rows)
+(266 rows)
 
 -- Assorted error cases
 IMPORT FOREIGN SCHEMA griddb_schema FROM SERVER griddb_svr INTO import_grid4;
@@ -10460,6 +10582,7 @@ NOTICE:  relation "nt3" already exists, skipping
 NOTICE:  relation "agg_t6" already exists, skipping
 NOTICE:  relation "loc2" already exists, skipping
 NOTICE:  relation "INT2_TBL" already exists, skipping
+NOTICE:  relation "INT2_TMP" already exists, skipping
 NOTICE:  relation "batch_table_p1" already exists, skipping
 NOTICE:  relation "tenk1" already exists, skipping
 NOTICE:  relation "innertab" already exists, skipping
@@ -10534,6 +10657,7 @@ NOTICE:  relation "INT4_TMP" already exists, skipping
 NOTICE:  relation "bitwise_test" already exists, skipping
 NOTICE:  relation "agg_t1" already exists, skipping
 NOTICE:  relation "INT8_TBL" already exists, skipping
+NOTICE:  relation "INT8_TMP" already exists, skipping
 NOTICE:  relation "hpart13" already exists, skipping
 IMPORT FOREIGN SCHEMA nonesuch FROM SERVER griddb_svr INTO import_grid4; -- same as 'public'
 NOTICE:  relation "aggtest" already exists, skipping
@@ -10726,6 +10850,7 @@ NOTICE:  relation "nt3" already exists, skipping
 NOTICE:  relation "agg_t6" already exists, skipping
 NOTICE:  relation "loc2" already exists, skipping
 NOTICE:  relation "INT2_TBL" already exists, skipping
+NOTICE:  relation "INT2_TMP" already exists, skipping
 NOTICE:  relation "batch_table_p1" already exists, skipping
 NOTICE:  relation "tenk1" already exists, skipping
 NOTICE:  relation "innertab" already exists, skipping
@@ -10800,6 +10925,7 @@ NOTICE:  relation "INT4_TMP" already exists, skipping
 NOTICE:  relation "bitwise_test" already exists, skipping
 NOTICE:  relation "agg_t1" already exists, skipping
 NOTICE:  relation "INT8_TBL" already exists, skipping
+NOTICE:  relation "INT8_TMP" already exists, skipping
 NOTICE:  relation "hpart13" already exists, skipping
 IMPORT FOREIGN SCHEMA nonesuch FROM SERVER griddb_svr INTO notthere;
 ERROR:  schema "notthere" does not exist
@@ -11811,13 +11937,21 @@ SELECT COUNT(*) FROM ftable;
 -- griddb_fdw can not delete the large number of rows in one query
 -- because of the transaction timeout, so we delete small parts
 -- from foreign table
+--Testcase 1089:
 DELETE FROM ftable WHERE x < 10000;
+--Testcase 1090:
 DELETE FROM ftable WHERE x < 20000;
+--Testcase 1091:
 DELETE FROM ftable WHERE x < 30000;
+--Testcase 1092:
 DELETE FROM ftable WHERE x < 40000;
+--Testcase 1093:
 DELETE FROM ftable WHERE x < 50000;
+--Testcase 1094:
 DELETE FROM ftable WHERE x < 60000;
+--Testcase 1095:
 DELETE FROM ftable WHERE x < 70000;
+--Testcase 1096:
 DELETE FROM ftable;
 --Testcase 1043:
 DROP FOREIGN TABLE ftable;
@@ -12064,6 +12198,27 @@ DROP TABLE batch_table, batch_cp_upd_test CASCADE;
 -- DROP TABLE join_tbl;
 -- ALTER SERVER griddb_svr OPTIONS (DROP async_capable);
 -- ALTER SERVER griddb_svr2 OPTIONS (DROP async_capable);
+-- ===================================================================
+-- test invalid server and foreign table options
+-- ===================================================================
+-- Invalid fdw_startup_cost option
+--Testcase 1097:
+CREATE SERVER inv_scst FOREIGN DATA WRAPPER griddb_fdw
+	OPTIONS(fdw_startup_cost '100$%$#$#');
+ERROR:  griddb_fdw: invalid value for floating point option "fdw_startup_cost": 100$%$#$#
+-- Invalid fdw_tuple_cost option
+--Testcase 1098:
+CREATE SERVER inv_scst FOREIGN DATA WRAPPER griddb_fdw
+	OPTIONS(fdw_tuple_cost '100$%$#$#');
+ERROR:  griddb_fdw: invalid value for floating point option "fdw_tuple_cost": 100$%$#$#
+-- Invalid fetch_size option
+--CREATE FOREIGN TABLE inv_fsz (c1 int )
+--	SERVER griddb_svr OPTIONS (fetch_size '100$%$#$#');
+-- Invalid batch_size option
+--Testcase 1099:
+CREATE FOREIGN TABLE inv_bsz (c1 int )
+	SERVER griddb_svr OPTIONS (batch_size '100$%$#$#');
+ERROR:  griddb_fdw: invalid value for integer option "batch_size": 100$%$#$#
 -- Drop all foreign tables
 --Testcase 1063:
 DROP USER MAPPING FOR public SERVER griddb_svr;
@@ -12073,7 +12228,7 @@ DROP USER MAPPING FOR public SERVER griddb_svr2;
 DROP USER MAPPING FOR public SERVER testserver1;
 --Testcase 1066:
 DROP SERVER griddb_svr CASCADE;
-NOTICE:  drop cascades to 36 other objects
+NOTICE:  drop cascades to 37 other objects
 DETAIL:  drop cascades to foreign table "S 1".base_tbl
 drop cascades to foreign table "S 1".fprt1_p2
 drop cascades to foreign table "S 1".locp2
@@ -12108,6 +12263,7 @@ drop cascades to foreign table ft_empty
 drop cascades to foreign table loct3
 drop cascades to foreign table ft3
 drop cascades to foreign table rem1
+drop cascades to foreign table gloc1
 drop cascades to foreign table grem1
 drop cascades to foreign table rem2
 --Testcase 1067:

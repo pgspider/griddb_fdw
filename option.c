@@ -20,6 +20,7 @@
 #include "miscadmin.h"
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
+#include "utils/guc.h"
 
 /*
  * Describes the valid options for objects that use this wrapper.
@@ -144,7 +145,7 @@ griddb_fdw_validator(PG_FUNCTION_ARGS)
 
 			ereport(ERROR,
 					(errcode(ERRCODE_FDW_INVALID_OPTION_NAME),
-					 errmsg("invalid option \"%s\"", def->defname),
+					 errmsg("griddb_fdw: invalid option \"%s\"", def->defname),
 					 errhint("Valid options in this context are: %s", buf.len ? buf.data : "<none>")
 					 ));
 		}
@@ -157,16 +158,55 @@ griddb_fdw_validator(PG_FUNCTION_ARGS)
 			/* these accept only boolean values */
 			(void) defGetBoolean(def);
 		}
-
-		if (strcmp(def->defname, OPTION_BATCH_SIZE) == 0)
+		else if (strcmp(def->defname, OPTION_STARTUP_COST) == 0 ||
+				 strcmp(def->defname, OPTION_TUPLE_COST) == 0)
 		{
-			int			fetch_size;
+			/*
+			 * These must have a floating point value greater than or equal to
+			 * zero.
+			 */
+			char	   *value;
+			double		real_val;
+			bool		is_parsed;
 
-			fetch_size = strtol(defGetString(def), NULL, 10);
-			if (fetch_size <= 0)
+			value = defGetString(def);
+
+#if (PG_VERSION_NUM >= 120000)
+			is_parsed = parse_real(value, &real_val, 0, NULL);
+#else
+			is_parsed = parse_real(value, &real_val);
+#endif
+			if (!is_parsed)
 				ereport(ERROR,
-						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("%s requires a non-negative integer value",
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("griddb_fdw: invalid value for floating point option \"%s\": %s",
+								def->defname, value)));
+
+			if (real_val < 0)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("griddb_fdw: \"%s\" must be a floating point value greater than or equal to zero",
+								def->defname)));
+		}
+		else if (strcmp(def->defname, OPTION_BATCH_SIZE) == 0)
+		{
+			char	   *value;
+			int			int_val;
+			bool		is_parsed;
+
+			value = defGetString(def);
+			is_parsed = parse_int(value, &int_val, 0, NULL);
+
+			if (!is_parsed)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("griddb_fdw: invalid value for integer option \"%s\": %s",
+								def->defname, value)));
+
+			if (int_val <= 0)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("griddb_fdw: \"%s\" must be an integer value greater than zero",
 								def->defname)));
 		}
 	}

@@ -2756,7 +2756,7 @@ set work_mem to '64kB';
 --Testcase 177:
 set enable_mergejoin to off;
 --Testcase 178:
-set enable_resultcache to off;
+set enable_memoize to off;
 --Testcase 179:
 explain (costs off)
 select count(*) from tenk1 a, tenk1 b
@@ -2784,7 +2784,7 @@ reset work_mem;
 --Testcase 182:
 reset enable_mergejoin;
 --Testcase 183:
-reset enable_resultcache;
+reset enable_memoize;
 --
 -- regression test for 8.2 bug with improper re-ordering of left joins
 --
@@ -3797,6 +3797,15 @@ select unique1 from tenk1, lateral f_immutable_int4(1) x where x = unique1;
  Foreign Scan on tenk1
 (1 row)
 
+--Testcase 704:
+explain (costs off)
+select unique1 from tenk1, lateral f_immutable_int4(1) x where x in (select 17);
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
 --Testcase 291:
 explain (costs off)
 select unique1, x from tenk1 join f_immutable_int4(1) x on unique1 = x;
@@ -4694,7 +4703,7 @@ where t1.f1 = ss2.f1;
          ->  Foreign Scan on public.text_tbl t2
                Output: i8.q1, t2.f1
                Remote SQL: SELECT  *  FROM text_tbl LIMIT 1
-   ->  Result Cache
+   ->  Memoize
          Output: ((i8.q1)), (t2.f1)
          Cache Key: (i8.q1), t2.f1
          ->  Foreign Scan on public.text_tbl t3

@@ -104,7 +104,7 @@
 #define OPTION_TUPLE_COST	   "fdw_tuple_cost"
 #define OPTION_BATCH_SIZE	   "batch_size"
 #define OPTION_KEEP_CONN	   "keep_connections"
-#define CODE_VERSION 20100
+#define CODE_VERSION 20101
 /* Attribute number of rowkey column. 1st column is assigned rowkey in GridDB. */
 #define ROWKEY_ATTNO 1
 /*

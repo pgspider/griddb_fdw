@@ -687,14 +687,14 @@ ERROR:  rowkey-column update is not supported
 SELECT * FROM public.griddb_fdw_version();
  griddb_fdw_version 
 --------------------
-              20100
+              20101
 (1 row)
 
 --Testcase 116:
 SELECT griddb_fdw_version();
  griddb_fdw_version 
 --------------------
-              20100
+              20101
 (1 row)
 
 --Test pushdown LIMIT...OFFSET

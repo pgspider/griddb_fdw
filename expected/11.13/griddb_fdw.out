@@ -687,26 +687,28 @@ ERROR:  rowkey-column update is not supported
 SELECT * FROM public.griddb_fdw_version();
  griddb_fdw_version 
 --------------------
-              20100
+              20101
 (1 row)
 
 --Testcase 116:
 SELECT griddb_fdw_version();
  griddb_fdw_version 
 --------------------
-              20100
+              20101
 (1 row)
 
 --Test pushdown LIMIT...OFFSET
 --Testcase 115:
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT tableoid::regclass, * FROM onek LIMIT 1 OFFSET 0;
-                                                                              QUERY PLAN                                                                               
------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Foreign Scan on public.onek
-   Output: (tableoid)::regclass, unique1, unique2, two, four, ten, twenty, hundred, thousand, twothousand, fivethous, tenthous, odd, even, stringu1, stringu2, string4
-   Remote SQL: SELECT  *  FROM onek LIMIT 1 OFFSET 0
-(3 rows)
+                                                                                 QUERY PLAN                                                                                  
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit
+   Output: ((tableoid)::regclass), unique1, unique2, two, four, ten, twenty, hundred, thousand, twothousand, fivethous, tenthous, odd, even, stringu1, stringu2, string4
+   ->  Foreign Scan on public.onek
+         Output: (tableoid)::regclass, unique1, unique2, two, four, ten, twenty, hundred, thousand, twothousand, fivethous, tenthous, odd, even, stringu1, stringu2, string4
+         Remote SQL: SELECT  *  FROM onek
+(5 rows)
 
 --Testcase 116:
 SELECT tableoid::regclass, * FROM onek LIMIT 1 OFFSET 0;
@@ -718,12 +720,14 @@ SELECT tableoid::regclass, * FROM onek LIMIT 1 OFFSET 0;
 --Testcase 117:
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT tableoid::regclass, * FROM onek LIMIT 1 OFFSET 10;
-                                                                              QUERY PLAN                                                                               
------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- Foreign Scan on public.onek
-   Output: (tableoid)::regclass, unique1, unique2, two, four, ten, twenty, hundred, thousand, twothousand, fivethous, tenthous, odd, even, stringu1, stringu2, string4
-   Remote SQL: SELECT  *  FROM onek LIMIT 1 OFFSET 10
-(3 rows)
+                                                                                 QUERY PLAN                                                                                  
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit
+   Output: ((tableoid)::regclass), unique1, unique2, two, four, ten, twenty, hundred, thousand, twothousand, fivethous, tenthous, odd, even, stringu1, stringu2, string4
+   ->  Foreign Scan on public.onek
+         Output: (tableoid)::regclass, unique1, unique2, two, four, ten, twenty, hundred, thousand, twothousand, fivethous, tenthous, odd, even, stringu1, stringu2, string4
+         Remote SQL: SELECT  *  FROM onek
+(5 rows)
 
 --Testcase 118:
 SELECT tableoid::regclass, * FROM onek LIMIT 1 OFFSET 10;
@@ -735,12 +739,14 @@ SELECT tableoid::regclass, * FROM onek LIMIT 1 OFFSET 10;
 --Testcase 119:
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT ctid, * FROM rowkey_tbl LIMIT 1 OFFSET 0;
-                        QUERY PLAN                         
------------------------------------------------------------
- Foreign Scan on public.rowkey_tbl
+                   QUERY PLAN                   
+------------------------------------------------
+ Limit
    Output: ctid, a, b
-   Remote SQL: SELECT  *  FROM rowkey_tbl LIMIT 1 OFFSET 0
-(3 rows)
+   ->  Foreign Scan on public.rowkey_tbl
+         Output: ctid, a, b
+         Remote SQL: SELECT  *  FROM rowkey_tbl
+(5 rows)
 
 --Testcase 120:
 SELECT ctid, * FROM rowkey_tbl LIMIT 1 OFFSET 0;
@@ -752,12 +758,14 @@ SELECT ctid, * FROM rowkey_tbl LIMIT 1 OFFSET 0;
 --Testcase 121:
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT ctid, * FROM rowkey_tbl LIMIT 1 OFFSET 1;
-                        QUERY PLAN                         
------------------------------------------------------------
- Foreign Scan on public.rowkey_tbl
+                   QUERY PLAN                   
+------------------------------------------------
+ Limit
    Output: ctid, a, b
-   Remote SQL: SELECT  *  FROM rowkey_tbl LIMIT 1 OFFSET 1
-(3 rows)
+   ->  Foreign Scan on public.rowkey_tbl
+         Output: ctid, a, b
+         Remote SQL: SELECT  *  FROM rowkey_tbl
+(5 rows)
 
 --Testcase 122:
 SELECT ctid, * FROM rowkey_tbl LIMIT 1 OFFSET 1;
@@ -769,24 +777,28 @@ SELECT ctid, * FROM rowkey_tbl LIMIT 1 OFFSET 1;
 --Testcase 123:
 EXPLAIN (verbose, costs off)
 INSERT INTO ft2 (c1,c2) SELECT c1+1000, c2 || c2 FROM ft2 LIMIT 20 OFFSET 0;
-                        QUERY PLAN                         
------------------------------------------------------------
+                           QUERY PLAN                            
+-----------------------------------------------------------------
  Insert on public.ft2
-   ->  Foreign Scan on public.ft2 ft2_1
-         Output: (ft2_1.c1 + 1000), (ft2_1.c2 || ft2_1.c2)
-         Remote SQL: SELECT  *  FROM ft2 LIMIT 20 OFFSET 0
-(4 rows)
+   ->  Limit
+         Output: ((ft2_1.c1 + 1000)), ((ft2_1.c2 || ft2_1.c2))
+         ->  Foreign Scan on public.ft2 ft2_1
+               Output: (ft2_1.c1 + 1000), (ft2_1.c2 || ft2_1.c2)
+               Remote SQL: SELECT  *  FROM ft2
+(6 rows)
 
 --Testcase 124:
 EXPLAIN (verbose, costs off)
 INSERT INTO ft2 (c1,c2) SELECT c1+1000,c2 || c2 FROM ft2 LIMIT 20 OFFSET 5;
-                        QUERY PLAN                         
------------------------------------------------------------
+                           QUERY PLAN                            
+-----------------------------------------------------------------
  Insert on public.ft2
-   ->  Foreign Scan on public.ft2 ft2_1
-         Output: (ft2_1.c1 + 1000), (ft2_1.c2 || ft2_1.c2)
-         Remote SQL: SELECT  *  FROM ft2 LIMIT 20 OFFSET 5
-(4 rows)
+   ->  Limit
+         Output: ((ft2_1.c1 + 1000)), ((ft2_1.c2 || ft2_1.c2))
+         ->  Foreign Scan on public.ft2 ft2_1
+               Output: (ft2_1.c1 + 1000), (ft2_1.c2 || ft2_1.c2)
+               Remote SQL: SELECT  *  FROM ft2
+(6 rows)
 
 --Testcase 129:
 DROP FOREIGN TABLE ft1;
@@ -1345,10 +1357,12 @@ WHERE t1.ten = ss.id;
                ->  Foreign Scan on public.num_data num
                      Output: num.idx, num.id, num.val
                      Remote SQL: SELECT  *  FROM num_data WHERE ((id = 123))
-   ->  Foreign Scan on public.onek t2
-         Output: num.id, t2.two
-         Remote SQL: SELECT  *  FROM onek LIMIT 1 OFFSET 0
-(16 rows)
+   ->  Limit
+         Output: (num.id), t2.two
+         ->  Foreign Scan on public.onek t2
+               Output: num.id, t2.two
+               Remote SQL: SELECT  *  FROM onek
+(18 rows)
 
 --Testcase 126:
 EXPLAIN (verbose, costs off)
@@ -1376,13 +1390,17 @@ WHERE t1.ten = ss2.id;
                      ->  Foreign Scan on public.num_data num
                            Output: num.idx, num.id, num.val
                            Remote SQL: SELECT  *  FROM num_data WHERE ((id = 123))
-         ->  Foreign Scan on public.onek t2
-               Output: num.id, t2.two
-               Remote SQL: SELECT  *  FROM onek LIMIT 1 OFFSET 5
-   ->  Foreign Scan on public.onek t3
-         Output: (num.id), t2.two
-         Remote SQL: SELECT  *  FROM onek LIMIT 1 OFFSET 20
-(21 rows)
+         ->  Limit
+               Output: (num.id), t2.two
+               ->  Foreign Scan on public.onek t2
+                     Output: num.id, t2.two
+                     Remote SQL: SELECT  *  FROM onek
+   ->  Limit
+         Output: ((num.id)), (t2.two)
+         ->  Foreign Scan on public.onek t3
+               Output: (num.id), t2.two
+               Remote SQL: SELECT  *  FROM onek
+(25 rows)
 
 --Testcase 127:
 EXPLAIN (verbose, costs off)
@@ -1423,10 +1441,12 @@ WHERE tt1.ten = ss1.c0;
                ->  Foreign Scan on public.tenk1 tt4
                      Output: tt4.ten, tt4.stringu2
                      Remote SQL: SELECT  *  FROM tenk1 WHERE ((stringu2 = 'foo'))
-   ->  Foreign Scan on public.tenk1 tt5
-         Output: tt4.ten
-         Remote SQL: SELECT  *  FROM tenk1 LIMIT 1 OFFSET 30
-(31 rows)
+   ->  Limit
+         Output: (tt4.ten)
+         ->  Foreign Scan on public.tenk1 tt5
+               Output: tt4.ten
+               Remote SQL: SELECT  *  FROM tenk1
+(33 rows)
 
 --Testcase 128:
 EXPLAIN (verbose, costs off)
@@ -1439,8 +1459,8 @@ SELECT ss2.* FROM
   ON i41.two = ss1.c1,
   LATERAL (SELECT i41.*, num.*, ss1.* FROM tenk1 LIMIT 1 OFFSET 10) ss2
 WHERE ss1.c2 = 0;
-                                                                                                                                                   QUERY PLAN                                                                                                                                                   
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                                                                                      QUERY PLAN                                                                                                                                                      
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Nested Loop
    Output: (i41.unique1), (i41.unique2), (i41.two), (i41.four), (i41.ten), (i41.twenty), (i41.hundred), (i41.thousand), (i41.twothousand), (i41.fivethous), (i41.tenthous), (i41.odd), (i41.even), (i41.stringu1), (i41.stringu2), (i41.string4), (num.idx), (num.id), (num.val), (i42.two), (i43.four), ((42))
    ->  Nested Loop
@@ -1468,10 +1488,12 @@ WHERE ss1.c2 = 0;
                ->  Foreign Scan on public.tenk1 i43
                      Output: i43.four
                      Remote SQL: SELECT  *  FROM tenk1 WHERE ((four = 0))
-   ->  Foreign Scan on public.tenk1
-         Output: i41.unique1, i41.unique2, i41.two, i41.four, i41.ten, i41.twenty, i41.hundred, i41.thousand, i41.twothousand, i41.fivethous, i41.tenthous, i41.odd, i41.even, i41.stringu1, i41.stringu2, i41.string4, num.idx, num.id, num.val, i42.two, i43.four, (42)
-         Remote SQL: SELECT  *  FROM tenk1 LIMIT 1 OFFSET 10
-(30 rows)
+   ->  Limit
+         Output: (i41.unique1), (i41.unique2), (i41.two), (i41.four), (i41.ten), (i41.twenty), (i41.hundred), (i41.thousand), (i41.twothousand), (i41.fivethous), (i41.tenthous), (i41.odd), (i41.even), (i41.stringu1), (i41.stringu2), (i41.string4), (num.idx), (num.id), (num.val), (i42.two), (i43.four), ((42))
+         ->  Foreign Scan on public.tenk1
+               Output: i41.unique1, i41.unique2, i41.two, i41.four, i41.ten, i41.twenty, i41.hundred, i41.thousand, i41.twothousand, i41.fivethous, i41.tenthous, i41.odd, i41.even, i41.stringu1, i41.stringu2, i41.string4, num.idx, num.id, num.val, i42.two, i43.four, (42)
+               Remote SQL: SELECT  *  FROM tenk1
+(32 rows)
 
 --Testcase 112:
 DROP FUNCTION row_before_insupd_trigfunc;

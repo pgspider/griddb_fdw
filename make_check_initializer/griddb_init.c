@@ -394,7 +394,8 @@ griddb_init(const char *addr,
 				INT4_TMP;
 
 	/* For int8 */
-	table_info	INT8_TBL;
+	table_info	INT8_TBL,
+				INT8_TMP;
 
 	/* For join */
 	table_info	J1_TBL,
@@ -403,6 +404,7 @@ griddb_init(const char *addr,
 				tenk1,
 				tenk2,
 				INT2_TBL,
+				INT2_TMP,
 				t11,
 				t21,
 				t31,
@@ -1266,6 +1268,14 @@ griddb_init(const char *addr,
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
 
+	ret = set_tableInfo(store, "INT8_TMP", &INT8_TMP,
+						3,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"q1", GS_TYPE_LONG, GS_TYPE_OPTION_NULLABLE,
+						"q2", GS_TYPE_LONG, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
 	ret = set_tableInfo(store, "J1_TBL", &J1_TBL,
 						4,
 						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
@@ -1333,6 +1343,13 @@ griddb_init(const char *addr,
 		goto EXIT;
 
 	ret = set_tableInfo(store, "INT2_TBL", &INT2_TBL,
+						2,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"f1", GS_TYPE_SHORT, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "INT2_TMP", &INT2_TMP,
 						2,
 						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
 						"f1", GS_TYPE_SHORT, GS_TYPE_OPTION_NULLABLE);

@@ -7471,7 +7471,8 @@ INSERT INTO rw_view(a, b) VALUES (0, 5);
 
 --Testcase 427:
 INSERT INTO rw_view(a, b) VALUES (0, 5); -- should fail
-ERROR:  cannot route inserted tuples to a foreign table
+ERROR:  new row violates check option for view "rw_view"
+DETAIL:  Failing row contains (1, 10, 5).
 --Testcase 428:
 EXPLAIN (VERBOSE, COSTS OFF)
 INSERT INTO rw_view(a, b) VALUES (0, 15);
@@ -7484,12 +7485,12 @@ INSERT INTO rw_view(a, b) VALUES (0, 15);
 
 --Testcase 429:
 INSERT INTO rw_view(a, b) VALUES (0, 15); -- ok
-ERROR:  cannot route inserted tuples to a foreign table
 --Testcase 430:
 SELECT a, b FROM foreign_tbl;
- a | b 
----+---
-(0 rows)
+ a  | b  
+----+----
+ 10 | 15
+(1 row)
 
 --Testcase 431:
 EXPLAIN (VERBOSE, COSTS OFF)
@@ -7505,6 +7506,8 @@ UPDATE rw_view SET b = b + 5;
 
 --Testcase 432:
 UPDATE rw_view SET b = b + 5; -- should fail
+ERROR:  new row violates check option for view "rw_view"
+DETAIL:  Failing row contains (2, 20, 20).
 --Testcase 433:
 EXPLAIN (VERBOSE, COSTS OFF)
 UPDATE rw_view SET b = b + 15;
@@ -7521,9 +7524,10 @@ UPDATE rw_view SET b = b + 15;
 UPDATE rw_view SET b = b + 15; -- ok
 --Testcase 435:
 SELECT a, b FROM foreign_tbl;
- a | b 
----+---
-(0 rows)
+ a  | b  
+----+----
+ 20 | 30
+(1 row)
 
 --Testcase 769:
 DROP TRIGGER row_before_insupd_trigger ON foreign_tbl;
@@ -9077,36 +9081,43 @@ alter table itrtest attach partition remp1 for values in (1);
 alter table itrtest attach partition remp2 for values in (2);
 --Testcase 583:
 insert into itrtest(a, b) values (1, 'foo');
-ERROR:  cannot route inserted tuples to a foreign table
 --Testcase 584:
 insert into itrtest(a, b) values (1, 'bar');
-ERROR:  cannot route inserted tuples to a foreign table
 --Testcase 585:
 insert into itrtest(a, b) values (2, 'baz');
-ERROR:  cannot route inserted tuples to a foreign table
 --Testcase 586:
 insert into itrtest(a, b) values (2, 'qux');
-ERROR:  cannot route inserted tuples to a foreign table
 --Testcase 587:
 insert into itrtest(a, b) values (1, 'test1'), (2, 'test2');
-ERROR:  cannot route inserted tuples to a foreign table
 --Testcase 588:
 select tableoid::regclass, a, b FROM itrtest;
- tableoid | a | b 
-----------+---+---
-(0 rows)
+ tableoid | a |   b   
+----------+---+-------
+ remp1    | 1 | foo
+ remp1    | 1 | bar
+ remp1    | 1 | test1
+ remp2    | 2 | baz
+ remp2    | 2 | qux
+ remp2    | 2 | test2
+(6 rows)
 
 --Testcase 589:
 select tableoid::regclass, a, b FROM remp1;
- tableoid | a | b 
-----------+---+---
-(0 rows)
+ tableoid | a |   b   
+----------+---+-------
+ remp1    | 1 | foo
+ remp1    | 1 | bar
+ remp1    | 1 | test1
+(3 rows)
 
 --Testcase 590:
 select tableoid::regclass, b, a FROM remp2;
- tableoid | b | a 
-----------+---+---
-(0 rows)
+ tableoid |   b   | a 
+----------+-------+---
+ remp2    | baz   | 2
+ remp2    | qux   | 2
+ remp2    | test2 | 2
+(3 rows)
 
 --Testcase 591:
 delete from itrtest;
@@ -9138,16 +9149,18 @@ create trigger remp2_br_insert_trigger before insert on remp2
 -- The new values are concatenated with ' triggered !'
 --Testcase 592:
 insert into itrtest(a, b) values (1, 'foo');
-ERROR:  cannot route inserted tuples to a foreign table
 --Testcase 593:
 insert into itrtest(a, b) values (2, 'qux');
-ERROR:  cannot route inserted tuples to a foreign table
 --Testcase 594:
 insert into itrtest(a, b) values (1, 'test1'), (2, 'test2');
-ERROR:  cannot route inserted tuples to a foreign table
 --Testcase 855:
 with result as (insert into itrtest(a ,b) values (1, 'test1'), (2, 'test2') returning *) select a, b from result;
-ERROR:  cannot route inserted tuples to a foreign table
+ a |         b         
+---+-------------------
+ 1 | test1 triggered !
+ 2 | test2 triggered !
+(2 rows)
+
 --Testcase 856:
 drop trigger remp1_br_insert_trigger on remp1;
 --Testcase 857:
@@ -9171,21 +9184,22 @@ alter table utrtest attach partition remp for values in (1);
 alter table utrtest attach partition locp for values in (2);
 --Testcase 596:
 insert into utrtest(a, b) values (1, 'foo');
-ERROR:  cannot route inserted tuples to a foreign table
 --Testcase 597:
 insert into utrtest(a, b) values (2, 'qux');
 --Testcase 598:
 select tableoid::regclass, a, b FROM utrtest;
  tableoid | a |  b  
 ----------+---+-----
+ remp     | 1 | foo
  locp     | 2 | qux
-(1 row)
+(2 rows)
 
 --Testcase 599:
 select tableoid::regclass, a, b FROM remp;
- tableoid | a | b 
-----------+---+---
-(0 rows)
+ tableoid | a |  b  
+----------+---+-----
+ remp     | 1 | foo
+(1 row)
 
 --Testcase 600:
 select tableoid::regclass, a, b FROM locp;
@@ -9201,34 +9215,34 @@ select tableoid::regclass, a, b FROM locp;
 -- But the reverse is allowed
 --Testcase 603:
 update utrtest set a = 1 where b = 'qux';
-ERROR:  new row for relation "locp" violates check constraint "locp_a_check"
-DETAIL:  Failing row contains (2, 1, qux).
 --Testcase 604:
 select a, b from utrtest where b = 'qux';
  a |  b  
 ---+-----
- 2 | qux
+ 1 | qux
 (1 row)
 
 --Testcase 605:
 select tableoid::regclass, a, b FROM utrtest;
  tableoid | a |  b  
 ----------+---+-----
- locp     | 2 | qux
-(1 row)
+ remp     | 1 | foo
+ remp     | 1 | qux
+(2 rows)
 
 --Testcase 606:
 select tableoid::regclass, a, b FROM remp;
- tableoid | a | b 
-----------+---+---
-(0 rows)
+ tableoid | a |  b  
+----------+---+-----
+ remp     | 1 | foo
+ remp     | 1 | qux
+(2 rows)
 
 --Testcase 607:
 select tableoid::regclass, a, b FROM locp;
- tableoid | a |  b  
-----------+---+-----
- locp     | 2 | qux
-(1 row)
+ tableoid | a | b 
+----------+---+---
+(0 rows)
 
 -- The executor should not let unexercised FDWs shut down
 --Testcase 608:
@@ -9261,13 +9275,11 @@ update utrtest set a = 1 where a = 1 or a = 2;
 -- The new values are concatenated with ' triggered !'
 --Testcase 612:
 update utrtest set a = 1 where a = 1 or a = 2;
-ERROR:  new row for relation "locp" violates check constraint "locp_a_check"
-DETAIL:  Failing row contains (3, 1, qux).
 --Testcase 613:
 select a, b from utrtest;
- a |  b  
----+-----
- 2 | qux
+ a |        b        
+---+-----------------
+ 1 | qux triggered !
 (1 row)
 
 --Testcase 614:
@@ -9290,13 +9302,11 @@ update utrtest set a = 1 where a = 2;
 -- The new values are concatenated with ' triggered !'
 --Testcase 617:
 update utrtest set a = 1 where a = 2;
-ERROR:  new row for relation "locp" violates check constraint "locp_a_check"
-DETAIL:  Failing row contains (4, 1, qux).
 --Testcase 618:
 select a, b from utrtest;
- a |  b  
----+-----
- 2 | qux
+ a |        b        
+---+-----------------
+ 1 | qux triggered !
 (1 row)
 
 --Testcase 863:
@@ -9307,7 +9317,6 @@ drop trigger remp_br_insert_trigger on remp;
 delete from utrtest;
 --Testcase 620:
 insert into utrtest(a, b) values (1, 'foo');
-ERROR:  cannot route inserted tuples to a foreign table
 --Testcase 621:
 insert into utrtest(a, b) values (2, 'qux');
 -- Test the former case:
@@ -9329,20 +9338,18 @@ update utrtest set a = 1;
 
 --Testcase 623:
 update utrtest set a = 1;
-ERROR:  new row for relation "locp" violates check constraint "locp_a_check"
-DETAIL:  Failing row contains (6, 1, qux).
 --Testcase 624:
 select a, b from utrtest;
  a |  b  
 ---+-----
- 2 | qux
-(1 row)
+ 1 | foo
+ 1 | qux
+(2 rows)
 
 --Testcase 625:
 delete from utrtest;
 --Testcase 626:
 insert into utrtest(a, b) values (1, 'foo');
-ERROR:  cannot route inserted tuples to a foreign table
 --Testcase 627:
 insert into utrtest(a, b) values (2, 'qux');
 -- with a non-direct modification plan
@@ -9377,14 +9384,13 @@ update utrtest set a = 1 from (values (1), (2)) s(x) where a = s.x;
 
 --Testcase 629:
 update utrtest set a = 1 from (values (1), (2)) s(x) where a = s.x;
-ERROR:  new row for relation "locp" violates check constraint "locp_a_check"
-DETAIL:  Failing row contains (8, 1, qux).
 --Testcase 630:
 select * from utrtest;
  id | a |  b  
 ----+---+-----
-  8 | 2 | qux
-(1 row)
+  7 | 1 | foo
+  8 | 1 | qux
+(2 rows)
 
 -- Change the definition of utrtest so that the foreign partition get updated
 -- after the local partition
@@ -9408,7 +9414,6 @@ alter table utrtest attach partition remp for values in (3);
 insert into utrtest(a, b) values (2, 'qux');
 --Testcase 633:
 insert into utrtest(a, b) values (3, 'xyzzy');
-ERROR:  cannot route inserted tuples to a foreign table
 -- Test the latter case:
 -- with a direct modification plan
 --Testcase 634:
@@ -9428,8 +9433,7 @@ update utrtest set a = 3;
 
 --Testcase 635:
 update utrtest set a = 3; -- ERROR
-ERROR:  new row for relation "locp" violates check constraint "locp_a_check"
-DETAIL:  Failing row contains (9, 3, qux).
+ERROR:  cannot route tuples into foreign table to be updated "remp"
 -- with a non-direct modification plan
 --Testcase 636:
 explain (verbose, costs off)
@@ -9483,34 +9487,38 @@ alter table ctrtest attach partition remp1 for values in (1);
 alter table ctrtest attach partition remp2 for values in (2);
 --Testcase 638:
 insert into ctrtest(a, b) values (1, 'foo'), (2, 'qux');
-ERROR:  cannot route inserted tuples to a foreign table
 --Testcase 639:
 select tableoid::regclass, a, b FROM ctrtest;
- tableoid | a | b 
-----------+---+---
-(0 rows)
+ tableoid | a |  b  
+----------+---+-----
+ remp1    | 1 | foo
+ remp2    | 2 | qux
+(2 rows)
 
 --Testcase 640:
 select tableoid::regclass, a, b FROM remp1;
- tableoid | a | b 
-----------+---+---
-(0 rows)
+ tableoid | a |  b  
+----------+---+-----
+ remp1    | 1 | foo
+(1 row)
 
 --Testcase 641:
 select tableoid::regclass, b, a FROM remp2;
- tableoid | b | a 
-----------+---+---
-(0 rows)
+ tableoid |  b  | a 
+----------+-----+---
+ remp2    | qux | 2
+(1 row)
 
 -- GridDB not support partitions by
 -- Copying into foreign partitions directly should work as well
 copy remp1(a, b) from stdin;
-ERROR:  cannot copy to foreign table "remp1"
+WARNING:  row was updated instead of insert because same row key has already existed.
 --Testcase 642:
 select tableoid::regclass, a, b FROM remp1;
- tableoid | a | b 
-----------+---+---
-(0 rows)
+ tableoid | a |  b  
+----------+---+-----
+ remp1    | 1 | bar
+(1 row)
 
 --Testcase 643:
 delete from ctrtest;
@@ -9572,12 +9580,23 @@ create trigger trig_row_before before insert on rem2
 create trigger trig_row_after after insert on rem2
 	for each row execute procedure trigger_data(23,'skidoo');
 copy rem2(f1, f2) from stdin;
-ERROR:  cannot copy to foreign table "rem2"
+NOTICE:  trigger_func(<NULL>) called: action = INSERT, when = BEFORE, level = STATEMENT
+NOTICE:  trig_row_before(23, skidoo) BEFORE ROW INSERT ON rem2
+NOTICE:  NEW: (5,1,foo)
+NOTICE:  trig_row_before(23, skidoo) BEFORE ROW INSERT ON rem2
+NOTICE:  NEW: (6,2,bar)
+NOTICE:  trig_row_after(23, skidoo) AFTER ROW INSERT ON rem2
+NOTICE:  NEW: (5,1,foo)
+NOTICE:  trig_row_after(23, skidoo) AFTER ROW INSERT ON rem2
+NOTICE:  NEW: (6,2,bar)
+NOTICE:  trigger_func(<NULL>) called: action = INSERT, when = AFTER, level = STATEMENT
 --Testcase 651:
 select f1, f2 from rem2;
- f1 | f2 
-----+----
-(0 rows)
+ f1 | f2  
+----+-----
+  1 | foo
+  2 | bar
+(2 rows)
 
 --Testcase 876:
 drop trigger trig_row_before on rem2;
@@ -9601,12 +9620,13 @@ create trigger trig_row_before_insert before insert on rem2
 	for each row execute procedure trig_row_before_insupdate1();
 -- The new values are concatenated with ' triggered !'
 copy rem2(f1, f2) from stdin;
-ERROR:  cannot copy to foreign table "rem2"
 --Testcase 653:
 select f1, f2 from rem2;
- f1 | f2 
-----+----
-(0 rows)
+ f1 |       f2        
+----+-----------------
+  1 | foo triggered !
+  2 | bar triggered !
+(2 rows)
 
 --Testcase 882:
 drop trigger trig_row_before_insert on rem2;
@@ -9617,7 +9637,6 @@ create trigger trig_null before insert on rem2
 	for each row execute procedure trig_null();
 -- Nothing happens
 copy rem2(f1, f2) from stdin;
-ERROR:  cannot copy to foreign table "rem2"
 --Testcase 655:
 select f1, f2 from rem2;
  f1 | f2 
@@ -9634,12 +9653,13 @@ create trigger trig_row_before_insert before insert on rem2
 	for each row execute procedure trig_row_before_insupdate1();
 -- The new values are concatenated with ' triggered !'
 copy rem2(f1, f2) from stdin;
-ERROR:  cannot copy to foreign table "rem2"
 --Testcase 657:
 select f1, f2 from rem2;
- f1 | f2 
-----+----
-(0 rows)
+ f1 |       f2        
+----+-----------------
+  1 | foo triggered !
+  2 | bar triggered !
+(2 rows)
 
 --Testcase 886:
 drop trigger trig_row_before_insert on rem2;
@@ -9650,7 +9670,6 @@ create trigger trig_null before insert on rem2
 	for each row execute procedure trig_null();
 -- Nothing happens
 copy rem2(f1, f2) from stdin;
-ERROR:  cannot copy to foreign table "rem2"
 --Testcase 659:
 select f1, f2 from rem2;
  f1 | f2 
@@ -9672,12 +9691,21 @@ create trigger rem2_trig_row_after after insert on rem2
 create trigger loc2_trig_row_before_insert before insert on rem2
 	for each row execute procedure trig_row_before_insupdate1();
 copy rem2(f1, f2) from stdin;
-ERROR:  cannot copy to foreign table "rem2"
+NOTICE:  rem2_trig_row_before(23, skidoo) BEFORE ROW INSERT ON rem2
+NOTICE:  NEW: (15,1,"foo triggered !")
+NOTICE:  rem2_trig_row_before(23, skidoo) BEFORE ROW INSERT ON rem2
+NOTICE:  NEW: (16,2,"bar triggered !")
+NOTICE:  rem2_trig_row_after(23, skidoo) AFTER ROW INSERT ON rem2
+NOTICE:  NEW: (15,1,"foo triggered !")
+NOTICE:  rem2_trig_row_after(23, skidoo) AFTER ROW INSERT ON rem2
+NOTICE:  NEW: (16,2,"bar triggered !")
 --Testcase 661:
 select f1, f2 from rem2;
- f1 | f2 
-----+----
-(0 rows)
+ f1 |       f2        
+----+-----------------
+  1 | foo triggered !
+  2 | bar triggered !
+(2 rows)
 
 --Testcase 892:
 drop trigger rem2_trig_row_before on rem2;
@@ -9694,16 +9722,17 @@ begin;
 create foreign table rem3 (f1 int, f2 text)
 	server griddb_svr options(table_name 'loc3');
 copy rem3(f1, f2) from stdin;
-ERROR:  cannot copy to foreign table "rem3"
 commit;
 --Testcase 663:
 select * from rem3;
-ERROR:  relation "rem3" does not exist
-LINE 1: select * from rem3;
-                      ^
+ f1 | f2  
+----+-----
+  1 | foo
+  2 | bar
+(2 rows)
+
 --Testcase 896:
 drop foreign table rem3;
-ERROR:  foreign table "rem3" does not exist
 --drop table loc3;
 -- ===================================================================
 -- test IMPORT FOREIGN SCHEMA
@@ -9837,9 +9866,11 @@ FROM SERVER griddb_svr INTO import_grid4;
  import_grid4 | FLOAT8_TBL                | griddb_svr |             | 
  import_grid4 | FLOAT8_TMP                | griddb_svr |             | 
  import_grid4 | INT2_TBL                  | griddb_svr |             | 
+ import_grid4 | INT2_TMP                  | griddb_svr |             | 
  import_grid4 | INT4_TBL                  | griddb_svr |             | 
  import_grid4 | INT4_TMP                  | griddb_svr |             | 
  import_grid4 | INT8_TBL                  | griddb_svr |             | 
+ import_grid4 | INT8_TMP                  | griddb_svr |             | 
  import_grid4 | J1_TBL                    | griddb_svr |             | 
  import_grid4 | J2_TBL                    | griddb_svr |             | 
  import_grid4 | T0                        | griddb_svr |             | 
@@ -10097,7 +10128,7 @@ FROM SERVER griddb_svr INTO import_grid4;
  import_grid4 | zt1                       | griddb_svr |             | 
  import_grid4 | zt2                       | griddb_svr |             | 
  import_grid4 | zt3                       | griddb_svr |             | 
-(264 rows)
+(266 rows)
 
 -- Assorted error cases
 IMPORT FOREIGN SCHEMA griddb_schema FROM SERVER griddb_svr INTO import_grid4;
@@ -10290,6 +10321,7 @@ NOTICE:  relation "nt3" already exists, skipping
 NOTICE:  relation "agg_t6" already exists, skipping
 NOTICE:  relation "loc2" already exists, skipping
 NOTICE:  relation "INT2_TBL" already exists, skipping
+NOTICE:  relation "INT2_TMP" already exists, skipping
 NOTICE:  relation "batch_table_p1" already exists, skipping
 NOTICE:  relation "tenk1" already exists, skipping
 NOTICE:  relation "innertab" already exists, skipping
@@ -10364,6 +10396,7 @@ NOTICE:  relation "INT4_TMP" already exists, skipping
 NOTICE:  relation "bitwise_test" already exists, skipping
 NOTICE:  relation "agg_t1" already exists, skipping
 NOTICE:  relation "INT8_TBL" already exists, skipping
+NOTICE:  relation "INT8_TMP" already exists, skipping
 NOTICE:  relation "hpart13" already exists, skipping
 IMPORT FOREIGN SCHEMA nonesuch FROM SERVER griddb_svr INTO import_grid4; -- same as 'public'
 NOTICE:  relation "aggtest" already exists, skipping
@@ -10556,6 +10589,7 @@ NOTICE:  relation "nt3" already exists, skipping
 NOTICE:  relation "agg_t6" already exists, skipping
 NOTICE:  relation "loc2" already exists, skipping
 NOTICE:  relation "INT2_TBL" already exists, skipping
+NOTICE:  relation "INT2_TMP" already exists, skipping
 NOTICE:  relation "batch_table_p1" already exists, skipping
 NOTICE:  relation "tenk1" already exists, skipping
 NOTICE:  relation "innertab" already exists, skipping
@@ -10630,6 +10664,7 @@ NOTICE:  relation "INT4_TMP" already exists, skipping
 NOTICE:  relation "bitwise_test" already exists, skipping
 NOTICE:  relation "agg_t1" already exists, skipping
 NOTICE:  relation "INT8_TBL" already exists, skipping
+NOTICE:  relation "INT8_TMP" already exists, skipping
 NOTICE:  relation "hpart13" already exists, skipping
 IMPORT FOREIGN SCHEMA nonesuch FROM SERVER griddb_svr INTO notthere;
 ERROR:  schema "notthere" does not exist
@@ -10713,7 +10748,6 @@ SET client_min_messages to NOTICE;
 -- ===================================================================
 --Testcase 1011:
 SET enable_partitionwise_join=on;
-ERROR:  unrecognized configuration parameter "enable_partitionwise_join"
 --Testcase 905:
 CREATE TABLE fprt1 (a int, b int, c text) PARTITION BY RANGE(a);
 --Testcase 678:
@@ -10752,24 +10786,29 @@ EXPLAIN (COSTS OFF)
 SELECT t1.a,t2.b,t3.c FROM fprt1 t1 INNER JOIN fprt2 t2 ON (t1.a = t2.b) INNER JOIN fprt1 t3 ON (t2.b = t3.a) WHERE t1.a % 25 =0 ORDER BY 1,2,3;
                           QUERY PLAN                          
 --------------------------------------------------------------
- Merge Join
-   Merge Cond: (t3.a = t1.a)
-   ->  Merge Append
-         Sort Key: t3.a, t3.c
+ Merge Append
+   Sort Key: t1.a, t3.c
+   ->  Merge Join
+         Merge Cond: (t3.a = t1.a)
          ->  Foreign Scan on ftprt1_p1 t3
-         ->  Foreign Scan on ftprt1_p2 t3_1
-   ->  Sort
-         Sort Key: t1.a
-         ->  Hash Join
-               Hash Cond: (t2.b = t1.a)
-               ->  Append
+         ->  Sort
+               Sort Key: t1.a
+               ->  Hash Join
+                     Hash Cond: (t2.b = t1.a)
                      ->  Foreign Scan on ftprt2_p1 t2
-                     ->  Foreign Scan on ftprt2_p2 t2_1
-               ->  Hash
-                     ->  Append
+                     ->  Hash
                            ->  Foreign Scan on ftprt1_p1 t1
+   ->  Merge Join
+         Merge Cond: (t3_1.a = t1_1.a)
+         ->  Foreign Scan on ftprt1_p2 t3_1
+         ->  Sort
+               Sort Key: t1_1.a
+               ->  Hash Join
+                     Hash Cond: (t2_1.b = t1_1.a)
+                     ->  Foreign Scan on ftprt2_p2 t2_1
+                     ->  Hash
                            ->  Foreign Scan on ftprt1_p2 t1_1
-(17 rows)
+(22 rows)
 
 --Testcase 683:
 SELECT t1.a,t2.b,t3.c FROM fprt1 t1 INNER JOIN fprt2 t2 ON (t1.a = t2.b) INNER JOIN fprt1 t3 ON (t2.b = t3.a) WHERE t1.a % 25 =0 ORDER BY 1,2,3;
@@ -10785,22 +10824,20 @@ SELECT t1.a,t2.b,t3.c FROM fprt1 t1 INNER JOIN fprt2 t2 ON (t1.a = t2.b) INNER J
 --Testcase 684:
 EXPLAIN (COSTS OFF)
 SELECT t1.a,t2.b,t2.c FROM fprt1 t1 LEFT JOIN (SELECT * FROM fprt2 WHERE a < 10) t2 ON (t1.a = t2.b and t1.b = t2.a) WHERE t1.a < 10 ORDER BY 1,2,3;
-                             QUERY PLAN                              
----------------------------------------------------------------------
+                                QUERY PLAN                                 
+---------------------------------------------------------------------------
  Sort
    Sort Key: t1.a, ftprt2_p1.b, ftprt2_p1.c
-   ->  Merge Left Join
-         Merge Cond: ((t1.a = ftprt2_p1.b) AND (t1.b = ftprt2_p1.a))
-         ->  Sort
-               Sort Key: t1.a, t1.b
-               ->  Append
+   ->  Append
+         ->  Merge Left Join
+               Merge Cond: ((t1.a = ftprt2_p1.b) AND (t1.b = ftprt2_p1.a))
+               ->  Sort
+                     Sort Key: t1.a, t1.b
                      ->  Foreign Scan on ftprt1_p1 t1
-         ->  Sort
-               Sort Key: ftprt2_p1.b, ftprt2_p1.a
-               ->  Append
+               ->  Sort
+                     Sort Key: ftprt2_p1.b, ftprt2_p1.a
                      ->  Foreign Scan on ftprt2_p1
-                     ->  Foreign Scan on ftprt2_p2
-(13 rows)
+(11 rows)
 
 --Testcase 685:
 SELECT t1.a,t2.b,t2.c FROM fprt1 t1 LEFT JOIN (SELECT * FROM fprt2 WHERE a < 10) t2 ON (t1.a = t2.b and t1.b = t2.a) WHERE t1.a < 10 ORDER BY 1,2,3;
@@ -10856,20 +10893,22 @@ SELECT t1.wr, t2.wr FROM (SELECT t1 wr, a FROM fprt1 t1 WHERE t1.a % 25 = 0) t1 
 --Testcase 688:
 EXPLAIN (COSTS OFF)
 SELECT t1.a,t1.b FROM fprt1 t1, LATERAL (SELECT t2.a, t2.b FROM fprt2 t2 WHERE t1.a = t2.b AND t1.b = t2.a) q WHERE t1.a%25 = 0 ORDER BY 1,2;
-                    QUERY PLAN                    
---------------------------------------------------
- Merge Join
-   Merge Cond: ((t1.a = t2.b) AND (t1.b = t2.a))
-   ->  Merge Append
-         Sort Key: t1.a, t1.b
-         ->  Foreign Scan on ftprt1_p1 t1
-         ->  Foreign Scan on ftprt1_p2 t1_1
-   ->  Materialize
-         ->  Merge Append
-               Sort Key: t2.b, t2.a
-               ->  Foreign Scan on ftprt2_p1 t2
-               ->  Foreign Scan on ftprt2_p2 t2_1
-(11 rows)
+                             QUERY PLAN                              
+---------------------------------------------------------------------
+ Sort
+   Sort Key: t1.a, t1.b
+   ->  Append
+         ->  Merge Join
+               Merge Cond: ((t1.a = t2.b) AND (t1.b = t2.a))
+               ->  Foreign Scan on ftprt1_p1 t1
+               ->  Materialize
+                     ->  Foreign Scan on ftprt2_p1 t2
+         ->  Merge Join
+               Merge Cond: ((t1_1.a = t2_1.b) AND (t1_1.b = t2_1.a))
+               ->  Foreign Scan on ftprt1_p2 t1_1
+               ->  Materialize
+                     ->  Foreign Scan on ftprt2_p2 t2_1
+(13 rows)
 
 --Testcase 689:
 SELECT t1.a,t1.b FROM fprt1 t1, LATERAL (SELECT t2.a, t2.b FROM fprt2 t2 WHERE t1.a = t2.b AND t1.b = t2.a) q WHERE t1.a%25 = 0 ORDER BY 1,2;
@@ -10885,20 +10924,22 @@ SELECT t1.a,t1.b FROM fprt1 t1, LATERAL (SELECT t2.a, t2.b FROM fprt2 t2 WHERE t
 --Testcase 690:
 EXPLAIN (COSTS OFF)
 SELECT t1.a, t1.phv, t2.b, t2.phv FROM (SELECT 't1_phv' phv, * FROM fprt1 WHERE a % 25 = 0) t1 FULL JOIN (SELECT 't2_phv' phv, * FROM fprt2 WHERE b % 25 = 0) t2 ON (t1.a = t2.b) ORDER BY t1.a, t2.b;
-                    QUERY PLAN                     
----------------------------------------------------
+                      QUERY PLAN                      
+------------------------------------------------------
  Sort
    Sort Key: ftprt1_p1.a, ftprt2_p1.b
-   ->  Hash Full Join
-         Hash Cond: (ftprt1_p1.a = ftprt2_p1.b)
-         ->  Append
+   ->  Append
+         ->  Hash Full Join
+               Hash Cond: (ftprt1_p1.a = ftprt2_p1.b)
                ->  Foreign Scan on ftprt1_p1
-               ->  Foreign Scan on ftprt1_p2
-         ->  Hash
-               ->  Append
+               ->  Hash
                      ->  Foreign Scan on ftprt2_p1
+         ->  Hash Full Join
+               Hash Cond: (ftprt1_p2.a = ftprt2_p2.b)
+               ->  Foreign Scan on ftprt1_p2
+               ->  Hash
                      ->  Foreign Scan on ftprt2_p2
-(11 rows)
+(13 rows)
 
 --Testcase 691:
 SELECT t1.a, t1.phv, t2.b, t2.phv FROM (SELECT 't1_phv' phv, * FROM fprt1 WHERE a % 25 = 0) t1 FULL JOIN (SELECT 't2_phv' phv, * FROM fprt2 WHERE b % 25 = 0) t2 ON (t1.a = t2.b) ORDER BY t1.a, t2.b;
@@ -10952,7 +10993,6 @@ SELECT t1.a, t2.b FROM fprt1 t1 INNER JOIN fprt2 t2 ON (t1.a = t2.b) WHERE t1.a 
 
 --Testcase 1013:
 RESET enable_partitionwise_join;
-ERROR:  unrecognized configuration parameter "enable_partitionwise_join"
 -- ===================================================================
 -- test partitionwise aggregates
 -- ===================================================================
@@ -10979,7 +11019,6 @@ CREATE FOREIGN TABLE fpagg_tab_p3 PARTITION OF pagg_tab FOR VALUES FROM (20) TO 
 -- Plan with partitionwise aggregates is disabled
 --Testcase 1014:
 SET enable_partitionwise_aggregate TO false;
-ERROR:  unrecognized configuration parameter "enable_partitionwise_aggregate"
 --Testcase 697:
 EXPLAIN (COSTS OFF)
 SELECT a, sum(b), min(b), count(*) FROM pagg_tab GROUP BY a HAVING avg(b) < 22 ORDER BY 1;
@@ -10998,21 +11037,26 @@ SELECT a, sum(b), min(b), count(*) FROM pagg_tab GROUP BY a HAVING avg(b) < 22 O
 -- Plan with partitionwise aggregates is enabled
 --Testcase 1015:
 SET enable_partitionwise_aggregate TO true;
-ERROR:  unrecognized configuration parameter "enable_partitionwise_aggregate"
 --Testcase 698:
 EXPLAIN (COSTS OFF)
 SELECT a, sum(b), min(b), count(*) FROM pagg_tab GROUP BY a HAVING avg(b) < 22 ORDER BY 1;
-                   QUERY PLAN                    
--------------------------------------------------
- GroupAggregate
-   Group Key: fpagg_tab_p1.a
-   Filter: (avg(fpagg_tab_p1.b) < '22'::numeric)
-   ->  Merge Append
-         Sort Key: fpagg_tab_p1.a
+                      QUERY PLAN                       
+-------------------------------------------------------
+ Merge Append
+   Sort Key: fpagg_tab_p1.a
+   ->  GroupAggregate
+         Group Key: fpagg_tab_p1.a
+         Filter: (avg(fpagg_tab_p1.b) < '22'::numeric)
          ->  Foreign Scan on fpagg_tab_p1
+   ->  GroupAggregate
+         Group Key: fpagg_tab_p2.a
+         Filter: (avg(fpagg_tab_p2.b) < '22'::numeric)
          ->  Foreign Scan on fpagg_tab_p2
+   ->  GroupAggregate
+         Group Key: fpagg_tab_p3.a
+         Filter: (avg(fpagg_tab_p3.b) < '22'::numeric)
          ->  Foreign Scan on fpagg_tab_p3
-(8 rows)
+(14 rows)
 
 --Testcase 699:
 SELECT a, sum(b), min(b), count(*) FROM pagg_tab GROUP BY a HAVING avg(b) < 22 ORDER BY 1;
@@ -11033,22 +11077,30 @@ EXPLAIN (VERBOSE, COSTS OFF)
 SELECT a, count(t1) FROM pagg_tab t1 GROUP BY a HAVING avg(b) < 22 ORDER BY 1;
                               QUERY PLAN                              
 ----------------------------------------------------------------------
- GroupAggregate
-   Output: t1.a, count(((t1.*)::pagg_tab))
-   Group Key: t1.a
-   Filter: (avg(t1.b) < '22'::numeric)
-   ->  Merge Append
-         Sort Key: t1.a
+ Merge Append
+   Sort Key: t1.a
+   ->  GroupAggregate
+         Output: t1.a, count(((t1.*)::pagg_tab))
+         Group Key: t1.a
+         Filter: (avg(t1.b) < '22'::numeric)
          ->  Foreign Scan on public.fpagg_tab_p1 t1
                Output: t1.a, t1.*, t1.b
                Remote SQL: SELECT  *  FROM pagg_tab_p1 ORDER BY a ASC
+   ->  GroupAggregate
+         Output: t1_1.a, count(((t1_1.*)::pagg_tab))
+         Group Key: t1_1.a
+         Filter: (avg(t1_1.b) < '22'::numeric)
          ->  Foreign Scan on public.fpagg_tab_p2 t1_1
                Output: t1_1.a, t1_1.*, t1_1.b
                Remote SQL: SELECT  *  FROM pagg_tab_p2 ORDER BY a ASC
+   ->  GroupAggregate
+         Output: t1_2.a, count(((t1_2.*)::pagg_tab))
+         Group Key: t1_2.a
+         Filter: (avg(t1_2.b) < '22'::numeric)
          ->  Foreign Scan on public.fpagg_tab_p3 t1_2
                Output: t1_2.a, t1_2.*, t1_2.b
                Remote SQL: SELECT  *  FROM pagg_tab_p3 ORDER BY a ASC
-(15 rows)
+(23 rows)
 
 --Testcase 701:
 SELECT a, count(t1) FROM pagg_tab t1 GROUP BY a HAVING avg(b) < 22 ORDER BY 1;
@@ -11175,7 +11227,6 @@ DROP ROLE regress_nosuper;
 -- Clean-up
 --Testcase 1016:
 RESET enable_partitionwise_aggregate;
-ERROR:  unrecognized configuration parameter "enable_partitionwise_aggregate"
 -- GridDB has different result because GridDB does not run test check constraints
 -- Two-phase transactions are not supported.
 BEGIN;
