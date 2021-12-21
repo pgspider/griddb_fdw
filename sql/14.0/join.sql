@@ -876,7 +876,7 @@ set work_mem to '64kB';
 set enable_mergejoin to off;
 
 --Testcase 178:
-set enable_resultcache to off;
+set enable_memoize to off;
 
 --Testcase 179:
 explain (costs off)
@@ -894,7 +894,7 @@ reset work_mem;
 reset enable_mergejoin;
 
 --Testcase 183:
-reset enable_resultcache;
+reset enable_memoize;
 
 --
 -- regression test for 8.2 bug with improper re-ordering of left joins
@@ -1608,6 +1608,10 @@ select unique1 from tenk1, f_immutable_int4(1) x where x = unique1;
 --Testcase 290:
 explain (costs off)
 select unique1 from tenk1, lateral f_immutable_int4(1) x where x = unique1;
+
+--Testcase 704:
+explain (costs off)
+select unique1 from tenk1, lateral f_immutable_int4(1) x where x in (select 17);
 
 --Testcase 291:
 explain (costs off)

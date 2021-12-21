@@ -688,14 +688,14 @@ ERROR:  rowkey-column update is not supported
 SELECT * FROM public.griddb_fdw_version();
  griddb_fdw_version 
 --------------------
-              20100
+              20101
 (1 row)
 
 --Testcase 111:
 SELECT griddb_fdw_version();
  griddb_fdw_version 
 --------------------
-              20100
+              20101
 (1 row)
 
 --Test pushdown LIMIT...OFFSET
@@ -880,7 +880,7 @@ WHERE t1.ten = ss2.id;
          ->  Foreign Scan on public.onek t2
                Output: num.id, t2.two
                Remote SQL: SELECT  *  FROM onek LIMIT 1 OFFSET 5
-   ->  Result Cache
+   ->  Memoize
          Output: ((num.id)), (t2.two)
          Cache Key: (num.id), t2.two
          ->  Foreign Scan on public.onek t3

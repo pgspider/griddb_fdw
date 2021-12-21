@@ -1,7 +1,7 @@
 # GridDB Foreign Data Wrapper for PostgreSQL
 
 This PostgreSQL extension is a Foreign Data Wrapper (FDW) for [GridDB][1].  
-This version of griddb_fdw can work for PostgreSQL 10, 11, 12, 13 and 14. It is confirmed in GridDB 4.6.0.
+This version of griddb_fdw can work for PostgreSQL 10, 11, 12, 13 and 14. It is confirmed in GridDB 4.6.1.
 
 ## 1. Installation
 griddb_fdw requires GridDB's C client library. This library can be downloaded from the [GridDB][1] website on github[1].
@@ -186,6 +186,9 @@ Returning is way to obtain data if rows are modified by INSERT, UPDATE, and DELE
 ```
 INSERT INTO ft1 (c0, c1) VALUES (1, 2) RETURNING c0, c1;
 ```
+
+#### Don't support DIRECT MODIFICATION
+#### Don't support IMPORT FOREIGN SCHEMA with option import_generated
 
 ## 5. License
 Copyright (c) 2017-2021, TOSHIBA Corporation  

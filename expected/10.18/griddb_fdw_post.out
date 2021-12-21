@@ -1267,10 +1267,9 @@ SELECT t1.c1, t2.c1 FROM ft4 t1 LEFT JOIN ft5 t2 ON (t1.c1 = t2.c1) ORDER BY t1.
 ------------------------------------------------------------
  Limit
    Output: t1.c1, t2.c1
-   ->  Incremental Sort
+   ->  Sort
          Output: t1.c1, t2.c1
          Sort Key: t1.c1, t2.c1
-         Presorted Key: t1.c1
          ->  Merge Left Join
                Output: t1.c1, t2.c1
                Merge Cond: (t1.c1 = t2.c1)
@@ -1286,7 +1285,7 @@ SELECT t1.c1, t2.c1 FROM ft4 t1 LEFT JOIN ft5 t2 ON (t1.c1 = t2.c1) ORDER BY t1.
                      ->  Foreign Scan on public.ft5 t2
                            Output: t2.c1
                            Remote SQL: SELECT  *  FROM "T4"
-(21 rows)
+(20 rows)
 
 --Testcase 80:
 SELECT t1.c1, t2.c1 FROM ft4 t1 LEFT JOIN ft5 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c1, t2.c1 OFFSET 10 LIMIT 10;
@@ -1421,10 +1420,9 @@ SELECT t1.c1, t2.c1 FROM ft5 t1 RIGHT JOIN ft4 t2 ON (t1.c1 = t2.c1) ORDER BY t2
 ------------------------------------------------------------
  Limit
    Output: t1.c1, t2.c1
-   ->  Incremental Sort
+   ->  Sort
          Output: t1.c1, t2.c1
          Sort Key: t2.c1, t1.c1
-         Presorted Key: t2.c1
          ->  Merge Left Join
                Output: t1.c1, t2.c1
                Merge Cond: (t2.c1 = t1.c1)
@@ -1440,7 +1438,7 @@ SELECT t1.c1, t2.c1 FROM ft5 t1 RIGHT JOIN ft4 t2 ON (t1.c1 = t2.c1) ORDER BY t2
                      ->  Foreign Scan on public.ft5 t1
                            Output: t1.c1
                            Remote SQL: SELECT  *  FROM "T4"
-(21 rows)
+(20 rows)
 
 --Testcase 88:
 SELECT t1.c1, t2.c1 FROM ft5 t1 RIGHT JOIN ft4 t2 ON (t1.c1 = t2.c1) ORDER BY t2.c1, t1.c1 OFFSET 10 LIMIT 10;
@@ -2338,49 +2336,14 @@ SELECT t1.c1, t2.c1 FROM ft1 t1 JOIN ft2 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c3, t
 --Testcase 128:
 EXPLAIN (VERBOSE, COSTS OFF)
 WITH t (c1_1, c1_3, c2_1) AS MATERIALIZED (SELECT t1.c1, t1.c3, t2.c1 FROM ft1 t1 JOIN ft2 t2 ON (t1.c1 = t2.c1)) SELECT c1_1, c2_1 FROM t ORDER BY c1_3, c1_1 OFFSET 100 LIMIT 10;
-                       QUERY PLAN                       
---------------------------------------------------------
- Limit
-   Output: t.c1_1, t.c2_1, t.c1_3
-   CTE t
-     ->  Merge Join
-           Output: t1.c1, t1.c3, t2.c1
-           Merge Cond: (t1.c1 = t2.c1)
-           ->  Sort
-                 Output: t1.c1, t1.c3
-                 Sort Key: t1.c1
-                 ->  Foreign Scan on public.ft1 t1
-                       Output: t1.c1, t1.c3
-                       Remote SQL: SELECT  *  FROM "T1"
-           ->  Sort
-                 Output: t2.c1
-                 Sort Key: t2.c1
-                 ->  Foreign Scan on public.ft2 t2
-                       Output: t2.c1
-                       Remote SQL: SELECT  *  FROM "T1"
-   ->  Sort
-         Output: t.c1_1, t.c2_1, t.c1_3
-         Sort Key: t.c1_3, t.c1_1
-         ->  CTE Scan on t
-               Output: t.c1_1, t.c2_1, t.c1_3
-(23 rows)
-
+ERROR:  syntax error at or near "MATERIALIZED"
+LINE 2: WITH t (c1_1, c1_3, c2_1) AS MATERIALIZED (SELECT t1.c1, t1....
+                                     ^
 --Testcase 129:
 WITH t (c1_1, c1_3, c2_1) AS MATERIALIZED (SELECT t1.c1, t1.c3, t2.c1 FROM ft1 t1 JOIN ft2 t2 ON (t1.c1 = t2.c1)) SELECT c1_1, c2_1 FROM t ORDER BY c1_3, c1_1 OFFSET 100 LIMIT 10;
- c1_1 | c2_1 
-------+------
-  101 |  101
-  102 |  102
-  103 |  103
-  104 |  104
-  105 |  105
-  106 |  106
-  107 |  107
-  108 |  108
-  109 |  109
-  110 |  110
-(10 rows)
-
+ERROR:  syntax error at or near "MATERIALIZED"
+LINE 1: WITH t (c1_1, c1_3, c2_1) AS MATERIALIZED (SELECT t1.c1, t1....
+                                     ^
 -- ctid with whole-row reference
 --Testcase 130:
 EXPLAIN (VERBOSE, COSTS OFF)
@@ -2973,26 +2936,25 @@ SELECT t1.c1, t2.c2 FROM v4 t1 LEFT JOIN v5 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c1
 ------------------------------------------------------------
  Limit
    Output: ft4.c1, ft5.c2, ft5.c1
-   ->  Incremental Sort
+   ->  Sort
          Output: ft4.c1, ft5.c2, ft5.c1
          Sort Key: ft4.c1, ft5.c1
-         Presorted Key: ft4.c1
-         ->  Merge Left Join
+         ->  Merge Right Join
                Output: ft4.c1, ft5.c2, ft5.c1
-               Merge Cond: (ft4.c1 = ft5.c1)
-               ->  Sort
-                     Output: ft4.c1
-                     Sort Key: ft4.c1
-                     ->  Foreign Scan on public.ft4
-                           Output: ft4.c1
-                           Remote SQL: SELECT  *  FROM "T3"
+               Merge Cond: (ft5.c1 = ft4.c1)
                ->  Sort
                      Output: ft5.c2, ft5.c1
                      Sort Key: ft5.c1
                      ->  Foreign Scan on public.ft5
                            Output: ft5.c2, ft5.c1
                            Remote SQL: SELECT  *  FROM "T4"
-(21 rows)
+               ->  Sort
+                     Output: ft4.c1
+                     Sort Key: ft4.c1
+                     ->  Foreign Scan on public.ft4
+                           Output: ft4.c1
+                           Remote SQL: SELECT  *  FROM "T3"
+(20 rows)
 
 --Testcase 159:
 SELECT t1.c1, t2.c2 FROM v4 t1 LEFT JOIN v5 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c1, t2.c1 OFFSET 10 LIMIT 10;
@@ -3019,26 +2981,25 @@ SELECT t1.c1, t2.c2 FROM v4 t1 LEFT JOIN v5 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c1
 ------------------------------------------------------------
  Limit
    Output: ft4.c1, ft5.c2, ft5.c1
-   ->  Incremental Sort
+   ->  Sort
          Output: ft4.c1, ft5.c2, ft5.c1
          Sort Key: ft4.c1, ft5.c1
-         Presorted Key: ft4.c1
-         ->  Merge Left Join
+         ->  Merge Right Join
                Output: ft4.c1, ft5.c2, ft5.c1
-               Merge Cond: (ft4.c1 = ft5.c1)
-               ->  Sort
-                     Output: ft4.c1
-                     Sort Key: ft4.c1
-                     ->  Foreign Scan on public.ft4
-                           Output: ft4.c1
-                           Remote SQL: SELECT  *  FROM "T3"
+               Merge Cond: (ft5.c1 = ft4.c1)
                ->  Sort
                      Output: ft5.c2, ft5.c1
                      Sort Key: ft5.c1
                      ->  Foreign Scan on public.ft5
                            Output: ft5.c2, ft5.c1
                            Remote SQL: SELECT  *  FROM "T4"
-(21 rows)
+               ->  Sort
+                     Output: ft4.c1
+                     Sort Key: ft4.c1
+                     ->  Foreign Scan on public.ft4
+                           Output: ft4.c1
+                           Remote SQL: SELECT  *  FROM "T3"
+(20 rows)
 
 --Testcase 161:
 SELECT t1.c1, t2.c2 FROM v4 t1 LEFT JOIN v5 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c1, t2.c1 OFFSET 10 LIMIT 10;
@@ -3063,26 +3024,25 @@ SELECT t1.c1, t2.c2 FROM v4 t1 LEFT JOIN ft5 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c
 ------------------------------------------------------------
  Limit
    Output: ft4.c1, t2.c2, t2.c1
-   ->  Incremental Sort
+   ->  Sort
          Output: ft4.c1, t2.c2, t2.c1
          Sort Key: ft4.c1, t2.c1
-         Presorted Key: ft4.c1
-         ->  Merge Left Join
+         ->  Merge Right Join
                Output: ft4.c1, t2.c2, t2.c1
-               Merge Cond: (ft4.c1 = t2.c1)
-               ->  Sort
-                     Output: ft4.c1
-                     Sort Key: ft4.c1
-                     ->  Foreign Scan on public.ft4
-                           Output: ft4.c1
-                           Remote SQL: SELECT  *  FROM "T3"
+               Merge Cond: (t2.c1 = ft4.c1)
                ->  Sort
                      Output: t2.c2, t2.c1
                      Sort Key: t2.c1
                      ->  Foreign Scan on public.ft5 t2
                            Output: t2.c2, t2.c1
                            Remote SQL: SELECT  *  FROM "T4"
-(21 rows)
+               ->  Sort
+                     Output: ft4.c1
+                     Sort Key: ft4.c1
+                     ->  Foreign Scan on public.ft4
+                           Output: ft4.c1
+                           Remote SQL: SELECT  *  FROM "T3"
+(20 rows)
 
 --Testcase 163:
 SELECT t1.c1, t2.c2 FROM v4 t1 LEFT JOIN ft5 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c1, t2.c1 OFFSET 10 LIMIT 10;
@@ -3109,26 +3069,25 @@ SELECT t1.c1, t2.c2 FROM v4 t1 LEFT JOIN ft5 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c
 ------------------------------------------------------------
  Limit
    Output: ft4.c1, t2.c2, t2.c1
-   ->  Incremental Sort
+   ->  Sort
          Output: ft4.c1, t2.c2, t2.c1
          Sort Key: ft4.c1, t2.c1
-         Presorted Key: ft4.c1
-         ->  Merge Left Join
+         ->  Merge Right Join
                Output: ft4.c1, t2.c2, t2.c1
-               Merge Cond: (ft4.c1 = t2.c1)
-               ->  Sort
-                     Output: ft4.c1
-                     Sort Key: ft4.c1
-                     ->  Foreign Scan on public.ft4
-                           Output: ft4.c1
-                           Remote SQL: SELECT  *  FROM "T3"
+               Merge Cond: (t2.c1 = ft4.c1)
                ->  Sort
                      Output: t2.c2, t2.c1
                      Sort Key: t2.c1
                      ->  Foreign Scan on public.ft5 t2
                            Output: t2.c2, t2.c1
                            Remote SQL: SELECT  *  FROM "T4"
-(21 rows)
+               ->  Sort
+                     Output: ft4.c1
+                     Sort Key: ft4.c1
+                     ->  Foreign Scan on public.ft4
+                           Output: ft4.c1
+                           Remote SQL: SELECT  *  FROM "T3"
+(20 rows)
 
 --Testcase 165:
 SELECT t1.c1, t2.c2 FROM v4 t1 LEFT JOIN ft5 t2 ON (t1.c1 = t2.c1) ORDER BY t1.c1, t2.c1 OFFSET 10 LIMIT 10;
@@ -5012,12 +4971,14 @@ SELECT * FROM ft1 t1 WHERE t1.tableoid = 'ft1'::regclass LIMIT 1;
 --Testcase 299:
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT tableoid::regclass, * FROM ft1 t1 LIMIT 1;
-                           QUERY PLAN                           
-----------------------------------------------------------------
- Foreign Scan on public.ft1 t1
-   Output: (tableoid)::regclass, c1, c2, c3, c4, c5, c6, c7, c8
-   Remote SQL: SELECT  *  FROM "T1" LIMIT 1
-(3 rows)
+                              QUERY PLAN                              
+----------------------------------------------------------------------
+ Limit
+   Output: ((tableoid)::regclass), c1, c2, c3, c4, c5, c6, c7, c8
+   ->  Foreign Scan on public.ft1 t1
+         Output: (tableoid)::regclass, c1, c2, c3, c4, c5, c6, c7, c8
+         Remote SQL: SELECT  *  FROM "T1"
+(5 rows)
 
 --Testcase 300:
 SELECT tableoid::regclass, * FROM ft1 t1 LIMIT 1;
@@ -5047,12 +5008,14 @@ SELECT * FROM ft1 t1 WHERE t1.ctid = '(0,2)';
 --Testcase 303:
 EXPLAIN (VERBOSE, COSTS OFF)
 SELECT ctid, * FROM ft1 t1 LIMIT 1;
-                   QUERY PLAN                   
-------------------------------------------------
- Foreign Scan on public.ft1 t1
+                      QUERY PLAN                      
+------------------------------------------------------
+ Limit
    Output: ctid, c1, c2, c3, c4, c5, c6, c7, c8
-   Remote SQL: SELECT  *  FROM "T1" LIMIT 1
-(3 rows)
+   ->  Foreign Scan on public.ft1 t1
+         Output: ctid, c1, c2, c3, c4, c5, c6, c7, c8
+         Remote SQL: SELECT  *  FROM "T1"
+(5 rows)
 
 --Testcase 304:
 SELECT ctid, * FROM ft1 t1 LIMIT 1;
@@ -5303,10 +5266,12 @@ INSERT INTO ft2 (c1,c2,c3) SELECT c1+1000,c2+100, c3 || c3 FROM ft2 LIMIT 20;
  Insert on public.ft2
    ->  Subquery Scan on "*SELECT*"
          Output: "*SELECT*"."?column?", "*SELECT*"."?column?_1", "*SELECT*"."?column?_2", NULL::timestamp without time zone, NULL::timestamp without time zone, NULL::text, 'ft2'::text, NULL::text
-         ->  Foreign Scan on public.ft2 ft2_1
-               Output: (ft2_1.c1 + 1000), (ft2_1.c2 + 100), (ft2_1.c3 || ft2_1.c3)
-               Remote SQL: SELECT  *  FROM "T1" LIMIT 20
-(6 rows)
+         ->  Limit
+               Output: ((ft2_1.c1 + 1000)), ((ft2_1.c2 + 100)), ((ft2_1.c3 || ft2_1.c3))
+               ->  Foreign Scan on public.ft2 ft2_1
+                     Output: (ft2_1.c1 + 1000), (ft2_1.c2 + 100), (ft2_1.c3 || ft2_1.c3)
+                     Remote SQL: SELECT  *  FROM "T1"
+(8 rows)
 
 --Testcase 324:
 INSERT INTO ft2 (c1,c2,c3) SELECT c1+1000,c2+100, c3 || c3 FROM ft2 LIMIT 20;
@@ -7506,8 +7471,7 @@ INSERT INTO rw_view(a, b) VALUES (0, 5);
 
 --Testcase 427:
 INSERT INTO rw_view(a, b) VALUES (0, 5); -- should fail
-ERROR:  new row violates check option for view "rw_view"
-DETAIL:  Failing row contains (1, 10, 5).
+ERROR:  cannot route inserted tuples to a foreign table
 --Testcase 428:
 EXPLAIN (VERBOSE, COSTS OFF)
 INSERT INTO rw_view(a, b) VALUES (0, 15);
@@ -7520,38 +7484,36 @@ INSERT INTO rw_view(a, b) VALUES (0, 15);
 
 --Testcase 429:
 INSERT INTO rw_view(a, b) VALUES (0, 15); -- ok
+ERROR:  cannot route inserted tuples to a foreign table
 --Testcase 430:
 SELECT a, b FROM foreign_tbl;
- a  | b  
-----+----
- 10 | 15
-(1 row)
+ a | b 
+---+---
+(0 rows)
 
 --Testcase 431:
 EXPLAIN (VERBOSE, COSTS OFF)
 UPDATE rw_view SET b = b + 5;
-                                               QUERY PLAN                                               
---------------------------------------------------------------------------------------------------------
+                                            QUERY PLAN                                             
+---------------------------------------------------------------------------------------------------
  Update on public.parent_tbl
-   Foreign Update on public.foreign_tbl parent_tbl_1
-   ->  Foreign Scan on public.foreign_tbl parent_tbl_1
-         Output: parent_tbl_1.id, parent_tbl_1.a, (parent_tbl_1.b + 5), parent_tbl_1.id, parent_tbl_1.*
+   Foreign Update on public.foreign_tbl
+   ->  Foreign Scan on public.foreign_tbl
+         Output: foreign_tbl.id, foreign_tbl.a, (foreign_tbl.b + 5), foreign_tbl.id, foreign_tbl.*
          Remote SQL: SELECT  *  FROM child_tbl WHERE ((a < b))
 (5 rows)
 
 --Testcase 432:
 UPDATE rw_view SET b = b + 5; -- should fail
-ERROR:  new row violates check option for view "rw_view"
-DETAIL:  Failing row contains (2, 20, 20).
 --Testcase 433:
 EXPLAIN (VERBOSE, COSTS OFF)
 UPDATE rw_view SET b = b + 15;
-                                               QUERY PLAN                                                
----------------------------------------------------------------------------------------------------------
+                                             QUERY PLAN                                             
+----------------------------------------------------------------------------------------------------
  Update on public.parent_tbl
-   Foreign Update on public.foreign_tbl parent_tbl_1
-   ->  Foreign Scan on public.foreign_tbl parent_tbl_1
-         Output: parent_tbl_1.id, parent_tbl_1.a, (parent_tbl_1.b + 15), parent_tbl_1.id, parent_tbl_1.*
+   Foreign Update on public.foreign_tbl
+   ->  Foreign Scan on public.foreign_tbl
+         Output: foreign_tbl.id, foreign_tbl.a, (foreign_tbl.b + 15), foreign_tbl.id, foreign_tbl.*
          Remote SQL: SELECT  *  FROM child_tbl WHERE ((a < b))
 (5 rows)
 
@@ -7559,10 +7521,9 @@ UPDATE rw_view SET b = b + 15;
 UPDATE rw_view SET b = b + 15; -- ok
 --Testcase 435:
 SELECT a, b FROM foreign_tbl;
- a  | b  
-----+----
- 20 | 30
-(1 row)
+ a | b 
+---+---
+(0 rows)
 
 --Testcase 769:
 DROP TRIGGER row_before_insupd_trigger ON foreign_tbl;
@@ -7615,18 +7576,24 @@ create foreign table grem1 (
   a int,
   b int generated always as (a * 2) stored)
   server griddb_svr options(table_name 'gloc1');
+ERROR:  syntax error at or near "("
+LINE 4:   b int generated always as (a * 2) stored)
+                                    ^
 --Testcase 442:
 insert into grem1 (a) values (1), (2);
+ERROR:  relation "grem1" does not exist
+LINE 1: insert into grem1 (a) values (1), (2);
+                    ^
 --Testcase 443:
 update grem1 set a = 22 where a = 2;
+ERROR:  relation "grem1" does not exist
+LINE 1: update grem1 set a = 22 where a = 2;
+               ^
 --Testcase 444:
 select a, b from grem1;
- a  | b  
-----+----
-  1 |  2
- 22 | 44
-(2 rows)
-
+ERROR:  relation "grem1" does not exist
+LINE 1: select a, b from grem1;
+                         ^
 -- ===================================================================
 -- test local triggers
 -- ===================================================================
@@ -8508,27 +8475,27 @@ select * from bar where f1 in (select f1 from foo) for update;
                                           QUERY PLAN                                          
 ----------------------------------------------------------------------------------------------
  LockRows
-   Output: bar.f1, bar.f2, bar.ctid, foo.ctid, bar.*, bar.tableoid, foo.*, foo.tableoid
+   Output: bar.f1, bar.f2, bar.ctid, bar.*, bar.tableoid, foo.ctid, foo.*, foo.tableoid
    ->  Hash Join
-         Output: bar.f1, bar.f2, bar.ctid, foo.ctid, bar.*, bar.tableoid, foo.*, foo.tableoid
+         Output: bar.f1, bar.f2, bar.ctid, bar.*, bar.tableoid, foo.ctid, foo.*, foo.tableoid
          Inner Unique: true
          Hash Cond: (bar.f1 = foo.f1)
          ->  Append
-               ->  Seq Scan on public.bar bar_1
-                     Output: bar_1.f1, bar_1.f2, bar_1.ctid, bar_1.*, bar_1.tableoid
-               ->  Foreign Scan on public.bar2 bar_2
-                     Output: bar_2.f1, bar_2.f2, bar_2.ctid, bar_2.*, bar_2.tableoid
+               ->  Seq Scan on public.bar
+                     Output: bar.f1, bar.f2, bar.ctid, bar.*, bar.tableoid
+               ->  Foreign Scan on public.bar2
+                     Output: bar2.f1, bar2.f2, bar2.ctid, bar2.*, bar2.tableoid
                      Remote SQL: SELECT  *  FROM loct2
          ->  Hash
-               Output: foo.ctid, foo.f1, foo.*, foo.tableoid
+               Output: foo.ctid, foo.*, foo.tableoid, foo.f1
                ->  HashAggregate
-                     Output: foo.ctid, foo.f1, foo.*, foo.tableoid
+                     Output: foo.ctid, foo.*, foo.tableoid, foo.f1
                      Group Key: foo.f1
                      ->  Append
-                           ->  Seq Scan on public.foo foo_1
-                                 Output: foo_1.ctid, foo_1.f1, foo_1.*, foo_1.tableoid
-                           ->  Foreign Scan on public.foo2 foo_2
-                                 Output: foo_2.ctid, foo_2.f1, foo_2.*, foo_2.tableoid
+                           ->  Seq Scan on public.foo
+                                 Output: foo.ctid, foo.*, foo.tableoid, foo.f1
+                           ->  Foreign Scan on public.foo2
+                                 Output: foo2.ctid, foo2.*, foo2.tableoid, foo2.f1
                                  Remote SQL: SELECT  *  FROM loct1
 (23 rows)
 
@@ -8548,27 +8515,27 @@ select * from bar where f1 in (select f1 from foo) for share;
                                           QUERY PLAN                                          
 ----------------------------------------------------------------------------------------------
  LockRows
-   Output: bar.f1, bar.f2, bar.ctid, foo.ctid, bar.*, bar.tableoid, foo.*, foo.tableoid
+   Output: bar.f1, bar.f2, bar.ctid, bar.*, bar.tableoid, foo.ctid, foo.*, foo.tableoid
    ->  Hash Join
-         Output: bar.f1, bar.f2, bar.ctid, foo.ctid, bar.*, bar.tableoid, foo.*, foo.tableoid
+         Output: bar.f1, bar.f2, bar.ctid, bar.*, bar.tableoid, foo.ctid, foo.*, foo.tableoid
          Inner Unique: true
          Hash Cond: (bar.f1 = foo.f1)
          ->  Append
-               ->  Seq Scan on public.bar bar_1
-                     Output: bar_1.f1, bar_1.f2, bar_1.ctid, bar_1.*, bar_1.tableoid
-               ->  Foreign Scan on public.bar2 bar_2
-                     Output: bar_2.f1, bar_2.f2, bar_2.ctid, bar_2.*, bar_2.tableoid
+               ->  Seq Scan on public.bar
+                     Output: bar.f1, bar.f2, bar.ctid, bar.*, bar.tableoid
+               ->  Foreign Scan on public.bar2
+                     Output: bar2.f1, bar2.f2, bar2.ctid, bar2.*, bar2.tableoid
                      Remote SQL: SELECT  *  FROM loct2
          ->  Hash
-               Output: foo.ctid, foo.f1, foo.*, foo.tableoid
+               Output: foo.ctid, foo.*, foo.tableoid, foo.f1
                ->  HashAggregate
-                     Output: foo.ctid, foo.f1, foo.*, foo.tableoid
+                     Output: foo.ctid, foo.*, foo.tableoid, foo.f1
                      Group Key: foo.f1
                      ->  Append
-                           ->  Seq Scan on public.foo foo_1
-                                 Output: foo_1.ctid, foo_1.f1, foo_1.*, foo_1.tableoid
-                           ->  Foreign Scan on public.foo2 foo_2
-                                 Output: foo_2.ctid, foo_2.f1, foo_2.*, foo_2.tableoid
+                           ->  Seq Scan on public.foo
+                                 Output: foo.ctid, foo.*, foo.tableoid, foo.f1
+                           ->  Foreign Scan on public.foo2
+                                 Output: foo2.ctid, foo2.*, foo2.tableoid, foo2.f1
                                  Remote SQL: SELECT  *  FROM loct1
 (23 rows)
 
@@ -8586,11 +8553,11 @@ select * from bar where f1 in (select f1 from foo) for share;
 --Testcase 549:
 explain (verbose, costs off)
 update bar set f2 = f2 + 100 where f1 in (select f1 from foo);
-                                          QUERY PLAN                                           
------------------------------------------------------------------------------------------------
+                                        QUERY PLAN                                         
+-------------------------------------------------------------------------------------------
  Update on public.bar
    Update on public.bar
-   Foreign Update on public.bar2 bar_1
+   Foreign Update on public.bar2
    ->  Hash Join
          Output: bar.f1, (bar.f2 + 100), bar.ctid, foo.ctid, foo.*, foo.tableoid
          Inner Unique: true
@@ -8598,33 +8565,33 @@ update bar set f2 = f2 + 100 where f1 in (select f1 from foo);
          ->  Seq Scan on public.bar
                Output: bar.f1, bar.f2, bar.ctid
          ->  Hash
-               Output: foo.ctid, foo.f1, foo.*, foo.tableoid
+               Output: foo.ctid, foo.*, foo.tableoid, foo.f1
                ->  HashAggregate
-                     Output: foo.ctid, foo.f1, foo.*, foo.tableoid
+                     Output: foo.ctid, foo.*, foo.tableoid, foo.f1
                      Group Key: foo.f1
                      ->  Append
-                           ->  Seq Scan on public.foo foo_1
-                                 Output: foo_1.ctid, foo_1.f1, foo_1.*, foo_1.tableoid
-                           ->  Foreign Scan on public.foo2 foo_2
-                                 Output: foo_2.ctid, foo_2.f1, foo_2.*, foo_2.tableoid
+                           ->  Seq Scan on public.foo
+                                 Output: foo.ctid, foo.*, foo.tableoid, foo.f1
+                           ->  Foreign Scan on public.foo2
+                                 Output: foo2.ctid, foo2.*, foo2.tableoid, foo2.f1
                                  Remote SQL: SELECT  *  FROM loct1
    ->  Hash Join
-         Output: bar_1.f1, (bar_1.f2 + 100), bar_1.f3, bar_1.f1, foo.ctid, foo.*, foo.tableoid
+         Output: bar2.f1, (bar2.f2 + 100), bar2.f3, bar2.f1, foo.ctid, foo.*, foo.tableoid
          Inner Unique: true
-         Hash Cond: (bar_1.f1 = foo.f1)
-         ->  Foreign Scan on public.bar2 bar_1
-               Output: bar_1.f1, bar_1.f2, bar_1.f3
+         Hash Cond: (bar2.f1 = foo.f1)
+         ->  Foreign Scan on public.bar2
+               Output: bar2.f1, bar2.f2, bar2.f3
                Remote SQL: SELECT  *  FROM loct2
          ->  Hash
-               Output: foo.ctid, foo.f1, foo.*, foo.tableoid
+               Output: foo.ctid, foo.*, foo.tableoid, foo.f1
                ->  HashAggregate
-                     Output: foo.ctid, foo.f1, foo.*, foo.tableoid
+                     Output: foo.ctid, foo.*, foo.tableoid, foo.f1
                      Group Key: foo.f1
                      ->  Append
-                           ->  Seq Scan on public.foo foo_1
-                                 Output: foo_1.ctid, foo_1.f1, foo_1.*, foo_1.tableoid
-                           ->  Foreign Scan on public.foo2 foo_2
-                                 Output: foo_2.ctid, foo_2.f1, foo_2.*, foo_2.tableoid
+                           ->  Seq Scan on public.foo
+                                 Output: foo.ctid, foo.*, foo.tableoid, foo.f1
+                           ->  Foreign Scan on public.foo2
+                                 Output: foo2.ctid, foo2.*, foo2.tableoid, foo2.f1
                                  Remote SQL: SELECT  *  FROM loct1
 (38 rows)
 
@@ -8649,37 +8616,37 @@ update bar set f2 = f2 + 100
 from
   ( select f1 from foo union all select f1+3 from foo ) ss
 where bar.f1 = ss.f1;
-                                  QUERY PLAN                                   
--------------------------------------------------------------------------------
+                                QUERY PLAN                                 
+---------------------------------------------------------------------------
  Update on public.bar
    Update on public.bar
-   Foreign Update on public.bar2 bar_1
+   Foreign Update on public.bar2
    ->  Hash Join
          Output: bar.f1, (bar.f2 + 100), bar.ctid, (ROW(foo.f1))
          Hash Cond: (foo.f1 = bar.f1)
          ->  Append
                ->  Seq Scan on public.foo
                      Output: ROW(foo.f1), foo.f1
-               ->  Foreign Scan on public.foo2 foo_1
-                     Output: ROW(foo_1.f1), foo_1.f1
+               ->  Foreign Scan on public.foo2
+                     Output: ROW(foo2.f1), foo2.f1
                      Remote SQL: SELECT  *  FROM loct1
-               ->  Seq Scan on public.foo foo_2
-                     Output: ROW((foo_2.f1 + 3)), (foo_2.f1 + 3)
-               ->  Foreign Scan on public.foo2 foo_3
-                     Output: ROW((foo_3.f1 + 3)), (foo_3.f1 + 3)
+               ->  Seq Scan on public.foo foo_1
+                     Output: ROW((foo_1.f1 + 3)), (foo_1.f1 + 3)
+               ->  Foreign Scan on public.foo2 foo2_1
+                     Output: ROW((foo2_1.f1 + 3)), (foo2_1.f1 + 3)
                      Remote SQL: SELECT  *  FROM loct1
          ->  Hash
                Output: bar.f1, bar.f2, bar.ctid
                ->  Seq Scan on public.bar
                      Output: bar.f1, bar.f2, bar.ctid
    ->  Merge Join
-         Output: bar_1.f1, (bar_1.f2 + 100), bar_1.f3, bar_1.f1, (ROW(foo.f1))
-         Merge Cond: (bar_1.f1 = foo.f1)
+         Output: bar2.f1, (bar2.f2 + 100), bar2.f3, bar2.f1, (ROW(foo.f1))
+         Merge Cond: (bar2.f1 = foo.f1)
          ->  Sort
-               Output: bar_1.f1, bar_1.f2, bar_1.f3
-               Sort Key: bar_1.f1
-               ->  Foreign Scan on public.bar2 bar_1
-                     Output: bar_1.f1, bar_1.f2, bar_1.f3
+               Output: bar2.f1, bar2.f2, bar2.f3
+               Sort Key: bar2.f1
+               ->  Foreign Scan on public.bar2
+                     Output: bar2.f1, bar2.f2, bar2.f3
                      Remote SQL: SELECT  *  FROM loct2
          ->  Sort
                Output: (ROW(foo.f1)), foo.f1
@@ -8687,13 +8654,13 @@ where bar.f1 = ss.f1;
                ->  Append
                      ->  Seq Scan on public.foo
                            Output: ROW(foo.f1), foo.f1
-                     ->  Foreign Scan on public.foo2 foo_1
-                           Output: ROW(foo_1.f1), foo_1.f1
+                     ->  Foreign Scan on public.foo2
+                           Output: ROW(foo2.f1), foo2.f1
                            Remote SQL: SELECT  *  FROM loct1
-                     ->  Seq Scan on public.foo foo_2
-                           Output: ROW((foo_2.f1 + 3)), (foo_2.f1 + 3)
-                     ->  Foreign Scan on public.foo2 foo_3
-                           Output: ROW((foo_3.f1 + 3)), (foo_3.f1 + 3)
+                     ->  Seq Scan on public.foo foo_1
+                           Output: ROW((foo_1.f1 + 3)), (foo_1.f1 + 3)
+                     ->  Foreign Scan on public.foo2 foo2_1
+                           Output: ROW((foo2_1.f1 + 3)), (foo2_1.f1 + 3)
                            Remote SQL: SELECT  *  FROM loct1
 (44 rows)
 
@@ -8754,10 +8721,10 @@ explain (verbose, costs off)
                      Output: foo.f1, foo.f2
                      Sort Key: foo.f1
                      ->  Append
-                           ->  Seq Scan on public.foo foo_1
-                                 Output: foo_1.f1, foo_1.f2
-                           ->  Foreign Scan on public.foo2 foo_2
-                                 Output: foo_2.f1, foo_2.f2
+                           ->  Seq Scan on public.foo
+                                 Output: foo.f1, foo.f2
+                           ->  Foreign Scan on public.foo2
+                                 Output: foo2.f1, foo2.f2
                                  Remote SQL: SELECT  *  FROM loct1 ORDER BY f2 ASC
                ->  Sort
                      Output: loct1.f1
@@ -8802,10 +8769,10 @@ explain (verbose, costs off)
                      Output: foo.f1, foo.f2
                      Sort Key: foo.f1
                      ->  Append
-                           ->  Seq Scan on public.foo foo_1
-                                 Output: foo_1.f1, foo_1.f2
-                           ->  Foreign Scan on public.foo2 foo_2
-                                 Output: foo_2.f1, foo_2.f2
+                           ->  Seq Scan on public.foo
+                                 Output: foo.f1, foo.f2
+                           ->  Foreign Scan on public.foo2
+                                 Output: foo2.f1, foo2.f2
                                  Remote SQL: SELECT  *  FROM loct1 ORDER BY f2 ASC
                ->  Sort
                      Output: loct1.f1
@@ -8856,12 +8823,12 @@ delete from foo where f1 < 5;
 ------------------------------------------------------------
  Delete on public.foo
    Delete on public.foo
-   Foreign Delete on public.foo2 foo_1
+   Foreign Delete on public.foo2
    ->  Seq Scan on public.foo
          Output: foo.ctid
          Filter: (foo.f1 < 5)
-   ->  Foreign Scan on public.foo2 foo_1
-         Output: foo_1.f1
+   ->  Foreign Scan on public.foo2
+         Output: foo2.f1
          Remote SQL: SELECT  *  FROM loct1 WHERE ((f1 < 5))
 (9 rows)
 
@@ -8881,15 +8848,15 @@ delete from foo where f1 < 5;
 --Testcase 567:
 explain (verbose, costs off)
 update bar set f2 = f2 + 100;
-                           QUERY PLAN                           
-----------------------------------------------------------------
+                         QUERY PLAN                         
+------------------------------------------------------------
  Update on public.bar
    Update on public.bar
-   Foreign Update on public.bar2 bar_1
+   Foreign Update on public.bar2
    ->  Seq Scan on public.bar
          Output: bar.f1, (bar.f2 + 100), bar.ctid
-   ->  Foreign Scan on public.bar2 bar_1
-         Output: bar_1.f1, (bar_1.f2 + 100), bar_1.f3, bar_1.f1
+   ->  Foreign Scan on public.bar2
+         Output: bar2.f1, (bar2.f2 + 100), bar2.f3, bar2.f1
          Remote SQL: SELECT  *  FROM loct2
 (8 rows)
 
@@ -8919,15 +8886,15 @@ FOR EACH ROW EXECUTE PROCEDURE trigger_data(23,'skidoo');
 --Testcase 570:
 explain (verbose, costs off)
 update bar set f2 = f2 + 100;
-                               QUERY PLAN                                
--------------------------------------------------------------------------
+                             QUERY PLAN                             
+--------------------------------------------------------------------
  Update on public.bar
    Update on public.bar
-   Foreign Update on public.bar2 bar_1
+   Foreign Update on public.bar2
    ->  Seq Scan on public.bar
          Output: bar.f1, (bar.f2 + 100), bar.ctid
-   ->  Foreign Scan on public.bar2 bar_1
-         Output: bar_1.f1, (bar_1.f2 + 100), bar_1.f3, bar_1.f1, bar_1.*
+   ->  Foreign Scan on public.bar2
+         Output: bar2.f1, (bar2.f2 + 100), bar2.f3, bar2.f1, bar2.*
          Remote SQL: SELECT  *  FROM loct2
 (8 rows)
 
@@ -8952,12 +8919,12 @@ delete from bar where f2 < 400;
 --------------------------------------------------------------
  Delete on public.bar
    Delete on public.bar
-   Foreign Delete on public.bar2 bar_1
+   Foreign Delete on public.bar2
    ->  Seq Scan on public.bar
          Output: bar.ctid
          Filter: (bar.f2 < 400)
-   ->  Foreign Scan on public.bar2 bar_1
-         Output: bar_1.f1, bar_1.*
+   ->  Foreign Scan on public.bar2
+         Output: bar2.f1, bar2.*
          Remote SQL: SELECT  *  FROM loct2 WHERE ((f2 < 400))
 (9 rows)
 
@@ -9000,11 +8967,11 @@ insert into remt2 values (2, 'bar');
 --Testcase 578:
 explain (verbose, costs off)
 update parent set b = parent.b || remt2.b from remt2 where parent.a = remt2.a;
-                                QUERY PLAN                                
---------------------------------------------------------------------------
+                              QUERY PLAN                               
+-----------------------------------------------------------------------
  Update on public.parent
    Update on public.parent
-   Foreign Update on public.remt1 parent_1
+   Foreign Update on public.remt1
    ->  Hash Join
          Output: parent.a, (parent.b || remt2.b), parent.ctid, remt2.*
          Hash Cond: (remt2.a = parent.a)
@@ -9016,10 +8983,10 @@ update parent set b = parent.b || remt2.b from remt2 where parent.a = remt2.a;
                ->  Seq Scan on public.parent
                      Output: parent.a, parent.b, parent.ctid
    ->  Hash Join
-         Output: parent_1.a, (parent_1.b || remt2.b), parent_1.a, remt2.*
-         Hash Cond: (parent_1.a = remt2.a)
-         ->  Foreign Scan on public.remt1 parent_1
-               Output: parent_1.a, parent_1.b
+         Output: remt1.a, (remt1.b || remt2.b), remt1.a, remt2.*
+         Hash Cond: (remt1.a = remt2.a)
+         ->  Foreign Scan on public.remt1
+               Output: remt1.a, remt1.b
                Remote SQL: SELECT  *  FROM loct11
          ->  Hash
                Output: remt2.b, remt2.*, remt2.a
@@ -9041,11 +9008,11 @@ select * from parent, remt2 where parent.a = remt2.a;
 --Testcase 580:
 explain (verbose, costs off)
 delete from parent using remt2 where parent.a = remt2.a;
-                       QUERY PLAN                        
----------------------------------------------------------
+                       QUERY PLAN                       
+--------------------------------------------------------
  Delete on public.parent
    Delete on public.parent
-   Foreign Delete on public.remt1 parent_1
+   Foreign Delete on public.remt1
    ->  Hash Join
          Output: parent.ctid, remt2.*
          Hash Cond: (remt2.a = parent.a)
@@ -9057,8 +9024,8 @@ delete from parent using remt2 where parent.a = remt2.a;
                ->  Seq Scan on public.parent
                      Output: parent.ctid, parent.a
    ->  Merge Join
-         Output: parent_1.a, remt2.*
-         Merge Cond: (remt2.a = parent_1.a)
+         Output: remt1.a, remt2.*
+         Merge Cond: (remt2.a = remt1.a)
          ->  Sort
                Output: remt2.*, remt2.a
                Sort Key: remt2.a
@@ -9066,10 +9033,10 @@ delete from parent using remt2 where parent.a = remt2.a;
                      Output: remt2.*, remt2.a
                      Remote SQL: SELECT  *  FROM loct22
          ->  Sort
-               Output: parent_1.a
-               Sort Key: parent_1.a
-               ->  Foreign Scan on public.remt1 parent_1
-                     Output: parent_1.a
+               Output: remt1.a
+               Sort Key: remt1.a
+               ->  Foreign Scan on public.remt1
+                     Output: remt1.a
                      Remote SQL: SELECT  *  FROM loct11
 (28 rows)
 
@@ -9110,43 +9077,36 @@ alter table itrtest attach partition remp1 for values in (1);
 alter table itrtest attach partition remp2 for values in (2);
 --Testcase 583:
 insert into itrtest(a, b) values (1, 'foo');
+ERROR:  cannot route inserted tuples to a foreign table
 --Testcase 584:
 insert into itrtest(a, b) values (1, 'bar');
+ERROR:  cannot route inserted tuples to a foreign table
 --Testcase 585:
 insert into itrtest(a, b) values (2, 'baz');
+ERROR:  cannot route inserted tuples to a foreign table
 --Testcase 586:
 insert into itrtest(a, b) values (2, 'qux');
+ERROR:  cannot route inserted tuples to a foreign table
 --Testcase 587:
 insert into itrtest(a, b) values (1, 'test1'), (2, 'test2');
+ERROR:  cannot route inserted tuples to a foreign table
 --Testcase 588:
 select tableoid::regclass, a, b FROM itrtest;
- tableoid | a |   b   
-----------+---+-------
- remp1    | 1 | foo
- remp1    | 1 | bar
- remp1    | 1 | test1
- remp2    | 2 | baz
- remp2    | 2 | qux
- remp2    | 2 | test2
-(6 rows)
+ tableoid | a | b 
+----------+---+---
+(0 rows)
 
 --Testcase 589:
 select tableoid::regclass, a, b FROM remp1;
- tableoid | a |   b   
-----------+---+-------
- remp1    | 1 | foo
- remp1    | 1 | bar
- remp1    | 1 | test1
-(3 rows)
+ tableoid | a | b 
+----------+---+---
+(0 rows)
 
 --Testcase 590:
 select tableoid::regclass, b, a FROM remp2;
- tableoid |   b   | a 
-----------+-------+---
- remp2    | baz   | 2
- remp2    | qux   | 2
- remp2    | test2 | 2
-(3 rows)
+ tableoid | b | a 
+----------+---+---
+(0 rows)
 
 --Testcase 591:
 delete from itrtest;
@@ -9178,18 +9138,16 @@ create trigger remp2_br_insert_trigger before insert on remp2
 -- The new values are concatenated with ' triggered !'
 --Testcase 592:
 insert into itrtest(a, b) values (1, 'foo');
+ERROR:  cannot route inserted tuples to a foreign table
 --Testcase 593:
 insert into itrtest(a, b) values (2, 'qux');
+ERROR:  cannot route inserted tuples to a foreign table
 --Testcase 594:
 insert into itrtest(a, b) values (1, 'test1'), (2, 'test2');
+ERROR:  cannot route inserted tuples to a foreign table
 --Testcase 855:
 with result as (insert into itrtest(a ,b) values (1, 'test1'), (2, 'test2') returning *) select a, b from result;
- a |         b         
----+-------------------
- 1 | test1 triggered !
- 2 | test2 triggered !
-(2 rows)
-
+ERROR:  cannot route inserted tuples to a foreign table
 --Testcase 856:
 drop trigger remp1_br_insert_trigger on remp1;
 --Testcase 857:
@@ -9213,22 +9171,21 @@ alter table utrtest attach partition remp for values in (1);
 alter table utrtest attach partition locp for values in (2);
 --Testcase 596:
 insert into utrtest(a, b) values (1, 'foo');
+ERROR:  cannot route inserted tuples to a foreign table
 --Testcase 597:
 insert into utrtest(a, b) values (2, 'qux');
 --Testcase 598:
 select tableoid::regclass, a, b FROM utrtest;
  tableoid | a |  b  
 ----------+---+-----
- remp     | 1 | foo
  locp     | 2 | qux
-(2 rows)
+(1 row)
 
 --Testcase 599:
 select tableoid::regclass, a, b FROM remp;
- tableoid | a |  b  
-----------+---+-----
- remp     | 1 | foo
-(1 row)
+ tableoid | a | b 
+----------+---+---
+(0 rows)
 
 --Testcase 600:
 select tableoid::regclass, a, b FROM locp;
@@ -9244,34 +9201,34 @@ select tableoid::regclass, a, b FROM locp;
 -- But the reverse is allowed
 --Testcase 603:
 update utrtest set a = 1 where b = 'qux';
+ERROR:  new row for relation "locp" violates check constraint "locp_a_check"
+DETAIL:  Failing row contains (2, 1, qux).
 --Testcase 604:
 select a, b from utrtest where b = 'qux';
  a |  b  
 ---+-----
- 1 | qux
+ 2 | qux
 (1 row)
 
 --Testcase 605:
 select tableoid::regclass, a, b FROM utrtest;
  tableoid | a |  b  
 ----------+---+-----
- remp     | 1 | foo
- remp     | 1 | qux
-(2 rows)
+ locp     | 2 | qux
+(1 row)
 
 --Testcase 606:
 select tableoid::regclass, a, b FROM remp;
- tableoid | a |  b  
-----------+---+-----
- remp     | 1 | foo
- remp     | 1 | qux
-(2 rows)
-
---Testcase 607:
-select tableoid::regclass, a, b FROM locp;
  tableoid | a | b 
 ----------+---+---
 (0 rows)
+
+--Testcase 607:
+select tableoid::regclass, a, b FROM locp;
+ tableoid | a |  b  
+----------+---+-----
+ locp     | 2 | qux
+(1 row)
 
 -- The executor should not let unexercised FDWs shut down
 --Testcase 608:
@@ -9291,24 +9248,26 @@ update utrtest set a = 1 where a = 1 or a = 2;
                                QUERY PLAN                                
 -------------------------------------------------------------------------
  Update on public.utrtest
-   Foreign Update on public.remp utrtest_1
-   Update on public.locp utrtest_2
-   ->  Foreign Scan on public.remp utrtest_1
-         Output: utrtest_1.id, 1, utrtest_1.b, utrtest_1.id
+   Foreign Update on public.remp
+   Update on public.locp
+   ->  Foreign Scan on public.remp
+         Output: remp.id, 1, remp.b, remp.id
          Remote SQL: SELECT  *  FROM loct12 WHERE (((a = 1) OR (a = 2)))
-   ->  Seq Scan on public.locp utrtest_2
-         Output: utrtest_2.id, 1, utrtest_2.b, utrtest_2.ctid
-         Filter: ((utrtest_2.a = 1) OR (utrtest_2.a = 2))
+   ->  Seq Scan on public.locp
+         Output: locp.id, 1, locp.b, locp.ctid
+         Filter: ((locp.a = 1) OR (locp.a = 2))
 (9 rows)
 
 -- The new values are concatenated with ' triggered !'
 --Testcase 612:
 update utrtest set a = 1 where a = 1 or a = 2;
+ERROR:  new row for relation "locp" violates check constraint "locp_a_check"
+DETAIL:  Failing row contains (3, 1, qux).
 --Testcase 613:
 select a, b from utrtest;
- a |        b        
----+-----------------
- 1 | qux triggered !
+ a |  b  
+---+-----
+ 2 | qux
 (1 row)
 
 --Testcase 614:
@@ -9319,23 +9278,25 @@ insert into utrtest(a, b) values (2, 'qux');
 --Testcase 616:
 explain (verbose, costs off)
 update utrtest set a = 1 where a = 2;
-                          QUERY PLAN                          
---------------------------------------------------------------
+                  QUERY PLAN                   
+-----------------------------------------------
  Update on public.utrtest
-   Update on public.locp utrtest_1
-   ->  Seq Scan on public.locp utrtest_1
-         Output: utrtest_1.id, 1, utrtest_1.b, utrtest_1.ctid
-         Filter: (utrtest_1.a = 2)
+   Update on public.locp
+   ->  Seq Scan on public.locp
+         Output: locp.id, 1, locp.b, locp.ctid
+         Filter: (locp.a = 2)
 (5 rows)
 
 -- The new values are concatenated with ' triggered !'
 --Testcase 617:
 update utrtest set a = 1 where a = 2;
+ERROR:  new row for relation "locp" violates check constraint "locp_a_check"
+DETAIL:  Failing row contains (4, 1, qux).
 --Testcase 618:
 select a, b from utrtest;
- a |        b        
----+-----------------
- 1 | qux triggered !
+ a |  b  
+---+-----
+ 2 | qux
 (1 row)
 
 --Testcase 863:
@@ -9346,6 +9307,7 @@ drop trigger remp_br_insert_trigger on remp;
 delete from utrtest;
 --Testcase 620:
 insert into utrtest(a, b) values (1, 'foo');
+ERROR:  cannot route inserted tuples to a foreign table
 --Testcase 621:
 insert into utrtest(a, b) values (2, 'qux');
 -- Test the former case:
@@ -9353,58 +9315,60 @@ insert into utrtest(a, b) values (2, 'qux');
 --Testcase 622:
 explain (verbose, costs off)
 update utrtest set a = 1;
-                          QUERY PLAN                          
---------------------------------------------------------------
+                  QUERY PLAN                   
+-----------------------------------------------
  Update on public.utrtest
-   Foreign Update on public.remp utrtest_1
-   Update on public.locp utrtest_2
-   ->  Foreign Scan on public.remp utrtest_1
-         Output: utrtest_1.id, 1, utrtest_1.b, utrtest_1.id
+   Foreign Update on public.remp
+   Update on public.locp
+   ->  Foreign Scan on public.remp
+         Output: remp.id, 1, remp.b, remp.id
          Remote SQL: SELECT  *  FROM loct12
-   ->  Seq Scan on public.locp utrtest_2
-         Output: utrtest_2.id, 1, utrtest_2.b, utrtest_2.ctid
+   ->  Seq Scan on public.locp
+         Output: locp.id, 1, locp.b, locp.ctid
 (8 rows)
 
 --Testcase 623:
 update utrtest set a = 1;
+ERROR:  new row for relation "locp" violates check constraint "locp_a_check"
+DETAIL:  Failing row contains (6, 1, qux).
 --Testcase 624:
 select a, b from utrtest;
  a |  b  
 ---+-----
- 1 | foo
- 1 | qux
-(2 rows)
+ 2 | qux
+(1 row)
 
 --Testcase 625:
 delete from utrtest;
 --Testcase 626:
 insert into utrtest(a, b) values (1, 'foo');
+ERROR:  cannot route inserted tuples to a foreign table
 --Testcase 627:
 insert into utrtest(a, b) values (2, 'qux');
 -- with a non-direct modification plan
 --Testcase 628:
 explain (verbose, costs off)
 update utrtest set a = 1 from (values (1), (2)) s(x) where a = s.x;
-                                  QUERY PLAN                                  
-------------------------------------------------------------------------------
+                          QUERY PLAN                          
+--------------------------------------------------------------
  Update on public.utrtest
-   Foreign Update on public.remp utrtest_1
-   Update on public.locp utrtest_2
+   Foreign Update on public.remp
+   Update on public.locp
    ->  Hash Join
-         Output: utrtest_1.id, 1, utrtest_1.b, utrtest_1.id, "*VALUES*".*
-         Hash Cond: (utrtest_1.a = "*VALUES*".column1)
-         ->  Foreign Scan on public.remp utrtest_1
-               Output: utrtest_1.id, utrtest_1.a, utrtest_1.b
+         Output: remp.id, 1, remp.b, remp.id, "*VALUES*".*
+         Hash Cond: (remp.a = "*VALUES*".column1)
+         ->  Foreign Scan on public.remp
+               Output: remp.id, remp.a, remp.b
                Remote SQL: SELECT  *  FROM loct12
          ->  Hash
                Output: "*VALUES*".*, "*VALUES*".column1
                ->  Values Scan on "*VALUES*"
                      Output: "*VALUES*".*, "*VALUES*".column1
    ->  Hash Join
-         Output: utrtest_2.id, 1, utrtest_2.b, utrtest_2.ctid, "*VALUES*".*
-         Hash Cond: (utrtest_2.a = "*VALUES*".column1)
-         ->  Seq Scan on public.locp utrtest_2
-               Output: utrtest_2.id, utrtest_2.b, utrtest_2.ctid, utrtest_2.a
+         Output: locp.id, 1, locp.b, locp.ctid, "*VALUES*".*
+         Hash Cond: (locp.a = "*VALUES*".column1)
+         ->  Seq Scan on public.locp
+               Output: locp.id, locp.b, locp.ctid, locp.a
          ->  Hash
                Output: "*VALUES*".*, "*VALUES*".column1
                ->  Values Scan on "*VALUES*"
@@ -9413,13 +9377,14 @@ update utrtest set a = 1 from (values (1), (2)) s(x) where a = s.x;
 
 --Testcase 629:
 update utrtest set a = 1 from (values (1), (2)) s(x) where a = s.x;
+ERROR:  new row for relation "locp" violates check constraint "locp_a_check"
+DETAIL:  Failing row contains (8, 1, qux).
 --Testcase 630:
 select * from utrtest;
  id | a |  b  
 ----+---+-----
-  7 | 1 | foo
-  8 | 1 | qux
-(2 rows)
+  8 | 2 | qux
+(1 row)
 
 -- Change the definition of utrtest so that the foreign partition get updated
 -- after the local partition
@@ -9443,49 +9408,51 @@ alter table utrtest attach partition remp for values in (3);
 insert into utrtest(a, b) values (2, 'qux');
 --Testcase 633:
 insert into utrtest(a, b) values (3, 'xyzzy');
+ERROR:  cannot route inserted tuples to a foreign table
 -- Test the latter case:
 -- with a direct modification plan
 --Testcase 634:
 explain (verbose, costs off)
 update utrtest set a = 3;
-                          QUERY PLAN                          
---------------------------------------------------------------
+                  QUERY PLAN                   
+-----------------------------------------------
  Update on public.utrtest
-   Update on public.locp utrtest_1
-   Foreign Update on public.remp utrtest_2
-   ->  Seq Scan on public.locp utrtest_1
-         Output: utrtest_1.id, 3, utrtest_1.b, utrtest_1.ctid
-   ->  Foreign Scan on public.remp utrtest_2
-         Output: utrtest_2.id, 3, utrtest_2.b, utrtest_2.id
+   Update on public.locp
+   Foreign Update on public.remp
+   ->  Seq Scan on public.locp
+         Output: locp.id, 3, locp.b, locp.ctid
+   ->  Foreign Scan on public.remp
+         Output: remp.id, 3, remp.b, remp.id
          Remote SQL: SELECT  *  FROM loct21
 (8 rows)
 
 --Testcase 635:
 update utrtest set a = 3; -- ERROR
-ERROR:  cannot route tuples into foreign table to be updated "remp"
+ERROR:  new row for relation "locp" violates check constraint "locp_a_check"
+DETAIL:  Failing row contains (9, 3, qux).
 -- with a non-direct modification plan
 --Testcase 636:
 explain (verbose, costs off)
 update utrtest set a = 3 from (values (2), (3)) s(x) where a = s.x;
-                                  QUERY PLAN                                  
-------------------------------------------------------------------------------
+                          QUERY PLAN                          
+--------------------------------------------------------------
  Update on public.utrtest
-   Update on public.locp utrtest_1
-   Foreign Update on public.remp utrtest_2
+   Update on public.locp
+   Foreign Update on public.remp
    ->  Hash Join
-         Output: utrtest_1.id, 3, utrtest_1.b, utrtest_1.ctid, "*VALUES*".*
-         Hash Cond: (utrtest_1.a = "*VALUES*".column1)
-         ->  Seq Scan on public.locp utrtest_1
-               Output: utrtest_1.id, utrtest_1.b, utrtest_1.ctid, utrtest_1.a
+         Output: locp.id, 3, locp.b, locp.ctid, "*VALUES*".*
+         Hash Cond: (locp.a = "*VALUES*".column1)
+         ->  Seq Scan on public.locp
+               Output: locp.id, locp.b, locp.ctid, locp.a
          ->  Hash
                Output: "*VALUES*".*, "*VALUES*".column1
                ->  Values Scan on "*VALUES*"
                      Output: "*VALUES*".*, "*VALUES*".column1
    ->  Hash Join
-         Output: utrtest_2.id, 3, utrtest_2.b, utrtest_2.id, "*VALUES*".*
-         Hash Cond: (utrtest_2.a = "*VALUES*".column1)
-         ->  Foreign Scan on public.remp utrtest_2
-               Output: utrtest_2.id, utrtest_2.a, utrtest_2.b
+         Output: remp.id, 3, remp.b, remp.id, "*VALUES*".*
+         Hash Cond: (remp.a = "*VALUES*".column1)
+         ->  Foreign Scan on public.remp
+               Output: remp.id, remp.a, remp.b
                Remote SQL: SELECT  *  FROM loct21
          ->  Hash
                Output: "*VALUES*".*, "*VALUES*".column1
@@ -9516,38 +9483,34 @@ alter table ctrtest attach partition remp1 for values in (1);
 alter table ctrtest attach partition remp2 for values in (2);
 --Testcase 638:
 insert into ctrtest(a, b) values (1, 'foo'), (2, 'qux');
+ERROR:  cannot route inserted tuples to a foreign table
 --Testcase 639:
 select tableoid::regclass, a, b FROM ctrtest;
- tableoid | a |  b  
-----------+---+-----
- remp1    | 1 | foo
- remp2    | 2 | qux
-(2 rows)
+ tableoid | a | b 
+----------+---+---
+(0 rows)
 
 --Testcase 640:
 select tableoid::regclass, a, b FROM remp1;
- tableoid | a |  b  
-----------+---+-----
- remp1    | 1 | foo
-(1 row)
+ tableoid | a | b 
+----------+---+---
+(0 rows)
 
 --Testcase 641:
 select tableoid::regclass, b, a FROM remp2;
- tableoid |  b  | a 
-----------+-----+---
- remp2    | qux | 2
-(1 row)
+ tableoid | b | a 
+----------+---+---
+(0 rows)
 
 -- GridDB not support partitions by
 -- Copying into foreign partitions directly should work as well
 copy remp1(a, b) from stdin;
-WARNING:  row was updated instead of insert because same row key has already existed.
+ERROR:  cannot copy to foreign table "remp1"
 --Testcase 642:
 select tableoid::regclass, a, b FROM remp1;
- tableoid | a |  b  
-----------+---+-----
- remp1    | 1 | bar
-(1 row)
+ tableoid | a | b 
+----------+---+---
+(0 rows)
 
 --Testcase 643:
 delete from ctrtest;
@@ -9609,23 +9572,12 @@ create trigger trig_row_before before insert on rem2
 create trigger trig_row_after after insert on rem2
 	for each row execute procedure trigger_data(23,'skidoo');
 copy rem2(f1, f2) from stdin;
-NOTICE:  trigger_func(<NULL>) called: action = INSERT, when = BEFORE, level = STATEMENT
-NOTICE:  trig_row_before(23, skidoo) BEFORE ROW INSERT ON rem2
-NOTICE:  NEW: (5,1,foo)
-NOTICE:  trig_row_before(23, skidoo) BEFORE ROW INSERT ON rem2
-NOTICE:  NEW: (6,2,bar)
-NOTICE:  trig_row_after(23, skidoo) AFTER ROW INSERT ON rem2
-NOTICE:  NEW: (5,1,foo)
-NOTICE:  trig_row_after(23, skidoo) AFTER ROW INSERT ON rem2
-NOTICE:  NEW: (6,2,bar)
-NOTICE:  trigger_func(<NULL>) called: action = INSERT, when = AFTER, level = STATEMENT
+ERROR:  cannot copy to foreign table "rem2"
 --Testcase 651:
 select f1, f2 from rem2;
- f1 | f2  
-----+-----
-  1 | foo
-  2 | bar
-(2 rows)
+ f1 | f2 
+----+----
+(0 rows)
 
 --Testcase 876:
 drop trigger trig_row_before on rem2;
@@ -9649,13 +9601,12 @@ create trigger trig_row_before_insert before insert on rem2
 	for each row execute procedure trig_row_before_insupdate1();
 -- The new values are concatenated with ' triggered !'
 copy rem2(f1, f2) from stdin;
+ERROR:  cannot copy to foreign table "rem2"
 --Testcase 653:
 select f1, f2 from rem2;
- f1 |       f2        
-----+-----------------
-  1 | foo triggered !
-  2 | bar triggered !
-(2 rows)
+ f1 | f2 
+----+----
+(0 rows)
 
 --Testcase 882:
 drop trigger trig_row_before_insert on rem2;
@@ -9666,6 +9617,7 @@ create trigger trig_null before insert on rem2
 	for each row execute procedure trig_null();
 -- Nothing happens
 copy rem2(f1, f2) from stdin;
+ERROR:  cannot copy to foreign table "rem2"
 --Testcase 655:
 select f1, f2 from rem2;
  f1 | f2 
@@ -9682,13 +9634,12 @@ create trigger trig_row_before_insert before insert on rem2
 	for each row execute procedure trig_row_before_insupdate1();
 -- The new values are concatenated with ' triggered !'
 copy rem2(f1, f2) from stdin;
+ERROR:  cannot copy to foreign table "rem2"
 --Testcase 657:
 select f1, f2 from rem2;
- f1 |       f2        
-----+-----------------
-  1 | foo triggered !
-  2 | bar triggered !
-(2 rows)
+ f1 | f2 
+----+----
+(0 rows)
 
 --Testcase 886:
 drop trigger trig_row_before_insert on rem2;
@@ -9699,6 +9650,7 @@ create trigger trig_null before insert on rem2
 	for each row execute procedure trig_null();
 -- Nothing happens
 copy rem2(f1, f2) from stdin;
+ERROR:  cannot copy to foreign table "rem2"
 --Testcase 659:
 select f1, f2 from rem2;
  f1 | f2 
@@ -9720,21 +9672,12 @@ create trigger rem2_trig_row_after after insert on rem2
 create trigger loc2_trig_row_before_insert before insert on rem2
 	for each row execute procedure trig_row_before_insupdate1();
 copy rem2(f1, f2) from stdin;
-NOTICE:  rem2_trig_row_before(23, skidoo) BEFORE ROW INSERT ON rem2
-NOTICE:  NEW: (15,1,"foo triggered !")
-NOTICE:  rem2_trig_row_before(23, skidoo) BEFORE ROW INSERT ON rem2
-NOTICE:  NEW: (16,2,"bar triggered !")
-NOTICE:  rem2_trig_row_after(23, skidoo) AFTER ROW INSERT ON rem2
-NOTICE:  NEW: (15,1,"foo triggered !")
-NOTICE:  rem2_trig_row_after(23, skidoo) AFTER ROW INSERT ON rem2
-NOTICE:  NEW: (16,2,"bar triggered !")
+ERROR:  cannot copy to foreign table "rem2"
 --Testcase 661:
 select f1, f2 from rem2;
- f1 |       f2        
-----+-----------------
-  1 | foo triggered !
-  2 | bar triggered !
-(2 rows)
+ f1 | f2 
+----+----
+(0 rows)
 
 --Testcase 892:
 drop trigger rem2_trig_row_before on rem2;
@@ -9751,17 +9694,16 @@ begin;
 create foreign table rem3 (f1 int, f2 text)
 	server griddb_svr options(table_name 'loc3');
 copy rem3(f1, f2) from stdin;
+ERROR:  cannot copy to foreign table "rem3"
 commit;
 --Testcase 663:
 select * from rem3;
- f1 | f2  
-----+-----
-  1 | foo
-  2 | bar
-(2 rows)
-
+ERROR:  relation "rem3" does not exist
+LINE 1: select * from rem3;
+                      ^
 --Testcase 896:
 drop foreign table rem3;
+ERROR:  foreign table "rem3" does not exist
 --drop table loc3;
 -- ===================================================================
 -- test IMPORT FOREIGN SCHEMA
@@ -9895,9 +9837,11 @@ FROM SERVER griddb_svr INTO import_grid4;
  import_grid4 | FLOAT8_TBL                | griddb_svr |             | 
  import_grid4 | FLOAT8_TMP                | griddb_svr |             | 
  import_grid4 | INT2_TBL                  | griddb_svr |             | 
+ import_grid4 | INT2_TMP                  | griddb_svr |             | 
  import_grid4 | INT4_TBL                  | griddb_svr |             | 
  import_grid4 | INT4_TMP                  | griddb_svr |             | 
  import_grid4 | INT8_TBL                  | griddb_svr |             | 
+ import_grid4 | INT8_TMP                  | griddb_svr |             | 
  import_grid4 | J1_TBL                    | griddb_svr |             | 
  import_grid4 | J2_TBL                    | griddb_svr |             | 
  import_grid4 | T0                        | griddb_svr |             | 
@@ -10155,7 +10099,7 @@ FROM SERVER griddb_svr INTO import_grid4;
  import_grid4 | zt1                       | griddb_svr |             | 
  import_grid4 | zt2                       | griddb_svr |             | 
  import_grid4 | zt3                       | griddb_svr |             | 
-(264 rows)
+(266 rows)
 
 -- Assorted error cases
 IMPORT FOREIGN SCHEMA griddb_schema FROM SERVER griddb_svr INTO import_grid4;
@@ -10348,6 +10292,7 @@ NOTICE:  relation "nt3" already exists, skipping
 NOTICE:  relation "agg_t6" already exists, skipping
 NOTICE:  relation "loc2" already exists, skipping
 NOTICE:  relation "INT2_TBL" already exists, skipping
+NOTICE:  relation "INT2_TMP" already exists, skipping
 NOTICE:  relation "batch_table_p1" already exists, skipping
 NOTICE:  relation "tenk1" already exists, skipping
 NOTICE:  relation "innertab" already exists, skipping
@@ -10422,6 +10367,7 @@ NOTICE:  relation "INT4_TMP" already exists, skipping
 NOTICE:  relation "bitwise_test" already exists, skipping
 NOTICE:  relation "agg_t1" already exists, skipping
 NOTICE:  relation "INT8_TBL" already exists, skipping
+NOTICE:  relation "INT8_TMP" already exists, skipping
 NOTICE:  relation "hpart13" already exists, skipping
 IMPORT FOREIGN SCHEMA nonesuch FROM SERVER griddb_svr INTO import_grid4; -- same as 'public'
 NOTICE:  relation "aggtest" already exists, skipping
@@ -10614,6 +10560,7 @@ NOTICE:  relation "nt3" already exists, skipping
 NOTICE:  relation "agg_t6" already exists, skipping
 NOTICE:  relation "loc2" already exists, skipping
 NOTICE:  relation "INT2_TBL" already exists, skipping
+NOTICE:  relation "INT2_TMP" already exists, skipping
 NOTICE:  relation "batch_table_p1" already exists, skipping
 NOTICE:  relation "tenk1" already exists, skipping
 NOTICE:  relation "innertab" already exists, skipping
@@ -10688,6 +10635,7 @@ NOTICE:  relation "INT4_TMP" already exists, skipping
 NOTICE:  relation "bitwise_test" already exists, skipping
 NOTICE:  relation "agg_t1" already exists, skipping
 NOTICE:  relation "INT8_TBL" already exists, skipping
+NOTICE:  relation "INT8_TMP" already exists, skipping
 NOTICE:  relation "hpart13" already exists, skipping
 IMPORT FOREIGN SCHEMA nonesuch FROM SERVER griddb_svr INTO notthere;
 ERROR:  schema "notthere" does not exist
@@ -10771,6 +10719,7 @@ SET client_min_messages to NOTICE;
 -- ===================================================================
 --Testcase 1011:
 SET enable_partitionwise_join=on;
+ERROR:  unrecognized configuration parameter "enable_partitionwise_join"
 --Testcase 905:
 CREATE TABLE fprt1 (a int, b int, c text) PARTITION BY RANGE(a);
 --Testcase 678:
@@ -10809,29 +10758,24 @@ EXPLAIN (COSTS OFF)
 SELECT t1.a,t2.b,t3.c FROM fprt1 t1 INNER JOIN fprt2 t2 ON (t1.a = t2.b) INNER JOIN fprt1 t3 ON (t2.b = t3.a) WHERE t1.a % 25 =0 ORDER BY 1,2,3;
                           QUERY PLAN                          
 --------------------------------------------------------------
- Merge Append
-   Sort Key: t1.a, t3.c
-   ->  Merge Join
-         Merge Cond: (t3_1.a = t1_1.a)
-         ->  Foreign Scan on ftprt1_p1 t3_1
-         ->  Sort
-               Sort Key: t1_1.a
-               ->  Hash Join
-                     Hash Cond: (t2_1.b = t1_1.a)
-                     ->  Foreign Scan on ftprt2_p1 t2_1
-                     ->  Hash
-                           ->  Foreign Scan on ftprt1_p1 t1_1
-   ->  Merge Join
-         Merge Cond: (t3_2.a = t1_2.a)
-         ->  Foreign Scan on ftprt1_p2 t3_2
-         ->  Sort
-               Sort Key: t1_2.a
-               ->  Hash Join
-                     Hash Cond: (t2_2.b = t1_2.a)
-                     ->  Foreign Scan on ftprt2_p2 t2_2
-                     ->  Hash
-                           ->  Foreign Scan on ftprt1_p2 t1_2
-(22 rows)
+ Merge Join
+   Merge Cond: (t3.a = t1.a)
+   ->  Merge Append
+         Sort Key: t3.a, t3.c
+         ->  Foreign Scan on ftprt1_p1 t3
+         ->  Foreign Scan on ftprt1_p2 t3_1
+   ->  Sort
+         Sort Key: t1.a
+         ->  Hash Join
+               Hash Cond: (t2.b = t1.a)
+               ->  Append
+                     ->  Foreign Scan on ftprt2_p1 t2
+                     ->  Foreign Scan on ftprt2_p2 t2_1
+               ->  Hash
+                     ->  Append
+                           ->  Foreign Scan on ftprt1_p1 t1
+                           ->  Foreign Scan on ftprt1_p2 t1_1
+(17 rows)
 
 --Testcase 683:
 SELECT t1.a,t2.b,t3.c FROM fprt1 t1 INNER JOIN fprt2 t2 ON (t1.a = t2.b) INNER JOIN fprt1 t3 ON (t2.b = t3.a) WHERE t1.a % 25 =0 ORDER BY 1,2,3;
@@ -10847,20 +10791,22 @@ SELECT t1.a,t2.b,t3.c FROM fprt1 t1 INNER JOIN fprt2 t2 ON (t1.a = t2.b) INNER J
 --Testcase 684:
 EXPLAIN (COSTS OFF)
 SELECT t1.a,t2.b,t2.c FROM fprt1 t1 LEFT JOIN (SELECT * FROM fprt2 WHERE a < 10) t2 ON (t1.a = t2.b and t1.b = t2.a) WHERE t1.a < 10 ORDER BY 1,2,3;
-                         QUERY PLAN                          
--------------------------------------------------------------
- Incremental Sort
-   Sort Key: t1.a, fprt2.b, fprt2.c
-   Presorted Key: t1.a
+                             QUERY PLAN                              
+---------------------------------------------------------------------
+ Sort
+   Sort Key: t1.a, ftprt2_p1.b, ftprt2_p1.c
    ->  Merge Left Join
-         Merge Cond: ((t1.a = fprt2.b) AND (t1.b = fprt2.a))
+         Merge Cond: ((t1.a = ftprt2_p1.b) AND (t1.b = ftprt2_p1.a))
          ->  Sort
                Sort Key: t1.a, t1.b
-               ->  Foreign Scan on ftprt1_p1 t1
+               ->  Append
+                     ->  Foreign Scan on ftprt1_p1 t1
          ->  Sort
-               Sort Key: fprt2.b, fprt2.a
-               ->  Foreign Scan on ftprt2_p1 fprt2
-(11 rows)
+               Sort Key: ftprt2_p1.b, ftprt2_p1.a
+               ->  Append
+                     ->  Foreign Scan on ftprt2_p1
+                     ->  Foreign Scan on ftprt2_p2
+(13 rows)
 
 --Testcase 685:
 SELECT t1.a,t2.b,t2.c FROM fprt1 t1 LEFT JOIN (SELECT * FROM fprt2 WHERE a < 10) t2 ON (t1.a = t2.b and t1.b = t2.a) WHERE t1.a < 10 ORDER BY 1,2,3;
@@ -10884,12 +10830,12 @@ SELECT t1.wr, t2.wr FROM (SELECT t1 wr, a FROM fprt1 t1 WHERE t1.a % 25 = 0) t1 
    ->  Hash Full Join
          Hash Cond: (t1.a = t2.b)
          ->  Append
-               ->  Foreign Scan on ftprt1_p1 t1_1
-               ->  Foreign Scan on ftprt1_p2 t1_2
+               ->  Foreign Scan on ftprt1_p1 t1
+               ->  Foreign Scan on ftprt1_p2 t1_1
          ->  Hash
                ->  Append
-                     ->  Foreign Scan on ftprt2_p1 t2_1
-                     ->  Foreign Scan on ftprt2_p2 t2_2
+                     ->  Foreign Scan on ftprt2_p1 t2
+                     ->  Foreign Scan on ftprt2_p2 t2_1
 (11 rows)
 
 --Testcase 687:
@@ -10916,22 +10862,20 @@ SELECT t1.wr, t2.wr FROM (SELECT t1 wr, a FROM fprt1 t1 WHERE t1.a % 25 = 0) t1 
 --Testcase 688:
 EXPLAIN (COSTS OFF)
 SELECT t1.a,t1.b FROM fprt1 t1, LATERAL (SELECT t2.a, t2.b FROM fprt2 t2 WHERE t1.a = t2.b AND t1.b = t2.a) q WHERE t1.a%25 = 0 ORDER BY 1,2;
-                             QUERY PLAN                              
----------------------------------------------------------------------
- Sort
-   Sort Key: t1.a, t1.b
-   ->  Append
-         ->  Merge Join
-               Merge Cond: ((t1_1.a = t2_1.b) AND (t1_1.b = t2_1.a))
-               ->  Foreign Scan on ftprt1_p1 t1_1
-               ->  Materialize
-                     ->  Foreign Scan on ftprt2_p1 t2_1
-         ->  Merge Join
-               Merge Cond: ((t1_2.a = t2_2.b) AND (t1_2.b = t2_2.a))
-               ->  Foreign Scan on ftprt1_p2 t1_2
-               ->  Materialize
-                     ->  Foreign Scan on ftprt2_p2 t2_2
-(13 rows)
+                    QUERY PLAN                    
+--------------------------------------------------
+ Merge Join
+   Merge Cond: ((t1.a = t2.b) AND (t1.b = t2.a))
+   ->  Merge Append
+         Sort Key: t1.a, t1.b
+         ->  Foreign Scan on ftprt1_p1 t1
+         ->  Foreign Scan on ftprt1_p2 t1_1
+   ->  Materialize
+         ->  Merge Append
+               Sort Key: t2.b, t2.a
+               ->  Foreign Scan on ftprt2_p1 t2
+               ->  Foreign Scan on ftprt2_p2 t2_1
+(11 rows)
 
 --Testcase 689:
 SELECT t1.a,t1.b FROM fprt1 t1, LATERAL (SELECT t2.a, t2.b FROM fprt2 t2 WHERE t1.a = t2.b AND t1.b = t2.a) q WHERE t1.a%25 = 0 ORDER BY 1,2;
@@ -10947,22 +10891,20 @@ SELECT t1.a,t1.b FROM fprt1 t1, LATERAL (SELECT t2.a, t2.b FROM fprt2 t2 WHERE t
 --Testcase 690:
 EXPLAIN (COSTS OFF)
 SELECT t1.a, t1.phv, t2.b, t2.phv FROM (SELECT 't1_phv' phv, * FROM fprt1 WHERE a % 25 = 0) t1 FULL JOIN (SELECT 't2_phv' phv, * FROM fprt2 WHERE b % 25 = 0) t2 ON (t1.a = t2.b) ORDER BY t1.a, t2.b;
-                        QUERY PLAN                         
------------------------------------------------------------
+                    QUERY PLAN                     
+---------------------------------------------------
  Sort
-   Sort Key: fprt1.a, fprt2.b
-   ->  Append
-         ->  Hash Full Join
-               Hash Cond: (fprt1_1.a = fprt2_1.b)
-               ->  Foreign Scan on ftprt1_p1 fprt1_1
-               ->  Hash
-                     ->  Foreign Scan on ftprt2_p1 fprt2_1
-         ->  Hash Full Join
-               Hash Cond: (fprt1_2.a = fprt2_2.b)
-               ->  Foreign Scan on ftprt1_p2 fprt1_2
-               ->  Hash
-                     ->  Foreign Scan on ftprt2_p2 fprt2_2
-(13 rows)
+   Sort Key: ftprt1_p1.a, ftprt2_p1.b
+   ->  Hash Full Join
+         Hash Cond: (ftprt1_p1.a = ftprt2_p1.b)
+         ->  Append
+               ->  Foreign Scan on ftprt1_p1
+               ->  Foreign Scan on ftprt1_p2
+         ->  Hash
+               ->  Append
+                     ->  Foreign Scan on ftprt2_p1
+                     ->  Foreign Scan on ftprt2_p2
+(11 rows)
 
 --Testcase 691:
 SELECT t1.a, t1.phv, t2.b, t2.phv FROM (SELECT 't1_phv' phv, * FROM fprt1 WHERE a % 25 = 0) t1 FULL JOIN (SELECT 't2_phv' phv, * FROM fprt2 WHERE b % 25 = 0) t2 ON (t1.a = t2.b) ORDER BY t1.a, t2.b;
@@ -10993,14 +10935,16 @@ SELECT t1.a, t2.b FROM fprt1 t1 INNER JOIN fprt2 t2 ON (t1.a = t2.b) WHERE t1.a 
  LockRows
    ->  Merge Join
          Merge Cond: (t1.a = t2.b)
-         ->  Append
-               ->  Foreign Scan on ftprt1_p1 t1_1
-               ->  Foreign Scan on ftprt1_p2 t1_2
+         ->  Merge Append
+               Sort Key: t1.a
+               ->  Foreign Scan on ftprt1_p1 t1
+               ->  Foreign Scan on ftprt1_p2 t1_1
          ->  Materialize
-               ->  Append
-                     ->  Foreign Scan on ftprt2_p1 t2_1
-                     ->  Foreign Scan on ftprt2_p2 t2_2
-(10 rows)
+               ->  Merge Append
+                     Sort Key: t2.b
+                     ->  Foreign Scan on ftprt2_p1 t2
+                     ->  Foreign Scan on ftprt2_p2 t2_1
+(12 rows)
 
 --Testcase 693:
 SELECT t1.a, t2.b FROM fprt1 t1 INNER JOIN fprt2 t2 ON (t1.a = t2.b) WHERE t1.a % 25 = 0 ORDER BY 1,2 FOR UPDATE OF t1;
@@ -11014,6 +10958,7 @@ SELECT t1.a, t2.b FROM fprt1 t1 INNER JOIN fprt2 t2 ON (t1.a = t2.b) WHERE t1.a 
 
 --Testcase 1013:
 RESET enable_partitionwise_join;
+ERROR:  unrecognized configuration parameter "enable_partitionwise_join"
 -- ===================================================================
 -- test partitionwise aggregates
 -- ===================================================================
@@ -11040,43 +10985,40 @@ CREATE FOREIGN TABLE fpagg_tab_p3 PARTITION OF pagg_tab FOR VALUES FROM (20) TO 
 -- Plan with partitionwise aggregates is disabled
 --Testcase 1014:
 SET enable_partitionwise_aggregate TO false;
+ERROR:  unrecognized configuration parameter "enable_partitionwise_aggregate"
 --Testcase 697:
 EXPLAIN (COSTS OFF)
 SELECT a, sum(b), min(b), count(*) FROM pagg_tab GROUP BY a HAVING avg(b) < 22 ORDER BY 1;
-                     QUERY PLAN                      
------------------------------------------------------
+                   QUERY PLAN                    
+-------------------------------------------------
  GroupAggregate
-   Group Key: pagg_tab.a
-   Filter: (avg(pagg_tab.b) < '22'::numeric)
-   ->  Append
-         ->  Foreign Scan on fpagg_tab_p1 pagg_tab_1
-         ->  Foreign Scan on fpagg_tab_p2 pagg_tab_2
-         ->  Foreign Scan on fpagg_tab_p3 pagg_tab_3
-(7 rows)
+   Group Key: fpagg_tab_p1.a
+   Filter: (avg(fpagg_tab_p1.b) < '22'::numeric)
+   ->  Merge Append
+         Sort Key: fpagg_tab_p1.a
+         ->  Foreign Scan on fpagg_tab_p1
+         ->  Foreign Scan on fpagg_tab_p2
+         ->  Foreign Scan on fpagg_tab_p3
+(8 rows)
 
 -- Plan with partitionwise aggregates is enabled
 --Testcase 1015:
 SET enable_partitionwise_aggregate TO true;
+ERROR:  unrecognized configuration parameter "enable_partitionwise_aggregate"
 --Testcase 698:
 EXPLAIN (COSTS OFF)
 SELECT a, sum(b), min(b), count(*) FROM pagg_tab GROUP BY a HAVING avg(b) < 22 ORDER BY 1;
-                     QUERY PLAN                      
------------------------------------------------------
- Merge Append
-   Sort Key: pagg_tab.a
-   ->  GroupAggregate
-         Group Key: pagg_tab.a
-         Filter: (avg(pagg_tab.b) < '22'::numeric)
-         ->  Foreign Scan on fpagg_tab_p1 pagg_tab
-   ->  GroupAggregate
-         Group Key: pagg_tab_1.a
-         Filter: (avg(pagg_tab_1.b) < '22'::numeric)
-         ->  Foreign Scan on fpagg_tab_p2 pagg_tab_1
-   ->  GroupAggregate
-         Group Key: pagg_tab_2.a
-         Filter: (avg(pagg_tab_2.b) < '22'::numeric)
-         ->  Foreign Scan on fpagg_tab_p3 pagg_tab_2
-(14 rows)
+                   QUERY PLAN                    
+-------------------------------------------------
+ GroupAggregate
+   Group Key: fpagg_tab_p1.a
+   Filter: (avg(fpagg_tab_p1.b) < '22'::numeric)
+   ->  Merge Append
+         Sort Key: fpagg_tab_p1.a
+         ->  Foreign Scan on fpagg_tab_p1
+         ->  Foreign Scan on fpagg_tab_p2
+         ->  Foreign Scan on fpagg_tab_p3
+(8 rows)
 
 --Testcase 699:
 SELECT a, sum(b), min(b), count(*) FROM pagg_tab GROUP BY a HAVING avg(b) < 22 ORDER BY 1;
@@ -11097,30 +11039,22 @@ EXPLAIN (VERBOSE, COSTS OFF)
 SELECT a, count(t1) FROM pagg_tab t1 GROUP BY a HAVING avg(b) < 22 ORDER BY 1;
                               QUERY PLAN                              
 ----------------------------------------------------------------------
- Merge Append
-   Sort Key: t1.a
-   ->  GroupAggregate
-         Output: t1.a, count(((t1.*)::pagg_tab))
-         Group Key: t1.a
-         Filter: (avg(t1.b) < '22'::numeric)
+ GroupAggregate
+   Output: t1.a, count(((t1.*)::pagg_tab))
+   Group Key: t1.a
+   Filter: (avg(t1.b) < '22'::numeric)
+   ->  Merge Append
+         Sort Key: t1.a
          ->  Foreign Scan on public.fpagg_tab_p1 t1
                Output: t1.a, t1.*, t1.b
                Remote SQL: SELECT  *  FROM pagg_tab_p1 ORDER BY a ASC
-   ->  GroupAggregate
-         Output: t1_1.a, count(((t1_1.*)::pagg_tab))
-         Group Key: t1_1.a
-         Filter: (avg(t1_1.b) < '22'::numeric)
          ->  Foreign Scan on public.fpagg_tab_p2 t1_1
                Output: t1_1.a, t1_1.*, t1_1.b
                Remote SQL: SELECT  *  FROM pagg_tab_p2 ORDER BY a ASC
-   ->  GroupAggregate
-         Output: t1_2.a, count(((t1_2.*)::pagg_tab))
-         Group Key: t1_2.a
-         Filter: (avg(t1_2.b) < '22'::numeric)
          ->  Foreign Scan on public.fpagg_tab_p3 t1_2
                Output: t1_2.a, t1_2.*, t1_2.b
                Remote SQL: SELECT  *  FROM pagg_tab_p3 ORDER BY a ASC
-(23 rows)
+(15 rows)
 
 --Testcase 701:
 SELECT a, count(t1) FROM pagg_tab t1 GROUP BY a HAVING avg(b) < 22 ORDER BY 1;
@@ -11138,16 +11072,16 @@ SELECT a, count(t1) FROM pagg_tab t1 GROUP BY a HAVING avg(b) < 22 ORDER BY 1;
 --Testcase 702:
 EXPLAIN (COSTS OFF)
 SELECT b, avg(a), max(a), count(*) FROM pagg_tab GROUP BY b HAVING sum(a) < 700 ORDER BY 1;
-                     QUERY PLAN                      
------------------------------------------------------
+                QUERY PLAN                
+------------------------------------------
  GroupAggregate
-   Group Key: pagg_tab.b
-   Filter: (sum(pagg_tab.a) < 700)
+   Group Key: fpagg_tab_p1.b
+   Filter: (sum(fpagg_tab_p1.a) < 700)
    ->  Merge Append
-         Sort Key: pagg_tab.b
-         ->  Foreign Scan on fpagg_tab_p1 pagg_tab_1
-         ->  Foreign Scan on fpagg_tab_p2 pagg_tab_2
-         ->  Foreign Scan on fpagg_tab_p3 pagg_tab_3
+         Sort Key: fpagg_tab_p1.b
+         ->  Foreign Scan on fpagg_tab_p1
+         ->  Foreign Scan on fpagg_tab_p2
+         ->  Foreign Scan on fpagg_tab_p3
 (8 rows)
 
 -- Skip test because GridDB not support no super user
@@ -11247,6 +11181,7 @@ DROP ROLE regress_nosuper;
 -- Clean-up
 --Testcase 1016:
 RESET enable_partitionwise_aggregate;
+ERROR:  unrecognized configuration parameter "enable_partitionwise_aggregate"
 -- GridDB has different result because GridDB does not run test check constraints
 -- Two-phase transactions are not supported.
 BEGIN;

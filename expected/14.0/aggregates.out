@@ -2405,6 +2405,42 @@ select aggfns(distinct a,b,c order by a,c using ~<~,b) filter (where a > 1) from
 (1 row)
 
 rollback;
+-- check handling of bare boolean Var in FILTER
+--Testcase 583:
+select max(0) filter (where b1) from bool_test;
+ max 
+-----
+   0
+(1 row)
+
+--Testcase 584:
+select (select max(0) filter (where b1)) from bool_test;
+ max 
+-----
+   0
+(1 row)
+
+-- check for correct detection of nested-aggregate errors in FILTER
+--Testcase 585:
+select max(unique1) filter (where sum(ten) > 0) from tenk1;
+ERROR:  aggregate functions are not allowed in FILTER
+LINE 1: select max(unique1) filter (where sum(ten) > 0) from tenk1;
+                                          ^
+--Testcase 586:
+select (select max(unique1) filter (where sum(ten) > 0) from int8_tbl) from tenk1;
+ERROR:  aggregate function calls cannot be nested
+LINE 1: select (select max(unique1) filter (where sum(ten) > 0) from...
+                                                  ^
+--Testcase 587:
+select max(unique1) filter (where bool_or(ten > 0)) from tenk1;
+ERROR:  aggregate functions are not allowed in FILTER
+LINE 1: select max(unique1) filter (where bool_or(ten > 0)) from ten...
+                                          ^
+--Testcase 588:
+select (select max(unique1) filter (where bool_or(ten > 0)) from int8_tbl) from tenk1;
+ERROR:  aggregate function calls cannot be nested
+LINE 1: select (select max(unique1) filter (where bool_or(ten > 0)) ...
+                                                  ^
 -- ordered-set aggregates
 begin;
 --Testcase 377:
@@ -3409,7 +3445,7 @@ rollback;
 -- does not lead to array overflow due to unexpected duplicate hash keys
 -- see CAFeeJoKKu0u+A_A9R9316djW-YW3-+Gtgvy3ju655qRHR3jtdA@mail.gmail.com
 --Testcase 527:
-set enable_resultcache to off;
+set enable_memoize to off;
 --Testcase 528:
 explain (costs off)
   select 1 from tenk1
@@ -3426,7 +3462,7 @@ explain (costs off)
 (7 rows)
 
 --Testcase 529:
-reset enable_resultcache;
+reset enable_memoize;
 --
 -- Hash Aggregation Spill tests
 --
