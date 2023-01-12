@@ -1,7 +1,7 @@
 /*
  * GridDB Foreign Data Wrapper
  *
- * Portions Copyright (c) 2021, TOSHIBA CORPORATION
+ * Portions Copyright (c) 2018, TOSHIBA CORPORATION
  *
  * IDENTIFICATION
  *		  connection.c
@@ -79,7 +79,7 @@ PG_FUNCTION_INFO_V1(griddb_disconnect_all);
 static HTAB *ConnectionHash = NULL;
 
 /* tracks whether any work is needed in callback functions */
-static bool xact_got_connection = false;
+static volatile bool xact_got_connection = false;
 
 /* prototypes of private functions */
 static GSGridStore * griddb_connect_server(char *address, char *port,
@@ -95,6 +95,8 @@ static void griddb_end_xact(ConnCacheEntry *entry, bool isCommit,
 static void griddb_xact_callback(XactEvent event, void *arg);
 static void griddb_subxact_callback(SubXactEvent event, SubTransactionId mySubid,
 									SubTransactionId parentSubid, void *arg);
+static void griddb_abort_cleanup(ConnCacheEntry *entry, bool toplevel);
+static void griddb_reset_xact_state(ConnCacheEntry *entry, bool toplevel);
 #if PG_VERSION_NUM >= 140000
 static void griddb_inval_callback(Datum arg, int cacheid, uint32 hashvalue);
 static bool disconnect_cached_connections(Oid serverid);
@@ -604,14 +606,59 @@ griddb_xact_callback(XactEvent event, void *arg)
 					break;
 				case XACT_EVENT_PARALLEL_ABORT:
 				case XACT_EVENT_ABORT:
-					/* If we're aborting, abort all remote transactions too */
-					entry->changing_xact_state = true;
-					griddb_end_xact(entry, false, entry->store);
-					entry->changing_xact_state = false;
+					griddb_abort_cleanup(entry, true);
 					break;
 			}
 		}
+		griddb_reset_xact_state(entry, true);
+	}
 
+	/*
+	 * Regardless of the event type, we can now mark ourselves as out of the
+	 * transaction.  (Note: if we are here during PRE_COMMIT or PRE_PREPARE,
+	 * this saves a useless scan of the hashtable during COMMIT or PREPARE.)
+	 */
+	xact_got_connection = false;
+}
+
+/*
+ * griddb_transaction_callback --- cleanup at main-transaction end.
+ */
+static void
+griddb_subxact_callback(SubXactEvent event, SubTransactionId mySubid,
+						SubTransactionId parentSubid, void *arg)
+{
+	elog(WARNING, "griddb_fdw: Subtransaction is not supported. So griddb_fdw do nothing.");
+}
+
+/*
+ * Abort remote transaction or subtransaction.
+ *
+ * "toplevel" should be set to true if toplevel (main) transaction is
+ * rollbacked, false otherwise.
+ *
+ * Set entry->changing_xact_state to false on success, true on failure.
+ */
+static void
+griddb_abort_cleanup(ConnCacheEntry *entry, bool toplevel)
+{
+	if (toplevel)
+	{
+		/* If we're aborting, abort all remote transactions too */
+		entry->changing_xact_state = true;
+		griddb_end_xact(entry, false, entry->store);
+		entry->changing_xact_state = false;
+	}
+}
+
+/*
+ * Reset state to show we're out of a (sub)transaction.
+ */
+static void
+griddb_reset_xact_state(ConnCacheEntry *entry, bool toplevel)
+{
+	if (toplevel)
+	{
 		/* Reset state to show we're out of a transaction */
 		entry->xact_depth = 0;
 
@@ -633,26 +680,7 @@ griddb_xact_callback(XactEvent event, void *arg)
 			}
 		}
 	}
-
-	/*
-	 * Regardless of the event type, we can now mark ourselves as out of the
-	 * transaction.  (Note: if we are here during PRE_COMMIT or PRE_PREPARE,
-	 * this saves a useless scan of the hashtable during COMMIT or PREPARE.)
-	 */
-	xact_got_connection = false;
-
 }
-
-/*
- * griddb_transaction_callback --- cleanup at main-transaction end.
- */
-static void
-griddb_subxact_callback(SubXactEvent event, SubTransactionId mySubid,
-						SubTransactionId parentSubid, void *arg)
-{
-	elog(WARNING, "griddb_fdw: Subtransaction is not supported. So griddb_fdw do nothing.");
-}
-
 
 /*
  * List active foreign server connections.
@@ -677,13 +705,18 @@ griddb_get_connections(PG_FUNCTION_ARGS)
 #else
 #define GRIDDB_GET_CONNECTIONS_COLS	2
 	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
+#if PG_VERSION_NUM < 150000
 	TupleDesc	tupdesc;
 	Tuplestorestate *tupstore;
 	MemoryContext per_query_ctx;
 	MemoryContext oldcontext;
+#endif
 	HASH_SEQ_STATUS scan;
 	ConnCacheEntry *entry;
 
+#if PG_VERSION_NUM >= 150000
+	SetSingleFuncCall(fcinfo, 0);
+#else
 	/* check to see if caller supports us returning a tuplestore */
 	if (rsinfo == NULL || !IsA(rsinfo, ReturnSetInfo))
 		ereport(ERROR,
@@ -708,12 +741,15 @@ griddb_get_connections(PG_FUNCTION_ARGS)
 	rsinfo->setDesc = tupdesc;
 
 	MemoryContextSwitchTo(oldcontext);
+#endif
 
 	/* If cache doesn't exist, we return no records */
 	if (!ConnectionHash)
 	{
+#if PG_VERSION_NUM < 150000
 		/* clean up and return the tuplestore */
 		tuplestore_donestoring(tupstore);
+#endif
 
 		PG_RETURN_VOID();
 	}
@@ -778,11 +814,17 @@ griddb_get_connections(PG_FUNCTION_ARGS)
 
 		values[1] = BoolGetDatum(!entry->invalidated);
 
+#if PG_VERSION_NUM >= 150000
+		tuplestore_putvalues(rsinfo->setResult, rsinfo->setDesc, values, nulls);
+#else
 		tuplestore_putvalues(tupstore, tupdesc, values, nulls);
+#endif
 	}
 
+#if PG_VERSION_NUM < 150000
 	/* clean up and return the tuplestore */
 	tuplestore_donestoring(tupstore);
+#endif
 
 	PG_RETURN_VOID();
 #endif

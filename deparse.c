@@ -1,7 +1,7 @@
 /*
  * GridDB Foreign Data Wrapper
  *
- * Portions Copyright (c) 2021, TOSHIBA CORPORATION
+ * Portions Copyright (c) 2018, TOSHIBA CORPORATION
  *
  * IDENTIFICATION
  *		  deparse.c
@@ -132,6 +132,8 @@ static void griddb_append_where_clause(List *exprs, deparse_expr_cxt *context);
 static bool griddb_contain_functions_walker(Node *node, void *context);
 static void griddb_append_agg_order_by(List *orderList, List *targetList,
 									   deparse_expr_cxt *context);
+static void griddb_append_order_by_suffix(Oid sortop, Oid sortcoltype, bool nulls_first,
+										  deparse_expr_cxt *context);
 static Node *griddb_deparse_sort_group_clause(Index ref, List *tlist, bool force_colno,
 											  deparse_expr_cxt *context);
 static void griddb_append_function_name(Oid funcid, deparse_expr_cxt *context);
@@ -1281,10 +1283,14 @@ griddb_deparse_field_select_expr(FieldSelect *node, deparse_expr_cxt *context)
  * be known to the remote server, if it's of an older version.  But keeping
  * track of that would be a huge exercise.
  */
-static bool
-is_builtin(Oid oid)
+bool
+griddb_is_builtin(Oid oid)
 {
+#if PG_VERSION_NUM > 120000
+	return (oid < FirstGenbkiObjectId);
+#else
 	return (oid < FirstBootstrapObjectId);
+#endif
 }
 
 static bool
@@ -1610,7 +1616,7 @@ foreign_expr_walker(Node *node,
 				 * (If the operator is, surely its underlying function is
 				 * too.)
 				 */
-				if (!is_builtin(oe->opno))
+				if (!griddb_is_builtin(oe->opno))
 					return false;
 
 				if (glob_cxt->for_tlist)
@@ -1673,7 +1679,7 @@ foreign_expr_walker(Node *node,
 				/*
 				 * Again, only built-in operators can be sent to remote.
 				 */
-				if (!is_builtin(oe->opno))
+				if (!griddb_is_builtin(oe->opno))
 					return false;
 
 				/*
@@ -1977,7 +1983,7 @@ foreign_expr_walker(Node *node,
 	 * If result type of given expression is not built-in, it can't be sent to
 	 * remote because it might have incompatible semantics on remote side.
 	 */
-	if (check_type && !is_builtin(exprType(node)))
+	if (check_type && !griddb_is_builtin(exprType(node)))
 		return false;
 
 	/*
@@ -2176,18 +2182,28 @@ static void
 griddb_append_order_by_clause(List *pathkeys, deparse_expr_cxt *context)
 {
 	ListCell   *lcell;
-	char	   *delim = " ";
-	RelOptInfo *baserel = context->foreignrel;
+	const char	   *delim = " ";
 	StringInfo	buf = context->buf;
 
 	appendStringInfo(buf, " ORDER BY");
 	foreach(lcell, pathkeys)
 	{
 		PathKey    *pathkey = (PathKey *) lfirst(lcell);
+		EquivalenceMember *em;
 		Expr	   *em_expr;
 
-		em_expr = griddb_find_em_expr_for_rel(pathkey->pk_eclass, baserel);
-		Assert(em_expr != NULL);
+		em = griddb_find_em_for_rel(context->root,
+									pathkey->pk_eclass,
+									context->scanrel);
+		/*
+		 * We don't expect any error here; it would mean that shippability
+		 * wasn't verified earlier.  For the same reason, we don't recheck
+		 * shippability of the sort operator.
+		 */
+		if (em == NULL)
+			elog(ERROR, "could not find pathkey item to sort");
+
+		em_expr = em->em_expr;
 
 		appendStringInfoString(buf, delim);
 		griddb_deparse_expr(em_expr, context);
@@ -2607,44 +2623,59 @@ griddb_append_agg_order_by(List *orderList, List *targetList, deparse_expr_cxt *
 	{
 		SortGroupClause *srt = (SortGroupClause *) lfirst(lc);
 		Node	   *sortexpr;
-		Oid			sortcoltype;
-		TypeCacheEntry *typentry;
 
 		if (!first)
 			appendStringInfoString(buf, ", ");
 		first = false;
 
+		/* Deparse the sort expression proper. */
 		sortexpr = griddb_deparse_sort_group_clause(srt->tleSortGroupRef, targetList,
 													false, context);
-		sortcoltype = exprType(sortexpr);
-		/* See whether operator is default < or > for datatype */
-		typentry = lookup_type_cache(sortcoltype,
-									 TYPECACHE_LT_OPR | TYPECACHE_GT_OPR);
-		if (srt->sortop == typentry->lt_opr)
-			appendStringInfoString(buf, " ASC");
-		else if (srt->sortop == typentry->gt_opr)
-			appendStringInfoString(buf, " DESC");
-		else
-		{
-			HeapTuple	opertup;
-			Form_pg_operator operform;
 
-			appendStringInfoString(buf, " USING ");
-
-			/* Append operator name. */
-			opertup = SearchSysCache1(OPEROID, ObjectIdGetDatum(srt->sortop));
-			if (!HeapTupleIsValid(opertup))
-				elog(ERROR, "cache lookup failed for operator %u", srt->sortop);
-			operform = (Form_pg_operator) GETSTRUCT(opertup);
-			griddb_deparse_operator_name(buf, operform);
-			ReleaseSysCache(opertup);
-		}
-
-		if (srt->nulls_first)
-			appendStringInfoString(buf, " NULLS FIRST");
-		else
-			appendStringInfoString(buf, " NULLS LAST");
+		/* Add decoration as needed. */
+		griddb_append_order_by_suffix(srt->sortop, exprType(sortexpr), srt->nulls_first,
+									  context);
 	}
+}
+
+/*
+ * Append the ASC, DESC, USING <OPERATOR> and NULLS FIRST / NULLS LAST parts
+ * of an ORDER BY clause.
+ */
+static void
+griddb_append_order_by_suffix(Oid sortop, Oid sortcoltype, bool nulls_first,
+							  deparse_expr_cxt *context)
+{
+	StringInfo	buf = context->buf;
+	TypeCacheEntry *typentry;
+
+	/* See whether operator is default < or > for datatype */
+	typentry = lookup_type_cache(sortcoltype,
+								 TYPECACHE_LT_OPR | TYPECACHE_GT_OPR);
+	if (sortop == typentry->lt_opr)
+		appendStringInfoString(buf, " ASC");
+	else if (sortop == typentry->gt_opr)
+		appendStringInfoString(buf, " DESC");
+	else
+	{
+		HeapTuple	opertup;
+		Form_pg_operator operform;
+
+		appendStringInfoString(buf, " USING ");
+
+		/* Append operator name. */
+		opertup = SearchSysCache1(OPEROID, ObjectIdGetDatum(sortop));
+		if (!HeapTupleIsValid(opertup))
+			elog(ERROR, "cache lookup failed for operator %u", sortop);
+		operform = (Form_pg_operator) GETSTRUCT(opertup);
+		griddb_deparse_operator_name(buf, operform);
+		ReleaseSysCache(opertup);
+	}
+
+	if (nulls_first)
+		appendStringInfoString(buf, " NULLS FIRST");
+	else
+		appendStringInfoString(buf, " NULLS LAST");
 }
 
 /*
@@ -2771,6 +2802,32 @@ griddb_is_foreign_param(PlannerInfo *root,
 			break;
 	}
 	return false;
+}
+
+/*
+ * Returns true if it's safe to push down the sort expression described by
+ * 'pathkey' to the foreign server.
+ */
+bool
+griddb_is_foreign_pathkey(PlannerInfo *root,
+						  RelOptInfo *baserel,
+						  PathKey *pathkey)
+{
+	EquivalenceClass *pathkey_ec = pathkey->pk_eclass;
+
+	/*
+	 * griddb_is_foreign_expr would detect volatile expressions as well, but checking
+	 * ec_has_volatile here saves some cycles.
+	 */
+	if (pathkey_ec->ec_has_volatile)
+		return false;
+	
+	/* Can't push down the sort if the EC's opfamily is not built-in. */
+	if (!griddb_is_builtin(linitial_oid(pathkey_ec->ec_opfamilies)))
+		return false;
+
+	/* can push if a suitable EC member exists */
+	return (griddb_find_em_for_rel(root, pathkey_ec, baserel) != NULL);
 }
 
 /*

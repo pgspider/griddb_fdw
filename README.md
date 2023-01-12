@@ -1,7 +1,7 @@
 # GridDB Foreign Data Wrapper for PostgreSQL
 
 This PostgreSQL extension is a Foreign Data Wrapper (FDW) for [GridDB][1].  
-This version of griddb_fdw can work for PostgreSQL 10, 11, 12, 13 and 14. It is confirmed in GridDB 4.6.1.
+This version of griddb_fdw can work for PostgreSQL 11, 12, 13, 14 and 15. It is confirmed in GridDB 5.0.0.
 
 ## 1. Installation
 griddb_fdw requires GridDB's C client library. This library can be downloaded from the [GridDB][1] website on github[1].
@@ -105,6 +105,7 @@ For PostgreSQL version 14 or later:
     * keep_connections option that controls whether griddb_fdw keeps the connections to the foreign server open so that the subsequent queries can re-use them. This option can only be specified for a foreign server. The default is on. If set to off, all connections to the foreign server will be discarded at the end of transaction. losed connections will be re-established when they are necessary by future queries using a foreign table.
 - Support list cached connections to foreign servers by using function griddb_get_connection().
 - Support discard cached connections to foreign servers by using function griddb_disconnect('server_name'), griddb_disconnect_all().
+- Support deparse and push down ANY/ALL ARRAY with the argument is constant.
 
 ## 4. Limitations
 #### Record is updated by INSERT command if a record with same rowkey as new record exists in GridDB.
@@ -188,10 +189,14 @@ INSERT INTO ft1 (c0, c1) VALUES (1, 2) RETURNING c0, c1;
 ```
 
 #### Don't support DIRECT MODIFICATION
-#### Don't support IMPORT FOREIGN SCHEMA with option import_generated
-
-## 5. License
-Copyright (c) 2017-2021, TOSHIBA Corporation  
+#### Don't support IMPORT FOREIGN SCHEMA with option import_generated or LIMIT TO clause
+#### Don't support TRUNCATE command
+#### Do not push down ANY/ALL ARRAY with the argument is subquery. 
+## 5. Notes
+#### GridDB does not support Numeric type as PostgreSQL.
+Therefore, it can not store numbers with too high precision and scale.
+## 6. License
+Copyright (c) 2018, TOSHIBA CORPORATION  
 Copyright (c) 2011-2016, EnterpriseDB Corporation
 
 Permission to use, copy, modify, and distribute this software and its
@@ -203,4 +208,3 @@ See the [`LICENSE`][2] file for full details.
 
 [1]: https://github.com/griddb
 [2]: LICENSE
-

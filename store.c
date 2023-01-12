@@ -1,7 +1,7 @@
 /*
  * GridDB Foreign Data Wrapper
  *
- * Portions Copyright (c) 2020, TOSHIBA CORPORATION
+ * Portions Copyright (c) 2019, TOSHIBA CORPORATION
  *
  * IDENTIFICATION
  *		  store.c
@@ -106,9 +106,12 @@ griddb_modify_target_init(GridDBFdwModifiedRows * modified_rows, int attnum)
 
 	Assert(nField > 0);
 
-	modified_rows->target_values = (Datum **) palloc0(sizeof(Datum *) * INITIAL_TARGET_VALUE_ROWS);
+	modified_rows->target_values = (GridDBFdwModifiedRowData *) palloc0(sizeof(GridDBFdwModifiedRowData) * INITIAL_TARGET_VALUE_ROWS);
 	for (i = 0; i < INITIAL_TARGET_VALUE_ROWS; i++)
-		modified_rows->target_values[i] = (Datum *) palloc0(sizeof(Datum) * nField);
+	{
+		modified_rows->target_values[i].values = (Datum *) palloc0(sizeof(Datum) * nField);
+		modified_rows->target_values[i].isnulls = (bool *) palloc0(sizeof(bool) * nField);
+	}
 
 	modified_rows->field_num = nField;
 	modified_rows->num_target = 0;
@@ -126,9 +129,12 @@ griddb_modify_target_expand(GridDBFdwModifiedRows * modified_rows)
 	int			i;
 
 	Assert(modified_rows->field_num > 0);
-	modified_rows->target_values = (Datum **) repalloc(modified_rows->target_values, sizeof(Datum *) * modified_rows->max_target * 2);
+	modified_rows->target_values = (GridDBFdwModifiedRowData *) repalloc(modified_rows->target_values, sizeof(GridDBFdwModifiedRowData) * modified_rows->max_target * 2);
 	for (i = modified_rows->max_target; i < modified_rows->max_target * 2; i++)
-		modified_rows->target_values[i] = (Datum *) palloc0(sizeof(Datum) * modified_rows->field_num);
+	{
+		modified_rows->target_values[i].values = (Datum *) palloc0(sizeof(Datum) * modified_rows->field_num);
+		modified_rows->target_values[i].isnulls = (bool *) palloc0(sizeof(bool) * modified_rows->field_num);
+	}
 	modified_rows->max_target *= 2;
 }
 
@@ -142,7 +148,10 @@ griddb_modify_target_fini(GridDBFdwModifiedRows * modified_rows)
 	int			i;
 
 	for (i = 0; i < modified_rows->max_target; i++)
-		pfree(modified_rows->target_values[i]);
+	{
+		pfree(modified_rows->target_values[i].values);
+		pfree(modified_rows->target_values[i].isnulls);
+	}
 	pfree(modified_rows->target_values);
 	memset(modified_rows, 0, sizeof(GridDBFdwModifiedRows));
 }
@@ -161,6 +170,7 @@ griddb_modify_target_insert(GridDBFdwModifiedRows * modified_rows, TupleTableSlo
 {
 	ListCell   *lc;
 	Datum	   *target_values;
+	bool	   *target_value_nulls;
 	int			pindex = 0;
 	Datum		value;
 	bool		isnull;
@@ -170,13 +180,15 @@ griddb_modify_target_insert(GridDBFdwModifiedRows * modified_rows, TupleTableSlo
 	if (modified_rows->num_target >= modified_rows->max_target)
 		griddb_modify_target_expand(modified_rows);
 
-	target_values = modified_rows->target_values[modified_rows->num_target];
+	target_values = modified_rows->target_values[modified_rows->num_target].values;
+	target_value_nulls = modified_rows->target_values[modified_rows->num_target].isnulls;
 
 	/* Firstly, store a value of rowkey column which is the 1st column. */
 	value = ExecGetJunkAttribute(planSlot, junk_att_no, &isnull);
 	Assert(isnull == false);
 	attr = TupleDescAttr(planSlot->tts_tupleDescriptor, junk_att_no - 1);
 	target_values[pindex] = datumCopy(value, attr->attbyval, attr->attlen);
+	target_value_nulls[pindex] = false;
 	pindex++;
 
 	/* Store modified column values. */
@@ -190,9 +202,11 @@ griddb_modify_target_insert(GridDBFdwModifiedRows * modified_rows, TupleTableSlo
 		griddb_check_slot_type(slot, attnum, field_info);
 
 		value = slot_getattr(slot, attnum, &isnull);
-		Assert(isnull == false);
 		attr = TupleDescAttr(slot->tts_tupleDescriptor, attnum - 1);
-		target_values[pindex] = datumCopy(value, attr->attbyval, attr->attlen);
+		target_value_nulls[pindex] = isnull;
+		if (!isnull)
+			target_values[pindex] = datumCopy(value, attr->attbyval, attr->attlen);
+
 		pindex++;
 	}
 	modified_rows->num_target++;
@@ -214,7 +228,7 @@ griddb_modify_target_sort(GridDBFdwModifiedRows * modified_rows, GridDBFdwFieldI
 	GSType		gs_type = field_info->column_types[ROWKEY_ATTNO - 1];
 
 	comparator = griddb_get_comparator_tuplekey(gs_type);
-	pg_qsort(modified_rows->target_values, modified_rows->num_target, sizeof(Datum *), comparator);
+	pg_qsort(modified_rows->target_values, modified_rows->num_target, sizeof(GridDBFdwModifiedRowData), comparator);
 }
 
 /* Create TQL for fetching UPDATE/DELETE targets. */
@@ -224,10 +238,11 @@ griddb_modify_target_tql(GridDBFdwModifiedRows * modified_rows, char *cont_name,
 						 StringInfo buf)
 {
 	char	   *rowkey = (char *) field_info->column_names[ROWKEY_ATTNO - 1];
-	Datum	  **target_values = modified_rows->target_values;
+	GridDBFdwModifiedRowData	  *target_values = modified_rows->target_values;
 	Oid			outputFunctionId;
 	bool		typeVarLength;
 	uint64_t	i;
+	bool		is_first = true;
 
 	Assert(iStart < iEnd);
 	Assert(iEnd <= modified_rows->num_target);
@@ -240,42 +255,45 @@ griddb_modify_target_tql(GridDBFdwModifiedRows * modified_rows, char *cont_name,
 		case GS_TYPE_INTEGER:
 			for (i = iStart; i < iEnd; i++)
 			{
-				Datum	   *values = target_values[i];
+				Datum	   *values = target_values[i].values;
 				int			intVal = DatumGetInt32(values[ROWKEY_IDX]);
 
-				if (i != 0)
+				if (!is_first)
 					appendStringInfo(buf, " OR ");
 
 				appendStringInfo(buf, "%s = %d", rowkey, intVal);
+				is_first = false;
 			}
 			break;
 
 		case GS_TYPE_LONG:
 			for (i = iStart; i < iEnd; i++)
 			{
-				Datum	   *values = target_values[i];
+				Datum	   *values = target_values[i].values;
 				int64		longVal = DatumGetInt64(values[ROWKEY_IDX]);
 
-				if (i != 0)
+				if (!is_first)
 					appendStringInfo(buf, " OR ");
 
 				appendStringInfo(buf, "%s = %lld", rowkey, (long long int) longVal);
+				is_first = false;
 			}
 			break;
 
 		case GS_TYPE_TIMESTAMP:
 			for (i = iStart; i < iEnd; i++)
 			{
-				Datum	   *values = target_values[i];
+				Datum	   *values = target_values[i].values;
 				char		timestampVal[MAXDATELEN + 1] = {0};
 				Timestamp	timestamp = DatumGetTimestamp(values[ROWKEY_IDX]);
 
 				griddb_convert_pg2gs_timestamp_string(timestamp, timestampVal);
 
-				if (i != 0)
+				if (!is_first)
 					appendStringInfo(buf, " OR ");
 
 				appendStringInfo(buf, "%s = TIMESTAMP('%s')", rowkey, timestampVal);
+				is_first = false;
 			}
 			break;
 
@@ -283,13 +301,14 @@ griddb_modify_target_tql(GridDBFdwModifiedRows * modified_rows, char *cont_name,
 			getTypeOutputInfo(TEXTOID, &outputFunctionId, &typeVarLength);
 			for (i = iStart; i < iEnd; i++)
 			{
-				Datum	   *values = target_values[i];
+				Datum	   *values = target_values[i].values;
 				char	   *stringVal = OidOutputFunctionCall(outputFunctionId, values[ROWKEY_IDX]);
 
-				if (i != 0)
+				if (!is_first)
 					appendStringInfo(buf, " OR ");
 
 				appendStringInfo(buf, "%s = '%s'", rowkey, stringVal);
+				is_first = false;
 			}
 			break;
 
@@ -355,8 +374,9 @@ griddb_modify_targets_apply(GridDBFdwModifiedRows * modified_rows, char *cont_na
 		for (i = iStart; i < iEnd; i++)
 		{
 			Datum		rowkey;
-			Datum	   *rowValues[1];
-			Datum	   *targets = modified_rows->target_values[i];
+			GridDBFdwModifiedRowData rowValues[1];
+			Datum	   *targets = modified_rows->target_values[i].values;
+			bool	   *target_nulls = modified_rows->target_values[i].isnulls;
 
 			Assert(gsHasNextRow(row_set) == GS_TRUE);
 			ret = gsGetNextRow(row_set, row);
@@ -367,8 +387,9 @@ griddb_modify_targets_apply(GridDBFdwModifiedRows * modified_rows, char *cont_na
 			rowkey = griddb_make_datum_from_row(row, ROWKEY_IDX,
 												field_info->column_types[ROWKEY_ATTNO - 1],
 												pgkeytype, GS_ROW_SET_CONTAINER_ROWS, NULL, NULL);
-			rowValues[0] = &rowkey;
-			if (comparator((const void *) &targets, (const void *) &rowValues))
+			rowValues[0].values = &rowkey;
+			rowValues[0].isnulls = false;
+			if (comparator((const void *) &modified_rows->target_values[i], (const void *) rowValues))
 			{
 				Assert(false);
 				ereport(WARNING, (errmsg("Fetched rowkey is not same as expected")));
@@ -388,7 +409,10 @@ griddb_modify_targets_apply(GridDBFdwModifiedRows * modified_rows, char *cont_na
 					if (attnum < 0)
 						continue;
 
-					griddb_set_row_field(row, targets[pindex], field_info->column_types[attnum - 1], attnum - 1);
+					if (target_nulls[pindex] == true)
+						griddb_set_row_field(row, targets[pindex], GS_TYPE_NULL, attnum - 1);
+					else
+						griddb_set_row_field(row, targets[pindex], field_info->column_types[attnum - 1], attnum - 1);
 					pindex++;
 				}
 

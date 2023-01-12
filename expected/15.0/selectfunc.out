@@ -1,0 +1,2996 @@
+--
+-- Test for push down functions in target list
+--
+--Testcase 1:
+SET datestyle TO "ISO, YMD";
+--Testcase 2:
+SET timezone TO +00;
+--Testcase 3:
+SET intervalstyle to "postgres";
+\set ECHO none
+--Testcase 4:
+CREATE EXTENSION griddb_fdw;
+--Testcase 5:
+CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS (host :GRIDDB_HOST, port :GRIDDB_PORT, clustername 'griddbfdwTestCluster');
+--Testcase 6:
+CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS (username :GRIDDB_USER, password :GRIDDB_PASS);
+IMPORT FOREIGN SCHEMA public LIMIT TO (student, time_series, time_series2) FROM SERVER griddb_svr INTO public;
+--Select all
+--Testcase 7:
+SELECT * FROM student;
+ name  | age |  location  | gpa 
+-------+-----+------------+-----
+ fred  |  28 | (3.1,-1.5) | 3.7
+ larry |  60 | (21.8,4.9) | 3.1
+(2 rows)
+
+--
+-- Test for non-unique functions of GridDB in WHERE clause
+--
+-- char_length
+--Testcase 8:
+EXPLAIN VERBOSE
+SELECT * FROM student WHERE char_length(name) > 4 ;
+                               QUERY PLAN                                
+-------------------------------------------------------------------------
+ Foreign Scan on public.student  (cost=100.00..127.75 rows=273 width=76)
+   Output: name, age, location, gpa
+   Remote SQL: SELECT  *  FROM student WHERE ((char_length(name) > 4))
+(3 rows)
+
+--Testcase 9:
+SELECT * FROM student WHERE char_length(name) > 4 ;
+ name  | age |  location  | gpa 
+-------+-----+------------+-----
+ larry |  60 | (21.8,4.9) | 3.1
+(1 row)
+
+--Testcase 10:
+EXPLAIN VERBOSE
+SELECT * FROM student WHERE char_length(name) < 6 ;
+                               QUERY PLAN                                
+-------------------------------------------------------------------------
+ Foreign Scan on public.student  (cost=100.00..127.75 rows=273 width=76)
+   Output: name, age, location, gpa
+   Remote SQL: SELECT  *  FROM student WHERE ((char_length(name) < 6))
+(3 rows)
+
+--Testcase 11:
+SELECT * FROM student WHERE char_length(name) < 6 ;
+ name  | age |  location  | gpa 
+-------+-----+------------+-----
+ fred  |  28 | (3.1,-1.5) | 3.7
+ larry |  60 | (21.8,4.9) | 3.1
+(2 rows)
+
+--Testcase 12:
+EXPLAIN VERBOSE
+SELECT * FROM student WHERE concat(name,' and george') = 'fred and george';
+                                           QUERY PLAN                                            
+-------------------------------------------------------------------------------------------------
+ Foreign Scan on public.student  (cost=100.00..122.37 rows=4 width=76)
+   Output: name, age, location, gpa
+   Remote SQL: SELECT  *  FROM student WHERE ((concat(name, ' and george') = 'fred and george'))
+(3 rows)
+
+--Testcase 13:
+SELECT * FROM student WHERE concat(name,' and george') = 'fred and george';
+ name | age |  location  | gpa 
+------+-----+------------+-----
+ fred |  28 | (3.1,-1.5) | 3.7
+(1 row)
+
+--substr
+--Testcase 14:
+EXPLAIN VERBOSE
+SELECT * FROM student WHERE substr(name,2,3) = 'red';
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
+ Foreign Scan on public.student  (cost=100.00..122.37 rows=4 width=76)
+   Output: name, age, location, gpa
+   Remote SQL: SELECT  *  FROM student WHERE ((substring(name, 2, 3) = 'red'))
+(3 rows)
+
+--Testcase 15:
+SELECT * FROM student WHERE substr(name,2,3) = 'red';
+ name | age |  location  | gpa 
+------+-----+------------+-----
+ fred |  28 | (3.1,-1.5) | 3.7
+(1 row)
+
+--Testcase 16:
+EXPLAIN VERBOSE
+SELECT * FROM student WHERE substr(name,1,3) <> 'fre';
+                                   QUERY PLAN                                   
+--------------------------------------------------------------------------------
+ Foreign Scan on public.student  (cost=100.00..138.59 rows=815 width=76)
+   Output: name, age, location, gpa
+   Remote SQL: SELECT  *  FROM student WHERE ((substring(name, 1, 3) <> 'fre'))
+(3 rows)
+
+--Testcase 17:
+SELECT * FROM student WHERE substr(name,1,3) <> 'fre';
+ name  | age |  location  | gpa 
+-------+-----+------------+-----
+ larry |  60 | (21.8,4.9) | 3.1
+(1 row)
+
+--upper
+--Testcase 18:
+EXPLAIN VERBOSE 
+SELECT * FROM student WHERE upper(name) = 'FRED';
+                              QUERY PLAN                               
+-----------------------------------------------------------------------
+ Foreign Scan on public.student  (cost=100.00..122.37 rows=4 width=76)
+   Output: name, age, location, gpa
+   Remote SQL: SELECT  *  FROM student WHERE ((upper(name) = 'FRED'))
+(3 rows)
+
+--Testcase 19:
+SELECT * FROM student WHERE upper(name) = 'FRED';
+ name | age |  location  | gpa 
+------+-----+------------+-----
+ fred |  28 | (3.1,-1.5) | 3.7
+(1 row)
+
+--Testcase 20:
+EXPLAIN VERBOSE 
+SELECT * FROM student WHERE upper(name) <> 'FRED';
+                               QUERY PLAN                                
+-------------------------------------------------------------------------
+ Foreign Scan on public.student  (cost=100.00..138.59 rows=815 width=76)
+   Output: name, age, location, gpa
+   Remote SQL: SELECT  *  FROM student WHERE ((upper(name) <> 'FRED'))
+(3 rows)
+
+--Testcase 21:
+SELECT * FROM student WHERE upper(name) <> 'FRED';
+ name  | age |  location  | gpa 
+-------+-----+------------+-----
+ larry |  60 | (21.8,4.9) | 3.1
+(1 row)
+
+--lower
+--Testcase 22:
+INSERT INTO student VALUES ('GEORGE',30,'(1.2,-3.5)',3.8);
+--Testcase 23:
+INSERT INTO student VALUES ('BOB',35,'(5.2,3.8)',2.5);
+--Testcase 24:
+EXPLAIN VERBOSE 
+SELECT * FROM student WHERE lower(name) = 'george';
+                               QUERY PLAN                               
+------------------------------------------------------------------------
+ Foreign Scan on public.student  (cost=100.00..122.37 rows=4 width=76)
+   Output: name, age, location, gpa
+   Remote SQL: SELECT  *  FROM student WHERE ((lower(name) = 'george'))
+(3 rows)
+
+--Testcase 25:
+SELECT * FROM student WHERE lower(name) = 'george';
+  name  | age |  location  | gpa 
+--------+-----+------------+-----
+ GEORGE |  30 | (1.2,-3.5) | 3.8
+(1 row)
+
+--Testcase 26:
+EXPLAIN VERBOSE 
+SELECT * FROM student WHERE lower(name) <> 'bob';
+                               QUERY PLAN                                
+-------------------------------------------------------------------------
+ Foreign Scan on public.student  (cost=100.00..138.59 rows=815 width=76)
+   Output: name, age, location, gpa
+   Remote SQL: SELECT  *  FROM student WHERE ((lower(name) <> 'bob'))
+(3 rows)
+
+--Testcase 27:
+SELECT * FROM student WHERE lower(name) <> 'bob';
+  name  | age |  location  | gpa 
+--------+-----+------------+-----
+ fred   |  28 | (3.1,-1.5) | 3.7
+ larry  |  60 | (21.8,4.9) | 3.1
+ GEORGE |  30 | (1.2,-3.5) | 3.8
+(3 rows)
+
+--round
+--Testcase 28:
+EXPLAIN VERBOSE 
+SELECT * FROM student WHERE round(gpa) > 3.5;
+                               QUERY PLAN                                
+-------------------------------------------------------------------------
+ Foreign Scan on public.student  (cost=100.00..127.75 rows=273 width=76)
+   Output: name, age, location, gpa
+   Remote SQL: SELECT  *  FROM student WHERE ((round(gpa) > 3.5))
+(3 rows)
+
+--Testcase 29:
+SELECT * FROM student WHERE round(gpa) > 3.5;
+  name  | age |  location  | gpa 
+--------+-----+------------+-----
+ fred   |  28 | (3.1,-1.5) | 3.7
+ GEORGE |  30 | (1.2,-3.5) | 3.8
+(2 rows)
+
+--Testcase 30:
+EXPLAIN VERBOSE 
+SELECT * FROM student WHERE round(gpa) <= 3;
+                               QUERY PLAN                                
+-------------------------------------------------------------------------
+ Foreign Scan on public.student  (cost=100.00..127.75 rows=273 width=76)
+   Output: name, age, location, gpa
+   Remote SQL: SELECT  *  FROM student WHERE ((round(gpa) <= 3))
+(3 rows)
+
+--Testcase 31:
+SELECT * FROM student WHERE round(gpa) <= 3;
+ name  | age |  location  | gpa 
+-------+-----+------------+-----
+ larry |  60 | (21.8,4.9) | 3.1
+ BOB   |  35 | (5.2,3.8)  | 2.5
+(2 rows)
+
+--floor
+--Testcase 32:
+EXPLAIN VERBOSE 
+SELECT * FROM student WHERE floor(gpa) = 3;
+                              QUERY PLAN                               
+-----------------------------------------------------------------------
+ Foreign Scan on public.student  (cost=100.00..122.37 rows=4 width=76)
+   Output: name, age, location, gpa
+   Remote SQL: SELECT  *  FROM student WHERE ((floor(gpa) = 3))
+(3 rows)
+
+--Testcase 33:
+SELECT * FROM student WHERE floor(gpa) = 3;
+  name  | age |  location  | gpa 
+--------+-----+------------+-----
+ fred   |  28 | (3.1,-1.5) | 3.7
+ larry  |  60 | (21.8,4.9) | 3.1
+ GEORGE |  30 | (1.2,-3.5) | 3.8
+(3 rows)
+
+--Testcase 34:
+EXPLAIN VERBOSE 
+SELECT * FROM student WHERE floor(gpa) < 2;
+                               QUERY PLAN                                
+-------------------------------------------------------------------------
+ Foreign Scan on public.student  (cost=100.00..127.75 rows=273 width=76)
+   Output: name, age, location, gpa
+   Remote SQL: SELECT  *  FROM student WHERE ((floor(gpa) < 2))
+(3 rows)
+
+--Testcase 35:
+SELECT * FROM student WHERE floor(gpa) < 3;
+ name | age | location  | gpa 
+------+-----+-----------+-----
+ BOB  |  35 | (5.2,3.8) | 2.5
+(1 row)
+
+--ceiling
+--Testcase 36:
+EXPLAIN VERBOSE 
+SELECT * FROM student WHERE ceiling(gpa) >= 3;
+                               QUERY PLAN                                
+-------------------------------------------------------------------------
+ Foreign Scan on public.student  (cost=100.00..127.75 rows=273 width=76)
+   Output: name, age, location, gpa
+   Remote SQL: SELECT  *  FROM student WHERE ((ceiling(gpa) >= 3))
+(3 rows)
+
+--Testcase 37:
+SELECT * FROM student WHERE ceiling(gpa) >= 3;
+  name  | age |  location  | gpa 
+--------+-----+------------+-----
+ fred   |  28 | (3.1,-1.5) | 3.7
+ larry  |  60 | (21.8,4.9) | 3.1
+ GEORGE |  30 | (1.2,-3.5) | 3.8
+ BOB    |  35 | (5.2,3.8)  | 2.5
+(4 rows)
+
+--Testcase 38:
+EXPLAIN VERBOSE 
+SELECT * FROM student WHERE ceiling(gpa) = 4;
+                              QUERY PLAN                               
+-----------------------------------------------------------------------
+ Foreign Scan on public.student  (cost=100.00..122.37 rows=4 width=76)
+   Output: name, age, location, gpa
+   Remote SQL: SELECT  *  FROM student WHERE ((ceiling(gpa) = 4))
+(3 rows)
+
+--Testcase 39:
+SELECT * FROM student WHERE ceiling(gpa) = 4;
+  name  | age |  location  | gpa 
+--------+-----+------------+-----
+ fred   |  28 | (3.1,-1.5) | 3.7
+ larry  |  60 | (21.8,4.9) | 3.1
+ GEORGE |  30 | (1.2,-3.5) | 3.8
+(3 rows)
+
+--
+--Test for unique functions of GridDB in WHERE clause: time functions
+--
+--Testcase 40:
+\d time_series2
+                                Foreign table "public.time_series2"
+     Column     |             Type              | Collation | Nullable | Default |   FDW options   
+----------------+-------------------------------+-----------+----------+---------+-----------------
+ date           | timestamp without time zone   |           |          |         | (rowkey 'true')
+ date2          | timestamp without time zone   |           |          |         | 
+ strcol         | text                          |           |          |         | 
+ booleancol     | boolean                       |           |          |         | 
+ bytecol        | smallint                      |           |          |         | 
+ shortcol       | smallint                      |           |          |         | 
+ intcol         | integer                       |           |          |         | 
+ longcol        | bigint                        |           |          |         | 
+ floatcol       | real                          |           |          |         | 
+ doublecol      | double precision              |           |          |         | 
+ blobcol        | bytea                         |           |          |         | 
+ stringarray    | text[]                        |           |          |         | 
+ boolarray      | boolean[]                     |           |          |         | 
+ bytearray      | smallint[]                    |           |          |         | 
+ shortarray     | smallint[]                    |           |          |         | 
+ integerarray   | integer[]                     |           |          |         | 
+ longarray      | bigint[]                      |           |          |         | 
+ floatarray     | real[]                        |           |          |         | 
+ doublearray    | double precision[]            |           |          |         | 
+ timestamparray | timestamp without time zone[] |           |          |         | 
+Server: griddb_svr
+
+--Testcase 41:
+INSERT INTO time_series2 VALUES ('2020-12-29 04:40:00', '2000-12-29 04:40:00', '2020-01-05T20:30:00Z', 't', 0, 5, 100, 2000, 65.4, 2391.5, '7C8C893C8087F07883AF', ARRAY['aaa','bbb','ccc'],
+ARRAY['t'::boolean,'f'::boolean,'t'::boolean],ARRAY[1,2,3,4],ARRAY[1,2,3],ARRAY[444,333,222],ARRAY[44444,22222,45555],ARRAY[2.3,4.2,62.1],ARRAY[444.2,554.3,5432.5],
+ARRAY['2020-12-29 04:45:00'::timestamp,'2020-12-29 04:46:00'::timestamp]);
+--Testcase 42:
+INSERT INTO time_series2 VALUES ('2020-12-29 04:50:00', '2020-03-17 04:40:00', '2020-01-05T23:30:00Z', 'f', 20, 120, 1000, 2500, 44.5, 2432.78, '09C4A3E91E60BCD22357', ARRAY['abcdef','ghijkl','mnopqs'],
+ARRAY['f'::boolean,'f'::boolean,'t'::boolean],ARRAY[2,9,11,25],ARRAY[45,22,35,50],ARRAY[4445,33,2221],ARRAY[25413,77548,36251],ARRAY[4.2,24.54,70.55],ARRAY[4431.63,-200.14,3265.1],
+ARRAY['2020-12-31 14:00:00'::timestamp,'2020-12-31 14:45:00'::timestamp, '2020-01-01 15:00:00']);
+--Testcase 43:
+INSERT INTO time_series2 VALUES ('2020-12-29 05:00:30', '2020-12-11 02:30:30', '2020-01-05T22:00:00Z', 'f', 11, 175, 1234, 7705, 15.72, 1435.22, '2F63A64D987344F83AC8', ARRAY['7777a32ebea96a918b0f','40ee382083b987e94dd1','d417cf517eca8c2a709a'],
+ARRAY['t'::boolean,'t'::boolean,'f'::boolean,'f'::boolean],ARRAY[12,29,1,14,16],ARRAY[255,124,77,51],ARRAY[2697,2641,7777],ARRAY[12475,12346,12654],ARRAY[22.5,12.11,23.54],ARRAY[3567.21,2124.23,-1254.11],
+ARRAY['2020-05-19 14:15:20'::timestamp,'2020-11-14 17:45:14'::timestamp, '2020-09-05 01:24:06']);
+--griddb_timestamp: push down timestamp function to GridDB
+--Testcase 44:
+EXPLAIN VERBOSE
+SELECT date, strcol, booleancol, bytecol, shortcol, intcol, longcol, floatcol, doublecol FROM time_series2 WHERE griddb_timestamp(strcol) > '2020-01-05 21:00:00';
+                                                 QUERY PLAN                                                 
+------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..346.86 rows=293 width=69)
+   Output: date, strcol, booleancol, bytecol, shortcol, intcol, longcol, floatcol, doublecol
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestamp(strcol) > TIMESTAMP('2020-01-05T21:00:00Z')))
+(3 rows)
+
+--Testcase 45:
+SELECT date, strcol, booleancol, bytecol, shortcol, intcol, longcol, floatcol, doublecol FROM time_series2 WHERE griddb_timestamp(strcol) > '2020-01-05 21:00:00';
+        date         |        strcol        | booleancol | bytecol | shortcol | intcol | longcol | floatcol | doublecol 
+---------------------+----------------------+------------+---------+----------+--------+---------+----------+-----------
+ 2020-12-29 04:50:00 | 2020-01-05T23:30:00Z | f          |      20 |      120 |   1000 |    2500 |     44.5 |   2432.78
+ 2020-12-29 05:00:30 | 2020-01-05T22:00:00Z | f          |      11 |      175 |   1234 |    7705 |    15.72 |   1435.22
+(2 rows)
+
+--Testcase 46:
+EXPLAIN VERBOSE
+SELECT date, strcol FROM time_series2 WHERE date < griddb_timestamp(strcol);
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..454.54 rows=427 width=40)
+   Output: date, strcol
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((date < timestamp(strcol)))
+(3 rows)
+
+--Testcase 47:
+SELECT date, strcol FROM time_series2 WHERE date < griddb_timestamp(strcol);
+ date | strcol 
+------+--------
+(0 rows)
+
+--griddb_timestamp: push down timestamp function to GridDB and gets error because GridDB only support YYYY-MM-DDThh:mm:ss.SSSZ format for timestamp function
+--Testcase 48:
+UPDATE time_series2 SET strcol = '2020-01-05 21:00:00';
+--Testcase 49:
+EXPLAIN VERBOSE
+SELECT date, strcol FROM time_series2 WHERE griddb_timestamp(strcol) = '2020-01-05 21:00:00';
+                                                 QUERY PLAN                                                 
+------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..446.12 rows=6 width=40)
+   Output: date, strcol
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestamp(strcol) = TIMESTAMP('2020-01-05T21:00:00Z')))
+(3 rows)
+
+--Testcase 50:
+SELECT date, strcol FROM time_series2 WHERE griddb_timestamp(strcol) = '2020-01-05 21:00:00';
+ERROR:  GridDB-API is failed by 152010
+  [152010:TQ_CONSTRAINT_INVALID_ARGUMENT_TYPE] Cannot parse argument as Timestamp,2020-01-05 21:00:00 (address=127.0.0.1:10001, partition=31)
+  [152010:TQ_CONSTRAINT_INVALID_ARGUMENT_TYPE] Cannot parse argument as Timestamp,2020-01-05 21:00:00
+
+--timestampadd
+--YEAR
+--Testcase 51:
+EXPLAIN VERBOSE
+SELECT date FROM time_series2 WHERE timestampadd('YEAR', date, -1) > '2019-12-29 05:00:00';
+                                                        QUERY PLAN                                                         
+---------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..799.06 rows=853 width=8)
+   Output: date
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampadd('YEAR', date, (-1)) > TIMESTAMP('2019-12-29T05:00:00Z')))
+(3 rows)
+
+--Testcase 52:
+SELECT date FROM time_series2 WHERE timestampadd('YEAR', date, -1) > '2019-12-29 05:00:00';
+        date         
+---------------------
+ 2020-12-29 05:00:30
+(1 row)
+
+--Testcase 53:
+EXPLAIN VERBOSE
+SELECT date FROM time_series2 WHERE timestampadd('YEAR', date, 5) >= '2025-12-29 04:50:00';
+                                                       QUERY PLAN                                                        
+-------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..799.06 rows=853 width=8)
+   Output: date
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampadd('YEAR', date, 5) >= TIMESTAMP('2025-12-29T04:50:00Z')))
+(3 rows)
+
+--Testcase 54:
+SELECT date FROM time_series2 WHERE timestampadd('YEAR', date, 5) >= '2025-12-29 04:50:00';
+        date         
+---------------------
+ 2020-12-29 04:50:00
+ 2020-12-29 05:00:30
+(2 rows)
+
+--Testcase 55:
+EXPLAIN VERBOSE
+SELECT date FROM time_series2 WHERE timestampadd('YEAR', date, 5) >= '2025-12-29';
+                                                       QUERY PLAN                                                        
+-------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..799.06 rows=853 width=8)
+   Output: date
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampadd('YEAR', date, 5) >= TIMESTAMP('2025-12-29T00:00:00Z')))
+(3 rows)
+
+--Testcase 56:
+SELECT date FROM time_series2 WHERE timestampadd('YEAR', date, 5) >= '2025-12-29';
+        date         
+---------------------
+ 2020-12-29 04:40:00
+ 2020-12-29 04:50:00
+ 2020-12-29 05:00:30
+(3 rows)
+
+--MONTH
+--Testcase 57:
+EXPLAIN VERBOSE
+SELECT date FROM time_series2 WHERE timestampadd('MONTH', date, -3) > '2020-06-29 05:00:00';
+                                                         QUERY PLAN                                                         
+----------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..799.06 rows=853 width=8)
+   Output: date
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampadd('MONTH', date, (-3)) > TIMESTAMP('2020-06-29T05:00:00Z')))
+(3 rows)
+
+--Testcase 58:
+SELECT date FROM time_series2 WHERE timestampadd('MONTH', date, -3) > '2020-06-29 05:00:00';
+        date         
+---------------------
+ 2020-12-29 04:40:00
+ 2020-12-29 04:50:00
+ 2020-12-29 05:00:30
+(3 rows)
+
+--Testcase 59:
+EXPLAIN VERBOSE
+SELECT date FROM time_series2 WHERE timestampadd('MONTH', date, 3) = '2021-03-29 05:00:30';
+                                                       QUERY PLAN                                                        
+-------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..782.26 rows=13 width=8)
+   Output: date
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampadd('MONTH', date, 3) = TIMESTAMP('2021-03-29T05:00:30Z')))
+(3 rows)
+
+--Testcase 60:
+SELECT date FROM time_series2 WHERE timestampadd('MONTH', date, 3) = '2021-03-29 05:00:30';
+        date         
+---------------------
+ 2020-12-29 05:00:30
+(1 row)
+
+--Testcase 61:
+EXPLAIN VERBOSE
+SELECT date FROM time_series2 WHERE timestampadd('MONTH', date, 3) >= '2021-03-29';
+                                                        QUERY PLAN                                                        
+--------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..799.06 rows=853 width=8)
+   Output: date
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampadd('MONTH', date, 3) >= TIMESTAMP('2021-03-29T00:00:00Z')))
+(3 rows)
+
+--Testcase 62:
+SELECT date FROM time_series2 WHERE timestampadd('MONTH', date, 3) >= '2021-03-29';
+        date         
+---------------------
+ 2020-12-29 04:40:00
+ 2020-12-29 04:50:00
+ 2020-12-29 05:00:30
+(3 rows)
+
+--DAY
+--Testcase 63:
+EXPLAIN VERBOSE
+SELECT date FROM time_series2 WHERE timestampadd('DAY', date, -3) > '2020-06-29 05:00:00';
+                                                        QUERY PLAN                                                        
+--------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..799.06 rows=853 width=8)
+   Output: date
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampadd('DAY', date, (-3)) > TIMESTAMP('2020-06-29T05:00:00Z')))
+(3 rows)
+
+--Testcase 64:
+SELECT date FROM time_series2 WHERE timestampadd('DAY', date, -3) > '2020-06-29 05:00:00';
+        date         
+---------------------
+ 2020-12-29 04:40:00
+ 2020-12-29 04:50:00
+ 2020-12-29 05:00:30
+(3 rows)
+
+--Testcase 65:
+EXPLAIN VERBOSE
+SELECT date FROM time_series2 WHERE timestampadd('DAY', date, 3) = '2021-01-01 05:00:30';
+                                                      QUERY PLAN                                                       
+-----------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..782.26 rows=13 width=8)
+   Output: date
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampadd('DAY', date, 3) = TIMESTAMP('2021-01-01T05:00:30Z')))
+(3 rows)
+
+--Testcase 66:
+SELECT date FROM time_series2 WHERE timestampadd('DAY', date, 3) = '2021-01-01 05:00:30';
+        date         
+---------------------
+ 2020-12-29 05:00:30
+(1 row)
+
+--Testcase 67:
+EXPLAIN VERBOSE
+SELECT date FROM time_series2 WHERE timestampadd('DAY', date, 3) >= '2021-01-01';
+                                                       QUERY PLAN                                                       
+------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..799.06 rows=853 width=8)
+   Output: date
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampadd('DAY', date, 3) >= TIMESTAMP('2021-01-01T00:00:00Z')))
+(3 rows)
+
+--Testcase 68:
+SELECT date FROM time_series2 WHERE timestampadd('DAY', date, 3) >= '2021-01-01';
+        date         
+---------------------
+ 2020-12-29 04:40:00
+ 2020-12-29 04:50:00
+ 2020-12-29 05:00:30
+(3 rows)
+
+--HOUR
+--Testcase 69:
+EXPLAIN VERBOSE
+SELECT date FROM time_series2 WHERE timestampadd('HOUR', date, -1) > '2020-12-29 04:00:00';
+                                                        QUERY PLAN                                                         
+---------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..799.06 rows=853 width=8)
+   Output: date
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampadd('HOUR', date, (-1)) > TIMESTAMP('2020-12-29T04:00:00Z')))
+(3 rows)
+
+--Testcase 70:
+SELECT date FROM time_series2 WHERE timestampadd('HOUR', date, -1) > '2020-12-29 04:00:00';
+        date         
+---------------------
+ 2020-12-29 05:00:30
+(1 row)
+
+--Testcase 71:
+EXPLAIN VERBOSE
+SELECT date FROM time_series2 WHERE timestampadd('HOUR', date, 2) >= '2020-12-29 06:50:00';
+                                                       QUERY PLAN                                                        
+-------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..799.06 rows=853 width=8)
+   Output: date
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampadd('HOUR', date, 2) >= TIMESTAMP('2020-12-29T06:50:00Z')))
+(3 rows)
+
+--Testcase 72:
+SELECT date FROM time_series2 WHERE timestampadd('HOUR', date, 2) >= '2020-12-29 06:50:00';
+        date         
+---------------------
+ 2020-12-29 04:50:00
+ 2020-12-29 05:00:30
+(2 rows)
+
+--MINUTE
+--Testcase 73:
+EXPLAIN VERBOSE
+SELECT date FROM time_series2 WHERE timestampadd('MINUTE', date, 20) = '2020-12-29 05:00:00';
+                                                        QUERY PLAN                                                         
+---------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..782.26 rows=13 width=8)
+   Output: date
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampadd('MINUTE', date, 20) = TIMESTAMP('2020-12-29T05:00:00Z')))
+(3 rows)
+
+--Testcase 74:
+SELECT date FROM time_series2 WHERE timestampadd('MINUTE', date, 20) = '2020-12-29 05:00:00';
+        date         
+---------------------
+ 2020-12-29 04:40:00
+(1 row)
+
+--Testcase 75:
+EXPLAIN VERBOSE
+SELECT date FROM time_series2 WHERE timestampadd('MINUTE', date, -50) <= '2020-12-29 04:00:00';
+                                                          QUERY PLAN                                                           
+-------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..799.06 rows=853 width=8)
+   Output: date
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampadd('MINUTE', date, (-50)) <= TIMESTAMP('2020-12-29T04:00:00Z')))
+(3 rows)
+
+--Testcase 76:
+SELECT date FROM time_series2 WHERE timestampadd('MINUTE', date, -50) <= '2020-12-29 04:00:00';
+        date         
+---------------------
+ 2020-12-29 04:40:00
+ 2020-12-29 04:50:00
+(2 rows)
+
+--SECOND
+--Testcase 77:
+EXPLAIN VERBOSE
+SELECT date FROM time_series2 WHERE timestampadd('SECOND', date, 25) >= '2020-12-29 04:40:30';
+                                                         QUERY PLAN                                                         
+----------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..799.06 rows=853 width=8)
+   Output: date
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampadd('SECOND', date, 25) >= TIMESTAMP('2020-12-29T04:40:30Z')))
+(3 rows)
+
+--Testcase 78:
+SELECT date FROM time_series2 WHERE timestampadd('SECOND', date, 25) >= '2020-12-29 04:40:30';
+        date         
+---------------------
+ 2020-12-29 04:50:00
+ 2020-12-29 05:00:30
+(2 rows)
+
+--Testcase 79:
+EXPLAIN VERBOSE
+SELECT date FROM time_series2 WHERE timestampadd('SECOND', date, -50) <= '2020-12-29 04:00:00';
+                                                          QUERY PLAN                                                           
+-------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..799.06 rows=853 width=8)
+   Output: date
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampadd('SECOND', date, (-50)) <= TIMESTAMP('2020-12-29T04:00:00Z')))
+(3 rows)
+
+--Testcase 80:
+SELECT date FROM time_series2 WHERE timestampadd('SECOND', date, -30) = '2020-12-29 05:00:00';
+        date         
+---------------------
+ 2020-12-29 05:00:30
+(1 row)
+
+--MILLISECOND
+--Testcase 81:
+INSERT INTO time_series2 VALUES ('2020-12-29 05:10:00.120', '2020-12-29 05:10:00.563', '2020-01-05T20:30:30Z', 't', 0, 5, 30000000, 2000, 65.4, 2391.5, '7731b23fa1437ab784e3', ARRAY['aaa','bbb','ccc'],
+ARRAY['t'::boolean,'f'::boolean,'t'::boolean],ARRAY[1,2,3,4],ARRAY[1,2,3],ARRAY[444,333,222],ARRAY[44444,22222,45555],ARRAY[2.3,4.2,62.1],ARRAY[444.2,554.3,5432.5],
+ARRAY['2020-12-29 04:45:00'::timestamp,'2020-12-29 04:46:00'::timestamp]);
+--Testcase 82:
+EXPLAIN VERBOSE
+SELECT date FROM time_series2 WHERE timestampadd('MILLISECOND', date, 300) = '2020-12-29 05:10:00.420';
+                                                             QUERY PLAN                                                              
+-------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..782.26 rows=13 width=8)
+   Output: date
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampadd('MILLISECOND', date, 300) = TIMESTAMP('2020-12-29T05:10:00.420Z')))
+(3 rows)
+
+--Testcase 83:
+SELECT date FROM time_series2 WHERE timestampadd('MILLISECOND', date, 300) = '2020-12-29 05:10:00.420';
+          date          
+------------------------
+ 2020-12-29 05:10:00.12
+(1 row)
+
+--Testcase 84:
+EXPLAIN VERBOSE
+SELECT date FROM time_series2 WHERE timestampadd('MILLISECOND', date, -55) = '2020-12-29 05:10:00.065';
+                                                              QUERY PLAN                                                               
+---------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..782.26 rows=13 width=8)
+   Output: date
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampadd('MILLISECOND', date, (-55)) = TIMESTAMP('2020-12-29T05:10:00.065Z')))
+(3 rows)
+
+--Testcase 85:
+SELECT date FROM time_series2 WHERE timestampadd('MILLISECOND', date, -55) = '2020-12-29 05:10:00.065';
+          date          
+------------------------
+ 2020-12-29 05:10:00.12
+(1 row)
+
+--Input wrong unit
+--Testcase 86:
+EXPLAIN VERBOSE
+SELECT date FROM time_series2 WHERE timestampadd('MICROSECOND', date, -55) = '2020-12-29 05:10:00.065';
+                                                              QUERY PLAN                                                               
+---------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..782.26 rows=13 width=8)
+   Output: date
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampadd('MICROSECOND', date, (-55)) = TIMESTAMP('2020-12-29T05:10:00.065Z')))
+(3 rows)
+
+--timestampdiff
+--YEAR
+--Testcase 87:
+EXPLAIN VERBOSE
+SELECT date FROM time_series2 WHERE timestampdiff('YEAR', date, '2018-01-04 08:48:00') > 0;
+                                                       QUERY PLAN                                                        
+-------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..799.06 rows=853 width=8)
+   Output: date
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampdiff('YEAR', date, TIMESTAMP('2018-01-04T08:48:00Z')) > 0))
+(3 rows)
+
+--Testcase 88:
+SELECT date FROM time_series2 WHERE timestampdiff('YEAR', date, '2018-01-04 08:48:00') > 0;
+          date          
+------------------------
+ 2020-12-29 04:40:00
+ 2020-12-29 04:50:00
+ 2020-12-29 05:00:30
+ 2020-12-29 05:10:00.12
+(4 rows)
+
+--Testcase 89:
+EXPLAIN VERBOSE
+SELECT date2 FROM time_series2 WHERE timestampdiff('YEAR', '2015-07-15 08:48:00', date2) < 5;
+                                                        QUERY PLAN                                                        
+--------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..799.06 rows=853 width=8)
+   Output: date2
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampdiff('YEAR', TIMESTAMP('2015-07-15T08:48:00Z'), date2) < 5))
+(3 rows)
+
+--Testcase 90:
+SELECT date2 FROM time_series2 WHERE timestampdiff('YEAR', '2015-07-15 08:48:00', date2) < 5;
+          date2          
+-------------------------
+ 2020-03-17 04:40:00
+ 2020-12-11 02:30:30
+ 2020-12-29 05:10:00.563
+(3 rows)
+
+--Testcase 91:
+EXPLAIN VERBOSE
+SELECT date, date2 FROM time_series2 WHERE timestampdiff('YEAR', date, date2) > 10;
+                                          QUERY PLAN                                          
+----------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..661.26 rows=683 width=16)
+   Output: date, date2
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampdiff('YEAR', date, date2) > 10))
+(3 rows)
+
+--Testcase 92:
+SELECT date, date2 FROM time_series2 WHERE timestampdiff('YEAR', date, date2) > 10;
+        date         |        date2        
+---------------------+---------------------
+ 2020-12-29 04:40:00 | 2000-12-29 04:40:00
+(1 row)
+
+--MONTH
+--Testcase 93:
+EXPLAIN VERBOSE
+SELECT date FROM time_series2 WHERE timestampdiff('MONTH', date, '2020-11-04 08:48:00') = 1;
+                                                        QUERY PLAN                                                        
+--------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..782.26 rows=13 width=8)
+   Output: date
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampdiff('MONTH', date, TIMESTAMP('2020-11-04T08:48:00Z')) = 1))
+(3 rows)
+
+--Testcase 94:
+SELECT date FROM time_series2 WHERE timestampdiff('MONTH', date, '2020-11-04 08:48:00') = 1;
+          date          
+------------------------
+ 2020-12-29 04:40:00
+ 2020-12-29 04:50:00
+ 2020-12-29 05:00:30
+ 2020-12-29 05:10:00.12
+(4 rows)
+
+--Testcase 95:
+EXPLAIN VERBOSE
+SELECT date2 FROM time_series2 WHERE timestampdiff('YEAR', '2020-02-15 08:48:00', date2) < 5;
+                                                        QUERY PLAN                                                        
+--------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..799.06 rows=853 width=8)
+   Output: date2
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampdiff('YEAR', TIMESTAMP('2020-02-15T08:48:00Z'), date2) < 5))
+(3 rows)
+
+--Testcase 96:
+SELECT date2 FROM time_series2 WHERE timestampdiff('YEAR', '2020-02-15 08:48:00', date2) < 5;
+          date2          
+-------------------------
+ 2020-03-17 04:40:00
+ 2020-12-11 02:30:30
+ 2020-12-29 05:10:00.563
+(3 rows)
+
+--Testcase 97:
+EXPLAIN VERBOSE
+SELECT date, date2 FROM time_series2 WHERE timestampdiff('MONTH', date, date2) < 10;
+                                          QUERY PLAN                                           
+-----------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..661.26 rows=683 width=16)
+   Output: date, date2
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampdiff('MONTH', date, date2) < 10))
+(3 rows)
+
+--Testcase 98:
+SELECT date, date2 FROM time_series2 WHERE timestampdiff('MONTH', date, date2) < 10;
+          date          |          date2          
+------------------------+-------------------------
+ 2020-12-29 04:50:00    | 2020-03-17 04:40:00
+ 2020-12-29 05:00:30    | 2020-12-11 02:30:30
+ 2020-12-29 05:10:00.12 | 2020-12-29 05:10:00.563
+(3 rows)
+
+--DAY
+--Testcase 99:
+EXPLAIN VERBOSE
+SELECT date2 FROM time_series2 WHERE timestampdiff('DAY', date2, '2020-12-04 08:48:00') > 20;
+                                                        QUERY PLAN                                                        
+--------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..799.06 rows=853 width=8)
+   Output: date2
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampdiff('DAY', date2, TIMESTAMP('2020-12-04T08:48:00Z')) > 20))
+(3 rows)
+
+--Testcase 100:
+SELECT date2 FROM time_series2 WHERE timestampdiff('DAY', date2, '2020-12-04 08:48:00') > 20;
+          date2          
+-------------------------
+ 2020-12-29 05:10:00.563
+(1 row)
+
+--Testcase 101:
+EXPLAIN VERBOSE
+SELECT date2 FROM time_series2 WHERE timestampdiff('DAY', '2020-02-15 08:48:00', date2) < 5;
+                                                       QUERY PLAN                                                        
+-------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..799.06 rows=853 width=8)
+   Output: date2
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampdiff('DAY', TIMESTAMP('2020-02-15T08:48:00Z'), date2) < 5))
+(3 rows)
+
+--Testcase 102:
+SELECT date2 FROM time_series2 WHERE timestampdiff('DAY', '2020-02-15 08:48:00', date2) < 5;
+          date2          
+-------------------------
+ 2020-03-17 04:40:00
+ 2020-12-11 02:30:30
+ 2020-12-29 05:10:00.563
+(3 rows)
+
+--Testcase 103:
+EXPLAIN VERBOSE
+SELECT date, date2 FROM time_series2 WHERE timestampdiff('DAY', date, date2) > 10;
+                                         QUERY PLAN                                          
+---------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..661.26 rows=683 width=16)
+   Output: date, date2
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampdiff('DAY', date, date2) > 10))
+(3 rows)
+
+--Testcase 104:
+SELECT date, date2 FROM time_series2 WHERE timestampdiff('DAY', date, date2) > 10;
+        date         |        date2        
+---------------------+---------------------
+ 2020-12-29 04:40:00 | 2000-12-29 04:40:00
+ 2020-12-29 04:50:00 | 2020-03-17 04:40:00
+ 2020-12-29 05:00:30 | 2020-12-11 02:30:30
+(3 rows)
+
+--HOUR
+--Testcase 105:
+EXPLAIN VERBOSE
+SELECT date FROM time_series2 WHERE timestampdiff('HOUR', date, '2020-12-29 07:40:00') < 0;
+                                                       QUERY PLAN                                                        
+-------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..799.06 rows=853 width=8)
+   Output: date
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampdiff('HOUR', date, TIMESTAMP('2020-12-29T07:40:00Z')) < 0))
+(3 rows)
+
+--Testcase 106:
+SELECT date FROM time_series2 WHERE timestampdiff('HOUR', date, '2020-12-29 07:40:00') < 0;
+          date          
+------------------------
+ 2020-12-29 04:40:00
+ 2020-12-29 04:50:00
+ 2020-12-29 05:00:30
+ 2020-12-29 05:10:00.12
+(4 rows)
+
+--Testcase 107:
+EXPLAIN VERBOSE
+SELECT date2 FROM time_series2 WHERE timestampdiff('HOUR', '2020-12-15 08:48:00', date2) > 3.5;
+                                                         QUERY PLAN                                                         
+----------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..799.06 rows=853 width=8)
+   Output: date2
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampdiff('HOUR', TIMESTAMP('2020-12-15T08:48:00Z'), date2) > 3.5))
+(3 rows)
+
+--Testcase 108:
+SELECT date2 FROM time_series2 WHERE timestampdiff('HOUR', '2020-12-15 08:48:00', date2) > 3.5;
+        date2        
+---------------------
+ 2000-12-29 04:40:00
+ 2020-03-17 04:40:00
+ 2020-12-11 02:30:30
+(3 rows)
+
+--Testcase 109:
+EXPLAIN VERBOSE
+SELECT date, date2 FROM time_series2 WHERE timestampdiff('HOUR', date, date2) > 10;
+                                          QUERY PLAN                                          
+----------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..661.26 rows=683 width=16)
+   Output: date, date2
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampdiff('HOUR', date, date2) > 10))
+(3 rows)
+
+--Testcase 110:
+SELECT date, date2 FROM time_series2 WHERE timestampdiff('HOUR', date, date2) > 10;
+        date         |        date2        
+---------------------+---------------------
+ 2020-12-29 04:40:00 | 2000-12-29 04:40:00
+ 2020-12-29 04:50:00 | 2020-03-17 04:40:00
+ 2020-12-29 05:00:30 | 2020-12-11 02:30:30
+(3 rows)
+
+--MINUTE
+--Testcase 111:
+EXPLAIN VERBOSE
+SELECT date2 FROM time_series2 WHERE timestampdiff('MINUTE', date2, '2020-12-04 08:48:00') > 20;
+                                                         QUERY PLAN                                                          
+-----------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..799.06 rows=853 width=8)
+   Output: date2
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampdiff('MINUTE', date2, TIMESTAMP('2020-12-04T08:48:00Z')) > 20))
+(3 rows)
+
+--Testcase 112:
+SELECT date2 FROM time_series2 WHERE timestampdiff('MINUTE', date2, '2020-12-04 08:48:00') > 20;
+          date2          
+-------------------------
+ 2020-12-11 02:30:30
+ 2020-12-29 05:10:00.563
+(2 rows)
+
+--Testcase 113:
+EXPLAIN VERBOSE
+SELECT date2 FROM time_series2 WHERE timestampdiff('MINUTE', '2020-02-15 08:48:00', date2) < 5;
+                                                         QUERY PLAN                                                         
+----------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..799.06 rows=853 width=8)
+   Output: date2
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampdiff('MINUTE', TIMESTAMP('2020-02-15T08:48:00Z'), date2) < 5))
+(3 rows)
+
+--Testcase 114:
+SELECT date2 FROM time_series2 WHERE timestampdiff('MINUTE', '2020-02-15 08:48:00', date2) < 5;
+          date2          
+-------------------------
+ 2020-03-17 04:40:00
+ 2020-12-11 02:30:30
+ 2020-12-29 05:10:00.563
+(3 rows)
+
+--Testcase 115:
+EXPLAIN VERBOSE
+SELECT date, date2 FROM time_series2 WHERE timestampdiff('MINUTE', date, date2) > 10;
+                                           QUERY PLAN                                           
+------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..661.26 rows=683 width=16)
+   Output: date, date2
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampdiff('MINUTE', date, date2) > 10))
+(3 rows)
+
+--Testcase 116:
+SELECT date, date2 FROM time_series2 WHERE timestampdiff('MINUTE', date, date2) > 10;
+        date         |        date2        
+---------------------+---------------------
+ 2020-12-29 04:40:00 | 2000-12-29 04:40:00
+ 2020-12-29 04:50:00 | 2020-03-17 04:40:00
+ 2020-12-29 05:00:30 | 2020-12-11 02:30:30
+(3 rows)
+
+--SECOND
+--Testcase 117:
+EXPLAIN VERBOSE
+SELECT date2 FROM time_series2 WHERE timestampdiff('SECOND', date2, '2020-12-04 08:48:00') > 1000;
+                                                          QUERY PLAN                                                           
+-------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..799.06 rows=853 width=8)
+   Output: date2
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampdiff('SECOND', date2, TIMESTAMP('2020-12-04T08:48:00Z')) > 1000))
+(3 rows)
+
+--Testcase 118:
+SELECT date2 FROM time_series2 WHERE timestampdiff('SECOND', date2, '2020-12-04 08:48:00') > 1000;
+          date2          
+-------------------------
+ 2020-12-11 02:30:30
+ 2020-12-29 05:10:00.563
+(2 rows)
+
+--Testcase 119:
+EXPLAIN VERBOSE
+SELECT date2 FROM time_series2 WHERE timestampdiff('SECOND', '2020-03-17 04:50:00', date2) < 100;
+                                                          QUERY PLAN                                                          
+------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..799.06 rows=853 width=8)
+   Output: date2
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampdiff('SECOND', TIMESTAMP('2020-03-17T04:50:00Z'), date2) < 100))
+(3 rows)
+
+--Testcase 120:
+SELECT date2 FROM time_series2 WHERE timestampdiff('SECOND', '2020-03-17 04:50:00', date2) < 100;
+          date2          
+-------------------------
+ 2020-12-11 02:30:30
+ 2020-12-29 05:10:00.563
+(2 rows)
+
+--Testcase 121:
+EXPLAIN VERBOSE
+SELECT date, date2 FROM time_series2 WHERE timestampdiff('SECOND', date, date2) > 1600000;
+                                             QUERY PLAN                                              
+-----------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..661.26 rows=683 width=16)
+   Output: date, date2
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampdiff('SECOND', date, date2) > 1600000))
+(3 rows)
+
+--Testcase 122:
+SELECT date, date2 FROM time_series2 WHERE timestampdiff('SECOND', date, date2) > 1600000;
+        date         |        date2        
+---------------------+---------------------
+ 2020-12-29 04:40:00 | 2000-12-29 04:40:00
+ 2020-12-29 04:50:00 | 2020-03-17 04:40:00
+(2 rows)
+
+--MILLISECOND
+--Testcase 123:
+EXPLAIN VERBOSE
+SELECT date2 FROM time_series2 WHERE timestampdiff('MILLISECOND', date2, '2020-12-04 08:48:00') > 200;
+                                                            QUERY PLAN                                                             
+-----------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..799.06 rows=853 width=8)
+   Output: date2
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampdiff('MILLISECOND', date2, TIMESTAMP('2020-12-04T08:48:00Z')) > 200))
+(3 rows)
+
+--Testcase 124:
+SELECT date2 FROM time_series2 WHERE timestampdiff('MILLISECOND', date2, '2020-12-04 08:48:00') > 200;
+          date2          
+-------------------------
+ 2020-12-11 02:30:30
+ 2020-12-29 05:10:00.563
+(2 rows)
+
+--Testcase 125:
+EXPLAIN VERBOSE
+SELECT date2 FROM time_series2 WHERE timestampdiff('MILLISECOND', '2020-03-17 08:48:00', date2) < 0;
+                                                           QUERY PLAN                                                            
+---------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..799.06 rows=853 width=8)
+   Output: date2
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampdiff('MILLISECOND', TIMESTAMP('2020-03-17T08:48:00Z'), date2) < 0))
+(3 rows)
+
+--Testcase 126:
+SELECT date2 FROM time_series2 WHERE timestampdiff('MILLISECOND', '2020-03-17 08:48:00', date2) < 0;
+          date2          
+-------------------------
+ 2020-12-11 02:30:30
+ 2020-12-29 05:10:00.563
+(2 rows)
+
+--Testcase 127:
+EXPLAIN VERBOSE
+SELECT date, date2 FROM time_series2 WHERE timestampdiff('MILLISECOND', date, date2) = -443;
+                                               QUERY PLAN                                                
+---------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..647.80 rows=10 width=16)
+   Output: date, date2
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampdiff('MILLISECOND', date, date2) = (-443)))
+(3 rows)
+
+--Testcase 128:
+SELECT date, date2 FROM time_series2 WHERE timestampdiff('MILLISECOND', date, date2) = -443;
+          date          |          date2          
+------------------------+-------------------------
+ 2020-12-29 05:10:00.12 | 2020-12-29 05:10:00.563
+(1 row)
+
+--Input wrong unit
+--Testcase 129:
+EXPLAIN VERBOSE
+SELECT date2 FROM time_series2 WHERE timestampdiff('MICROSECOND', date2, '2020-12-04 08:48:00') > 20;
+                                                            QUERY PLAN                                                            
+----------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..799.06 rows=853 width=8)
+   Output: date2
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((timestampdiff('MICROSECOND', date2, TIMESTAMP('2020-12-04T08:48:00Z')) > 20))
+(3 rows)
+
+--Testcase 130:
+EXPLAIN VERBOSE
+SELECT date2 FROM time_series2 WHERE timestampdiff('DECADE', '2020-02-15 08:48:00', date2) < 5;
+ERROR:  invalid input value for enum time_unit: "DECADE"
+LINE 2: ...ELECT date2 FROM time_series2 WHERE timestampdiff('DECADE', ...
+                                                             ^
+--Testcase 131:
+EXPLAIN VERBOSE
+SELECT date, date2 FROM time_series2 WHERE timestampdiff('NANOSECOND', date, date2) > 10;
+ERROR:  invalid input value for enum time_unit: "NANOSECOND"
+LINE 2: ...date, date2 FROM time_series2 WHERE timestampdiff('NANOSECON...
+                                                             ^
+--to_timestamp_ms
+--Normal case
+--Testcase 132:
+EXPLAIN VERBOSE
+SELECT date FROM time_series2 WHERE to_timestamp_ms(intcol) > '1970-01-01 1:00:00';
+                                                     QUERY PLAN                                                     
+--------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..805.46 rows=853 width=8)
+   Output: date
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((to_timestamp_ms((intcol)) > TIMESTAMP('1970-01-01T01:00:00Z')))
+(3 rows)
+
+--Testcase 133:
+SELECT date FROM time_series2 WHERE to_timestamp_ms(intcol) > '1970-01-01 1:00:00';
+          date          
+------------------------
+ 2020-12-29 05:10:00.12
+(1 row)
+
+--Return error if column contains -1 value
+--Testcase 134:
+INSERT INTO time_series2 VALUES ('2020-12-29 05:20:00.120', '2020-12-29 05:10:00.563', '2020-01-05T20:30:30Z', 't', 0, 5, -1, 2000, 65.4, 2391.5, '7731b23fa1437ab784e3', ARRAY['aaa','bbb','ccc'],
+ARRAY['t'::boolean,'f'::boolean,'t'::boolean],ARRAY[1,2,3,4],ARRAY[1,2,3],ARRAY[444,333,222],ARRAY[44444,22222,45555],ARRAY[2.3,4.2,62.1],ARRAY[444.2,554.3,5432.5],
+ARRAY['2020-12-29 04:45:00'::timestamp,'2020-12-29 04:46:00'::timestamp]);
+--Testcase 135:
+SELECT date FROM time_series2 WHERE to_timestamp_ms(intcol) > '1970-01-01 1:00:00';
+ERROR:  GridDB-API is failed by 152012
+  [152012:TQ_CONSTRAINT_INVALID_ARGUMENT_RANGE] Argument 1 is out of timestamp range (address=127.0.0.1:10001, partition=31)
+  [152012:TQ_CONSTRAINT_INVALID_ARGUMENT_RANGE] Argument 1 is out of timestamp range
+
+--to_epoch_ms
+--Testcase 136:
+EXPLAIN VERBOSE
+SELECT date FROM time_series2 WHERE intcol < to_epoch_ms(date);
+                                   QUERY PLAN                                    
+---------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..799.06 rows=853 width=8)
+   Output: date
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((intcol < to_epoch_ms(date)))
+(3 rows)
+
+--Testcase 137:
+SELECT date FROM time_series2 WHERE intcol < to_epoch_ms(date);
+          date          
+------------------------
+ 2020-12-29 04:40:00
+ 2020-12-29 04:50:00
+ 2020-12-29 05:00:30
+ 2020-12-29 05:10:00.12
+ 2020-12-29 05:20:00.12
+(5 rows)
+
+--Testcase 138:
+EXPLAIN VERBOSE
+SELECT date2 FROM time_series2 WHERE to_epoch_ms(date2) < 1000000000000;
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..799.06 rows=853 width=8)
+   Output: date2
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((to_epoch_ms(date2) < 1000000000000))
+(3 rows)
+
+--
+--Test for unique functions of GridDB in WHERE clause: array functions
+--
+--array_length
+--Testcase 139:
+EXPLAIN VERBOSE
+SELECT boolarray FROM time_series2 WHERE array_length(boolarray) = 3;
+                                    QUERY PLAN                                    
+----------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..493.92 rows=7 width=32)
+   Output: boolarray
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((array_length(boolarray) = 3))
+(3 rows)
+
+--Testcase 140:
+SELECT boolarray FROM time_series2 WHERE array_length(boolarray) = 3;
+ boolarray 
+-----------
+ {t,f,t}
+ {f,f,t}
+ {t,f,t}
+ {t,f,t}
+(4 rows)
+
+--Testcase 141:
+EXPLAIN VERBOSE
+SELECT stringarray FROM time_series2 WHERE array_length(stringarray) = 3;
+                                     QUERY PLAN                                     
+------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..493.92 rows=7 width=32)
+   Output: stringarray
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((array_length(stringarray) = 3))
+(3 rows)
+
+--Testcase 142:
+SELECT stringarray FROM time_series2 WHERE array_length(stringarray) = 3;
+                           stringarray                            
+------------------------------------------------------------------
+ {aaa,bbb,ccc}
+ {abcdef,ghijkl,mnopqs}
+ {7777a32ebea96a918b0f,40ee382083b987e94dd1,d417cf517eca8c2a709a}
+ {aaa,bbb,ccc}
+ {aaa,bbb,ccc}
+(5 rows)
+
+--Testcase 143:
+EXPLAIN VERBOSE
+SELECT bytearray, shortarray FROM time_series2 WHERE array_length(bytearray) > array_length(shortarray);
+                                               QUERY PLAN                                                
+---------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..592.83 rows=310 width=64)
+   Output: bytearray, shortarray
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((array_length(bytearray) > array_length(shortarray)))
+(3 rows)
+
+--Testcase 144:
+SELECT bytearray, shortarray FROM time_series2 WHERE array_length(bytearray) > array_length(shortarray);
+    bytearray    |   shortarray    
+-----------------+-----------------
+ {1,2,3,4}       | {1,2,3}
+ {12,29,1,14,16} | {255,124,77,51}
+ {1,2,3,4}       | {1,2,3}
+ {1,2,3,4}       | {1,2,3}
+(4 rows)
+
+--Testcase 145:
+EXPLAIN VERBOSE
+SELECT integerarray, longarray FROM time_series2 WHERE array_length(integerarray) = array_length(longarray);
+                                                QUERY PLAN                                                 
+-----------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..586.72 rows=5 width=64)
+   Output: integerarray, longarray
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((array_length(integerarray) = array_length(longarray)))
+(3 rows)
+
+--Testcase 146:
+SELECT integerarray, longarray FROM time_series2 WHERE array_length(integerarray) = array_length(longarray);
+   integerarray   |      longarray      
+------------------+---------------------
+ {444,333,222}    | {44444,22222,45555}
+ {4445,33,2221}   | {25413,77548,36251}
+ {2697,2641,7777} | {12475,12346,12654}
+ {444,333,222}    | {44444,22222,45555}
+ {444,333,222}    | {44444,22222,45555}
+(5 rows)
+
+--Testcase 147:
+EXPLAIN VERBOSE
+SELECT floatarray, doublearray FROM time_series2 WHERE array_length(floatarray) - array_length(doublearray) = 0;
+                                                   QUERY PLAN                                                    
+-----------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..589.05 rows=5 width=64)
+   Output: floatarray, doublearray
+   Remote SQL: SELECT  *  FROM time_series2 WHERE (((array_length(floatarray) - array_length(doublearray)) = 0))
+(3 rows)
+
+--Testcase 148:
+SELECT floatarray, doublearray FROM time_series2 WHERE array_length(floatarray) - array_length(doublearray) = 0;
+     floatarray     |        doublearray         
+--------------------+----------------------------
+ {2.3,4.2,62.1}     | {444.2,554.3,5432.5}
+ {4.2,24.54,70.55}  | {4431.63,-200.14,3265.1}
+ {22.5,12.11,23.54} | {3567.21,2124.23,-1254.11}
+ {2.3,4.2,62.1}     | {444.2,554.3,5432.5}
+ {2.3,4.2,62.1}     | {444.2,554.3,5432.5}
+(5 rows)
+
+--Testcase 149:
+EXPLAIN VERBOSE
+SELECT timestamparray FROM time_series2 WHERE array_length(timestamparray) < 3;
+                                      QUERY PLAN                                       
+---------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..503.52 rows=487 width=32)
+   Output: timestamparray
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((array_length(timestamparray) < 3))
+(3 rows)
+
+--Testcase 150:
+SELECT timestamparray FROM time_series2 WHERE array_length(timestamparray) < 3;
+                timestamparray                 
+-----------------------------------------------
+ {"2020-12-29 04:45:00","2020-12-29 04:46:00"}
+ {"2020-12-29 04:45:00","2020-12-29 04:46:00"}
+ {"2020-12-29 04:45:00","2020-12-29 04:46:00"}
+(3 rows)
+
+--element
+--Normal case
+--Testcase 151:
+EXPLAIN VERBOSE
+SELECT boolarray FROM time_series2 WHERE element(1, boolarray) = 'f';
+                                   QUERY PLAN                                   
+--------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..509.62 rows=975 width=32)
+   Output: boolarray
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((NOT element(1, boolarray)))
+(3 rows)
+
+--Testcase 152:
+SELECT boolarray FROM time_series2 WHERE element(1, boolarray) = 'f';
+ boolarray 
+-----------
+ {t,f,t}
+ {f,f,t}
+ {t,f,t}
+ {t,f,t}
+(4 rows)
+
+--Testcase 153:
+EXPLAIN VERBOSE
+SELECT stringarray FROM time_series2 WHERE element(1, stringarray) != 'bbb';
+                                      QUERY PLAN                                       
+---------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..522.88 rows=1455 width=32)
+   Output: stringarray
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((element(1, stringarray) <> 'bbb'))
+(3 rows)
+
+--Testcase 154:
+SELECT stringarray FROM time_series2 WHERE element(1, stringarray) != 'bbb';
+                           stringarray                            
+------------------------------------------------------------------
+ {abcdef,ghijkl,mnopqs}
+ {7777a32ebea96a918b0f,40ee382083b987e94dd1,d417cf517eca8c2a709a}
+(2 rows)
+
+--Testcase 155:
+EXPLAIN VERBOSE
+SELECT bytearray, shortarray FROM time_series2 WHERE element(0, bytearray) = element(0, shortarray);
+                                             QUERY PLAN                                              
+-----------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..586.72 rows=5 width=64)
+   Output: bytearray, shortarray
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((element(0, bytearray) = element(0, shortarray)))
+(3 rows)
+
+--Testcase 156:
+SELECT bytearray, shortarray FROM time_series2 WHERE element(0, bytearray) = element(0, shortarray);
+ bytearray | shortarray 
+-----------+------------
+ {1,2,3,4} | {1,2,3}
+ {1,2,3,4} | {1,2,3}
+ {1,2,3,4} | {1,2,3}
+(3 rows)
+
+--Testcase 157:
+EXPLAIN VERBOSE
+SELECT integerarray, longarray FROM time_series2 WHERE element(0, integerarray)*100+44 = element(0,longarray);
+                                                      QUERY PLAN                                                      
+----------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..591.38 rows=5 width=64)
+   Output: integerarray, longarray
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((((element(0, integerarray) * 100) + 44) = element(0, longarray)))
+(3 rows)
+
+--Testcase 158:
+SELECT integerarray, longarray FROM time_series2 WHERE element(0, integerarray)*100+44 = element(0,longarray);
+ integerarray  |      longarray      
+---------------+---------------------
+ {444,333,222} | {44444,22222,45555}
+ {444,333,222} | {44444,22222,45555}
+ {444,333,222} | {44444,22222,45555}
+(3 rows)
+
+--Testcase 159:
+EXPLAIN VERBOSE
+SELECT floatarray, doublearray FROM time_series2 WHERE element(2, floatarray)*10 < element(0,doublearray);
+                                                  QUERY PLAN                                                  
+--------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..595.15 rows=310 width=64)
+   Output: floatarray, doublearray
+   Remote SQL: SELECT  *  FROM time_series2 WHERE (((element(2, floatarray) * 10) < element(0, doublearray)))
+(3 rows)
+
+--Testcase 160:
+SELECT floatarray, doublearray FROM time_series2 WHERE element(2, floatarray)*10 < element(0,doublearray);
+     floatarray     |        doublearray         
+--------------------+----------------------------
+ {4.2,24.54,70.55}  | {4431.63,-200.14,3265.1}
+ {22.5,12.11,23.54} | {3567.21,2124.23,-1254.11}
+(2 rows)
+
+--Testcase 161:
+EXPLAIN VERBOSE
+SELECT timestamparray FROM time_series2 WHERE element(1,timestamparray) > '2020-12-29 04:00:00';
+                                                     QUERY PLAN                                                      
+---------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..503.52 rows=487 width=32)
+   Output: timestamparray
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((element(1, timestamparray) > TIMESTAMP('2020-12-29T04:00:00Z')))
+(3 rows)
+
+--Testcase 162:
+SELECT timestamparray FROM time_series2 WHERE element(1,timestamparray) > '2020-12-29 04:00:00';
+                           timestamparray                            
+---------------------------------------------------------------------
+ {"2020-12-29 04:45:00","2020-12-29 04:46:00"}
+ {"2020-12-31 14:00:00","2020-12-31 14:45:00","2020-01-01 15:00:00"}
+ {"2020-12-29 04:45:00","2020-12-29 04:46:00"}
+ {"2020-12-29 04:45:00","2020-12-29 04:46:00"}
+(4 rows)
+
+--Return error when getting non-existent element
+--Testcase 163:
+EXPLAIN VERBOSE
+SELECT timestamparray FROM time_series2 WHERE element(2,timestamparray) > '2020-12-29 04:00:00';
+                                                     QUERY PLAN                                                      
+---------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..503.52 rows=487 width=32)
+   Output: timestamparray
+   Remote SQL: SELECT  *  FROM time_series2 WHERE ((element(2, timestamparray) > TIMESTAMP('2020-12-29T04:00:00Z')))
+(3 rows)
+
+--Testcase 164:
+SELECT timestamparray FROM time_series2 WHERE element(2,timestamparray) > '2020-12-29 04:00:00';
+ERROR:  GridDB-API is failed by 152009
+  [152009:TQ_CONSTRAINT_ARRAY_OUT_OF_RANGE] Specified index is out of range. (address=127.0.0.1:10001, partition=31)
+  [152009:TQ_CONSTRAINT_ARRAY_OUT_OF_RANGE] Specified index is out of range.
+
+--
+--if user selects non-unique functions which Griddb only supports in WHERE clause => do not push down
+--if user selects unique functions which Griddb only supports in WHERE clause => still push down, return error of Griddb
+--
+--Testcase 165:
+EXPLAIN VERBOSE
+SELECT char_length(name) FROM student;
+                               QUERY PLAN                                
+-------------------------------------------------------------------------
+ Foreign Scan on public.student  (cost=100.00..157.52 rows=1462 width=4)
+   Output: char_length(name)
+   Remote SQL: SELECT  *  FROM student
+(3 rows)
+
+--Testcase 166:
+SELECT char_length(name) FROM student;
+ char_length 
+-------------
+           4
+           5
+           6
+           3
+(4 rows)
+
+--Testcase 167:
+EXPLAIN VERBOSE
+SELECT concat(name,'abc') FROM student;
+                                QUERY PLAN                                
+--------------------------------------------------------------------------
+ Foreign Scan on public.student  (cost=100.00..157.52 rows=1462 width=32)
+   Output: concat(name, 'abc')
+   Remote SQL: SELECT  *  FROM student
+(3 rows)
+
+--Testcase 168:
+SELECT concat(name,'abc') FROM student;
+  concat   
+-----------
+ fredabc
+ larryabc
+ GEORGEabc
+ BOBabc
+(4 rows)
+
+--Testcase 169:
+EXPLAIN VERBOSE
+SELECT substr(name,2,3) FROM student;
+                                QUERY PLAN                                
+--------------------------------------------------------------------------
+ Foreign Scan on public.student  (cost=100.00..157.52 rows=1462 width=32)
+   Output: substr(name, 2, 3)
+   Remote SQL: SELECT  *  FROM student
+(3 rows)
+
+--Testcase 170:
+SELECT substr(name,2,3) FROM student;
+ substr 
+--------
+ red
+ arr
+ EOR
+ OB
+(4 rows)
+
+--Testcase 171:
+EXPLAIN VERBOSE
+SELECT element(1, timestamparray) FROM time_series2;
+                                  QUERY PLAN                                  
+------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..519.36 rows=1462 width=8)
+   Output: element(1, timestamparray)
+   Remote SQL: SELECT  *  FROM time_series2
+(3 rows)
+
+--Testcase 172:
+SELECT element(1, timestamparray) FROM time_series2;
+ERROR:  stub element(integer, anyarray) is called
+CONTEXT:  PL/pgSQL function element(integer,anyarray) line 3 at RAISE
+--Testcase 173:
+EXPLAIN VERBOSE
+SELECT upper(name) FROM student;
+                                QUERY PLAN                                
+--------------------------------------------------------------------------
+ Foreign Scan on public.student  (cost=100.00..157.52 rows=1462 width=32)
+   Output: upper(name)
+   Remote SQL: SELECT  *  FROM student
+(3 rows)
+
+--Testcase 174:
+SELECT upper(name) FROM student;
+ upper  
+--------
+ FRED
+ LARRY
+ GEORGE
+ BOB
+(4 rows)
+
+--Testcase 175:
+EXPLAIN VERBOSE
+SELECT lower(name) FROM student;
+                                QUERY PLAN                                
+--------------------------------------------------------------------------
+ Foreign Scan on public.student  (cost=100.00..157.52 rows=1462 width=32)
+   Output: lower(name)
+   Remote SQL: SELECT  *  FROM student
+(3 rows)
+
+--Testcase 176:
+SELECT lower(name) FROM student;
+ lower  
+--------
+ fred
+ larry
+ george
+ bob
+(4 rows)
+
+--Testcase 177:
+EXPLAIN VERBOSE
+SELECT round(gpa) FROM student;
+                               QUERY PLAN                                
+-------------------------------------------------------------------------
+ Foreign Scan on public.student  (cost=100.00..193.20 rows=2560 width=8)
+   Output: round(gpa)
+   Remote SQL: SELECT  *  FROM student
+(3 rows)
+
+--Testcase 178:
+SELECT round(gpa) FROM student;
+ round 
+-------
+     4
+     3
+     4
+     2
+(4 rows)
+
+--Testcase 179:
+EXPLAIN VERBOSE
+SELECT floor(gpa) FROM student;
+                               QUERY PLAN                                
+-------------------------------------------------------------------------
+ Foreign Scan on public.student  (cost=100.00..193.20 rows=2560 width=8)
+   Output: floor(gpa)
+   Remote SQL: SELECT  *  FROM student
+(3 rows)
+
+--Testcase 180:
+SELECT floor(gpa) FROM student;
+ floor 
+-------
+     3
+     3
+     3
+     2
+(4 rows)
+
+--Testcase 181:
+EXPLAIN VERBOSE
+SELECT ceiling(gpa) FROM student;
+                               QUERY PLAN                                
+-------------------------------------------------------------------------
+ Foreign Scan on public.student  (cost=100.00..193.20 rows=2560 width=8)
+   Output: ceiling(gpa)
+   Remote SQL: SELECT  *  FROM student
+(3 rows)
+
+--Testcase 182:
+SELECT ceiling(gpa) FROM student;
+ ceiling 
+---------
+       4
+       4
+       4
+       3
+(4 rows)
+
+--Testcase 183:
+EXPLAIN VERBOSE
+SELECT griddb_timestamp(strcol) FROM time_series2;
+                                  QUERY PLAN                                  
+------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..519.36 rows=1462 width=8)
+   Output: griddb_timestamp(strcol)
+   Remote SQL: SELECT  *  FROM time_series2
+(3 rows)
+
+--Testcase 184:
+SELECT griddb_timestamp(strcol) FROM time_series2;
+ERROR:  stub griddb_timestamp(text) is called
+CONTEXT:  PL/pgSQL function griddb_timestamp(text) line 3 at RAISE
+--Testcase 185:
+EXPLAIN VERBOSE
+SELECT timestampadd('YEAR', date, -1) FROM time_series2;
+                                  QUERY PLAN                                  
+------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..826.80 rows=2560 width=8)
+   Output: timestampadd('YEAR'::time_unit, date, '-1'::integer)
+   Remote SQL: SELECT  *  FROM time_series2
+(3 rows)
+
+--Testcase 186:
+SELECT timestampadd('YEAR', date, -1) FROM time_series2;
+ERROR:  stub timestampadd(time_unit, timestamp, integer) is called
+CONTEXT:  PL/pgSQL function timestampadd(time_unit,timestamp without time zone,integer) line 3 at RAISE
+--Testcase 187:
+EXPLAIN VERBOSE
+SELECT timestampdiff('YEAR', date, '2018-01-04 08:48:00') FROM time_series2;
+                                              QUERY PLAN                                              
+------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..826.80 rows=2560 width=8)
+   Output: timestampdiff('YEAR'::time_unit, date, '2018-01-04 08:48:00'::timestamp without time zone)
+   Remote SQL: SELECT  *  FROM time_series2
+(3 rows)
+
+--Testcase 188:
+SELECT timestampdiff('YEAR', date, '2018-01-04 08:48:00') FROM time_series2;
+ERROR:  stub timestampdiff(time_unit, timestamp, timestamp) is called
+CONTEXT:  PL/pgSQL function timestampdiff(time_unit,timestamp without time zone,timestamp without time zone) line 3 at RAISE
+--Testcase 189:
+EXPLAIN VERBOSE
+SELECT to_timestamp_ms(intcol) FROM time_series2;
+                                  QUERY PLAN                                  
+------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..936.31 rows=2925 width=8)
+   Output: to_timestamp_ms((intcol)::bigint)
+   Remote SQL: SELECT  *  FROM time_series2
+(3 rows)
+
+--Testcase 190:
+SELECT to_timestamp_ms(intcol) FROM time_series2;
+ERROR:  stub to_timestamp_ms(bigint) is called
+CONTEXT:  PL/pgSQL function to_timestamp_ms(bigint) line 3 at RAISE
+--Testcase 191:
+EXPLAIN VERBOSE
+SELECT to_epoch_ms(date) FROM time_series2;
+                                  QUERY PLAN                                  
+------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..826.80 rows=2560 width=8)
+   Output: to_epoch_ms(date)
+   Remote SQL: SELECT  *  FROM time_series2
+(3 rows)
+
+--Testcase 192:
+SELECT to_epoch_ms(date) FROM time_series2;
+ERROR:  stub to_epoch_ms(timestamp) is called
+CONTEXT:  PL/pgSQL function to_epoch_ms(timestamp without time zone) line 3 at RAISE
+--Testcase 193:
+EXPLAIN VERBOSE
+SELECT array_length(boolarray) FROM time_series2;
+                                  QUERY PLAN                                  
+------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..519.36 rows=1462 width=4)
+   Output: array_length(boolarray)
+   Remote SQL: SELECT  *  FROM time_series2
+(3 rows)
+
+--Testcase 194:
+SELECT array_length(boolarray) FROM time_series2;
+ERROR:  stub array_length(anyarray) is called
+CONTEXT:  PL/pgSQL function array_length(anyarray) line 3 at RAISE
+--Testcase 195:
+EXPLAIN VERBOSE
+SELECT element(1, stringarray) FROM time_series2;
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..519.36 rows=1462 width=32)
+   Output: element(1, stringarray)
+   Remote SQL: SELECT  *  FROM time_series2
+(3 rows)
+
+--Testcase 196:
+SELECT element(1, stringarray) FROM time_series2;
+ERROR:  stub element(integer, anyarray) is called
+CONTEXT:  PL/pgSQL function element(integer,anyarray) line 3 at RAISE
+--
+--Test for unique functions of GridDB in SELECT clause: time-series functions
+--
+--time_next
+--specified time exist => return that row
+--Testcase 197:
+EXPLAIN VERBOSE
+SELECT time_next('2018-12-01 10:00:00') FROM time_series;
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..1065.64 rows=3413 width=32)
+   Output: time_next('2018-12-01 10:00:00'::timestamp without time zone)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 198:
+SELECT time_next('2018-12-01 10:00:00') FROM time_series;
+ERROR:  stub time_next(timestamp) is called
+CONTEXT:  PL/pgSQL function time_next(timestamp without time zone) line 3 at RAISE
+--specified time does not exist => return the row whose time  is immediately after the specified time
+--Testcase 199:
+EXPLAIN VERBOSE
+SELECT time_next('2018-12-01 10:05:00') FROM time_series;
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..1065.64 rows=3413 width=32)
+   Output: time_next('2018-12-01 10:05:00'::timestamp without time zone)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 200:
+SELECT time_next('2018-12-01 10:05:00') FROM time_series;
+ERROR:  stub time_next(timestamp) is called
+CONTEXT:  PL/pgSQL function time_next(timestamp without time zone) line 3 at RAISE
+--specified time does not exist, there is no time after the specified time => return no row
+--Testcase 201:
+EXPLAIN VERBOSE
+SELECT time_next('2018-12-01 10:45:00') FROM time_series;
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..1065.64 rows=3413 width=32)
+   Output: time_next('2018-12-01 10:45:00'::timestamp without time zone)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 202:
+SELECT time_next('2018-12-01 10:45:00') FROM time_series;
+ERROR:  stub time_next(timestamp) is called
+CONTEXT:  PL/pgSQL function time_next(timestamp without time zone) line 3 at RAISE
+--time_next_only
+--even though specified time exist, still return the row whose time is immediately after the specified time
+--Testcase 203:
+EXPLAIN VERBOSE
+SELECT time_next_only('2018-12-01 10:00:00') FROM time_series;
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..1065.64 rows=3413 width=32)
+   Output: time_next_only('2018-12-01 10:00:00'::timestamp without time zone)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 204:
+SELECT time_next_only('2018-12-01 10:00:00') FROM time_series;
+ERROR:  stub time_next_only(timestamp) is called
+CONTEXT:  PL/pgSQL function time_next_only(timestamp without time zone) line 3 at RAISE
+--specified time does not exist => return the row whose time  is immediately after the specified time
+--Testcase 205:
+EXPLAIN VERBOSE
+SELECT time_next_only('2018-12-01 10:05:00') FROM time_series;
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..1065.64 rows=3413 width=32)
+   Output: time_next_only('2018-12-01 10:05:00'::timestamp without time zone)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 206:
+SELECT time_next_only('2018-12-01 10:05:00') FROM time_series;
+ERROR:  stub time_next_only(timestamp) is called
+CONTEXT:  PL/pgSQL function time_next_only(timestamp without time zone) line 3 at RAISE
+--there is no time after the specified time => return no row
+--Testcase 207:
+EXPLAIN VERBOSE
+SELECT time_next_only('2018-12-01 10:45:00') FROM time_series;
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..1065.64 rows=3413 width=32)
+   Output: time_next_only('2018-12-01 10:45:00'::timestamp without time zone)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 208:
+SELECT time_next_only('2018-12-01 10:45:00') FROM time_series;
+ERROR:  stub time_next_only(timestamp) is called
+CONTEXT:  PL/pgSQL function time_next_only(timestamp without time zone) line 3 at RAISE
+--time_prev
+--specified time exist => return that row
+--Testcase 209:
+EXPLAIN VERBOSE
+SELECT time_prev('2018-12-01 10:10:00') FROM time_series;
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..1065.64 rows=3413 width=32)
+   Output: time_prev('2018-12-01 10:10:00'::timestamp without time zone)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 210:
+SELECT time_prev('2018-12-01 10:10:00') FROM time_series;
+ERROR:  stub time_prev(timestamp) is called
+CONTEXT:  PL/pgSQL function time_prev(timestamp without time zone) line 3 at RAISE
+--specified time does not exist => return the row whose time  is immediately before the specified time
+--Testcase 211:
+EXPLAIN VERBOSE
+SELECT time_prev('2018-12-01 10:05:00') FROM time_series;
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..1065.64 rows=3413 width=32)
+   Output: time_prev('2018-12-01 10:05:00'::timestamp without time zone)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 212:
+SELECT time_prev('2018-12-01 10:05:00') FROM time_series;
+ERROR:  stub time_prev(timestamp) is called
+CONTEXT:  PL/pgSQL function time_prev(timestamp without time zone) line 3 at RAISE
+--specified time does not exist, there is no time before the specified time => return no row
+--Testcase 213:
+EXPLAIN VERBOSE
+SELECT time_prev('2018-12-01 09:45:00') FROM time_series;
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..1065.64 rows=3413 width=32)
+   Output: time_prev('2018-12-01 09:45:00'::timestamp without time zone)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 214:
+SELECT time_prev('2018-12-01 09:45:00') FROM time_series;
+ERROR:  stub time_prev(timestamp) is called
+CONTEXT:  PL/pgSQL function time_prev(timestamp without time zone) line 3 at RAISE
+--time_prev_only
+--even though specified time exist, still return the row whose time is immediately before the specified time
+--Testcase 215:
+EXPLAIN VERBOSE
+SELECT time_prev_only('2018-12-01 10:10:00') FROM time_series;
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..1065.64 rows=3413 width=32)
+   Output: time_prev_only('2018-12-01 10:10:00'::timestamp without time zone)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 216:
+SELECT time_prev_only('2018-12-01 10:10:00') FROM time_series;
+ERROR:  stub time_prev_only(timestamp) is called
+CONTEXT:  PL/pgSQL function time_prev_only(timestamp without time zone) line 3 at RAISE
+--specified time does not exist => return the row whose time  is immediately before the specified time
+--Testcase 217:
+EXPLAIN VERBOSE
+SELECT time_prev_only('2018-12-01 10:05:00') FROM time_series;
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..1065.64 rows=3413 width=32)
+   Output: time_prev_only('2018-12-01 10:05:00'::timestamp without time zone)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 218:
+SELECT time_prev_only('2018-12-01 10:05:00') FROM time_series;
+ERROR:  stub time_prev_only(timestamp) is called
+CONTEXT:  PL/pgSQL function time_prev_only(timestamp without time zone) line 3 at RAISE
+--there is no time before the specified time => return no row
+--Testcase 219:
+EXPLAIN VERBOSE
+SELECT time_prev_only('2018-12-01 09:45:00') FROM time_series;
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..1065.64 rows=3413 width=32)
+   Output: time_prev_only('2018-12-01 09:45:00'::timestamp without time zone)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 220:
+SELECT time_prev_only('2018-12-01 09:45:00') FROM time_series;
+ERROR:  stub time_prev_only(timestamp) is called
+CONTEXT:  PL/pgSQL function time_prev_only(timestamp without time zone) line 3 at RAISE
+--time_interpolated
+--specified time exist => return that row
+--Testcase 221:
+EXPLAIN VERBOSE
+SELECT time_interpolated(value1, '2018-12-01 10:10:00') FROM time_series;
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..929.00 rows=2925 width=32)
+   Output: time_interpolated(value1, '2018-12-01 10:10:00'::timestamp without time zone)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 222:
+SELECT time_interpolated(value1, '2018-12-01 10:10:00') FROM time_series;
+ERROR:  stub time_interpolated(anyelement, timestamp) is called
+CONTEXT:  PL/pgSQL function time_interpolated(anyelement,timestamp without time zone) line 3 at RAISE
+--specified time does not exist => return the row which has interpolated value.
+--The column which is specified as the 1st parameter will be calculated by linearly interpolating the value of the previous and next rows.
+--Other values will be equal to the values of rows previous to the specified time.
+--Testcase 223:
+EXPLAIN VERBOSE
+SELECT time_interpolated(value1, '2018-12-01 10:05:00') FROM time_series;
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..929.00 rows=2925 width=32)
+   Output: time_interpolated(value1, '2018-12-01 10:05:00'::timestamp without time zone)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 224:
+SELECT time_interpolated(value1, '2018-12-01 10:05:00') FROM time_series;
+ERROR:  stub time_interpolated(anyelement, timestamp) is called
+CONTEXT:  PL/pgSQL function time_interpolated(anyelement,timestamp without time zone) line 3 at RAISE
+--specified time does not exist. There is no row before or after the specified time => can not calculate interpolated value, return no row.
+--Testcase 225:
+EXPLAIN VERBOSE
+SELECT time_interpolated(value1, '2018-12-01 09:05:00') FROM time_series;
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..929.00 rows=2925 width=32)
+   Output: time_interpolated(value1, '2018-12-01 09:05:00'::timestamp without time zone)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 226:
+SELECT time_interpolated(value1, '2018-12-01 09:05:00') FROM time_series;
+ERROR:  stub time_interpolated(anyelement, timestamp) is called
+CONTEXT:  PL/pgSQL function time_interpolated(anyelement,timestamp without time zone) line 3 at RAISE
+--Testcase 227:
+EXPLAIN VERBOSE
+SELECT time_interpolated(value1, '2018-12-01 10:45:00') FROM time_series;
+                                       QUERY PLAN                                        
+-----------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..929.00 rows=2925 width=32)
+   Output: time_interpolated(value1, '2018-12-01 10:45:00'::timestamp without time zone)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 228:
+SELECT time_interpolated(value1, '2018-12-01 10:45:00') FROM time_series;
+ERROR:  stub time_interpolated(anyelement, timestamp) is called
+CONTEXT:  PL/pgSQL function time_interpolated(anyelement,timestamp without time zone) line 3 at RAISE
+--time_sampling by MINUTE
+--rows for sampling exists => return those rows
+--Testcase 229:
+EXPLAIN VERBOSE
+SELECT time_sampling(value1, '2018-12-01 10:00:00', '2018-12-01 10:20:00', 10, 'MINUTE') FROM time_series;
+                                                                            QUERY PLAN                                                                            
+------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..929.00 rows=2925 width=32)
+   Output: time_sampling(value1, '2018-12-01 10:00:00'::timestamp without time zone, '2018-12-01 10:20:00'::timestamp without time zone, 10, 'MINUTE'::time_unit)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 230:
+SELECT time_sampling(value1, '2018-12-01 10:00:00', '2018-12-01 10:20:00', 10, 'MINUTE') FROM time_series;
+ERROR:  stub time_sampling(anyelement,timestamp,timestamp,integer,time_unit) is called
+CONTEXT:  PL/pgSQL function time_sampling(anyelement,timestamp without time zone,timestamp without time zone,integer,time_unit) line 3 at RAISE
+--rows for sampling does not exist => return rows that contains interpolated values.
+--The column which is specified as the 1st parameter will be calculated by linearly interpolating the value of the previous and next rows.
+--Other values will be equal to the values of rows previous to the specified time.
+--Testcase 231:
+EXPLAIN VERBOSE
+SELECT time_sampling(value1, '2018-12-01 10:05:00', '2018-12-01 10:35:00', 10, 'MINUTE') FROM time_series;
+                                                                            QUERY PLAN                                                                            
+------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..929.00 rows=2925 width=32)
+   Output: time_sampling(value1, '2018-12-01 10:05:00'::timestamp without time zone, '2018-12-01 10:35:00'::timestamp without time zone, 10, 'MINUTE'::time_unit)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 232:
+SELECT time_sampling(value1, '2018-12-01 10:05:00', '2018-12-01 10:35:00', 10, 'MINUTE') FROM time_series;
+ERROR:  stub time_sampling(anyelement,timestamp,timestamp,integer,time_unit) is called
+CONTEXT:  PL/pgSQL function time_sampling(anyelement,timestamp without time zone,timestamp without time zone,integer,time_unit) line 3 at RAISE
+--mix exist and non-exist sampling
+--Testcase 233:
+EXPLAIN VERBOSE
+SELECT time_sampling(value1, '2018-12-01 10:00:00', '2018-12-01 10:40:00', 10, 'MINUTE') FROM time_series;
+                                                                            QUERY PLAN                                                                            
+------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..929.00 rows=2925 width=32)
+   Output: time_sampling(value1, '2018-12-01 10:00:00'::timestamp without time zone, '2018-12-01 10:40:00'::timestamp without time zone, 10, 'MINUTE'::time_unit)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 234:
+SELECT time_sampling(value1, '2018-12-01 10:00:00', '2018-12-01 10:40:00', 10, 'MINUTE') FROM time_series;
+ERROR:  stub time_sampling(anyelement,timestamp,timestamp,integer,time_unit) is called
+CONTEXT:  PL/pgSQL function time_sampling(anyelement,timestamp without time zone,timestamp without time zone,integer,time_unit) line 3 at RAISE
+--In linearly interpolating the value of the previous and next rows, if one of the values does not exist => the sampling row will not be returned
+--Testcase 235:
+EXPLAIN VERBOSE
+SELECT time_sampling(value1, '2018-12-01 09:30:00', '2018-12-01 11:00:00', 10, 'MINUTE') FROM time_series;
+                                                                            QUERY PLAN                                                                            
+------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..929.00 rows=2925 width=32)
+   Output: time_sampling(value1, '2018-12-01 09:30:00'::timestamp without time zone, '2018-12-01 11:00:00'::timestamp without time zone, 10, 'MINUTE'::time_unit)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 236:
+SELECT time_sampling(value1, '2018-12-01 09:30:00', '2018-12-01 11:00:00', 10, 'MINUTE') FROM time_series;
+ERROR:  stub time_sampling(anyelement,timestamp,timestamp,integer,time_unit) is called
+CONTEXT:  PL/pgSQL function time_sampling(anyelement,timestamp without time zone,timestamp without time zone,integer,time_unit) line 3 at RAISE
+--if the first parameter is not set, * will be added as the first parameter.
+--When specified time does not exist, all columns (except timestamp key column) will be equal to the values of rows previous to the specified time.
+--Testcase 237:
+UPDATE time_series SET value1 = 5 where date = '2018-12-01 10:40:00';
+--Testcase 238:
+EXPLAIN VERBOSE
+SELECT time_sampling('2018-12-01 10:00:00', '2018-12-01 10:40:00', 10, 'MINUTE') FROM time_series;
+                                                                        QUERY PLAN                                                                        
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..1065.64 rows=3413 width=32)
+   Output: time_sampling('2018-12-01 10:00:00'::timestamp without time zone, '2018-12-01 10:40:00'::timestamp without time zone, 10, 'MINUTE'::time_unit)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 239:
+SELECT time_sampling('2018-12-01 10:00:00', '2018-12-01 10:40:00', 10, 'MINUTE') FROM time_series;
+ERROR:  stub time_sampling(timestamp,timestamp,integer,time_unit) is called
+CONTEXT:  PL/pgSQL function time_sampling(timestamp without time zone,timestamp without time zone,integer,time_unit) line 3 at RAISE
+--time_sampling by HOUR
+--Testcase 240:
+DELETE FROM time_series;
+--Testcase 241:
+INSERT INTO time_series VALUES ('2018-12-01 10:00:00', 1, 10.5);
+--Testcase 242:
+INSERT INTO time_series VALUES ('2018-12-01 12:00:00', 2, 9.4);
+--Testcase 243:
+INSERT INTO time_series VALUES ('2018-12-01 16:00:00', 3, 8);
+--Testcase 244:
+INSERT INTO time_series VALUES ('2018-12-01 17:00:00', 4, 7.2);
+--Testcase 245:
+INSERT INTO time_series VALUES ('2018-12-01 20:00:00', 5, 5.6);
+--rows for sampling exists => return those rows
+--Testcase 246:
+EXPLAIN VERBOSE
+SELECT time_sampling(value1, '2018-12-01 10:00:00', '2018-12-01 12:00:00', 2, 'HOUR') FROM time_series;
+                                                                          QUERY PLAN                                                                           
+---------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..929.00 rows=2925 width=32)
+   Output: time_sampling(value1, '2018-12-01 10:00:00'::timestamp without time zone, '2018-12-01 12:00:00'::timestamp without time zone, 2, 'HOUR'::time_unit)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 247:
+SELECT time_sampling(value1, '2018-12-01 10:00:00', '2018-12-01 12:00:00', 2, 'HOUR') FROM time_series;
+ERROR:  stub time_sampling(anyelement,timestamp,timestamp,integer,time_unit) is called
+CONTEXT:  PL/pgSQL function time_sampling(anyelement,timestamp without time zone,timestamp without time zone,integer,time_unit) line 3 at RAISE
+--rows for sampling does not exist => return rows that contains interpolated values.
+--The column which is specified as the 1st parameter will be calculated by linearly interpolating the value of the previous and next rows.
+--Other values will be equal to the values of rows previous to the specified time.
+--Testcase 248:
+EXPLAIN VERBOSE
+SELECT time_sampling(value1, '2018-12-01 10:05:00', '2018-12-01 21:00:00', 3, 'HOUR') FROM time_series;
+                                                                          QUERY PLAN                                                                           
+---------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..929.00 rows=2925 width=32)
+   Output: time_sampling(value1, '2018-12-01 10:05:00'::timestamp without time zone, '2018-12-01 21:00:00'::timestamp without time zone, 3, 'HOUR'::time_unit)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 249:
+SELECT time_sampling(value1, '2018-12-01 10:05:00', '2018-12-01 21:00:00', 3, 'HOUR') FROM time_series;
+ERROR:  stub time_sampling(anyelement,timestamp,timestamp,integer,time_unit) is called
+CONTEXT:  PL/pgSQL function time_sampling(anyelement,timestamp without time zone,timestamp without time zone,integer,time_unit) line 3 at RAISE
+--mix exist and non-exist sampling
+--Testcase 250:
+EXPLAIN VERBOSE
+SELECT time_sampling(value1, '2018-12-01 10:00:00', '2018-12-01 21:40:00', 2, 'HOUR') FROM time_series;
+                                                                          QUERY PLAN                                                                           
+---------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..929.00 rows=2925 width=32)
+   Output: time_sampling(value1, '2018-12-01 10:00:00'::timestamp without time zone, '2018-12-01 21:40:00'::timestamp without time zone, 2, 'HOUR'::time_unit)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 251:
+SELECT time_sampling(value1, '2018-12-01 10:00:00', '2018-12-01 21:40:00', 2, 'HOUR') FROM time_series;
+ERROR:  stub time_sampling(anyelement,timestamp,timestamp,integer,time_unit) is called
+CONTEXT:  PL/pgSQL function time_sampling(anyelement,timestamp without time zone,timestamp without time zone,integer,time_unit) line 3 at RAISE
+--In linearly interpolating the value of the previous and next rows, if one of the values does not exist => the sampling row will not be returned
+--Testcase 252:
+EXPLAIN VERBOSE
+SELECT time_sampling(value1, '2018-12-01 6:00:00', '2018-12-01 23:00:00', 3, 'HOUR') FROM time_series;
+                                                                          QUERY PLAN                                                                           
+---------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..929.00 rows=2925 width=32)
+   Output: time_sampling(value1, '2018-12-01 06:00:00'::timestamp without time zone, '2018-12-01 23:00:00'::timestamp without time zone, 3, 'HOUR'::time_unit)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 253:
+SELECT time_sampling(value1, '2018-12-01 6:00:00', '2018-12-01 23:00:00', 3, 'HOUR') FROM time_series;
+ERROR:  stub time_sampling(anyelement,timestamp,timestamp,integer,time_unit) is called
+CONTEXT:  PL/pgSQL function time_sampling(anyelement,timestamp without time zone,timestamp without time zone,integer,time_unit) line 3 at RAISE
+--if the first parameter is not set, * will be added as the first parameter.
+--When specified time does not exist, all columns (except timestamp key column) will be equal to the values of rows previous to the specified time.
+--Testcase 254:
+DELETE FROM time_series WHERE value1 = 4;
+--Testcase 255:
+EXPLAIN VERBOSE
+SELECT time_sampling('2018-12-01 10:00:00', '2018-12-01 21:40:00', 2, 'HOUR') FROM time_series;
+                                                                      QUERY PLAN                                                                       
+-------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..1065.64 rows=3413 width=32)
+   Output: time_sampling('2018-12-01 10:00:00'::timestamp without time zone, '2018-12-01 21:40:00'::timestamp without time zone, 2, 'HOUR'::time_unit)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 256:
+SELECT time_sampling('2018-12-01 10:00:00', '2018-12-01 21:40:00', 2, 'HOUR') FROM time_series;
+ERROR:  stub time_sampling(timestamp,timestamp,integer,time_unit) is called
+CONTEXT:  PL/pgSQL function time_sampling(timestamp without time zone,timestamp without time zone,integer,time_unit) line 3 at RAISE
+--time_sampling by DAY
+--Testcase 257:
+DELETE FROM time_series;
+--Testcase 258:
+INSERT INTO time_series VALUES ('2018-12-01 11:00:00', 4, 4);
+--Testcase 259:
+INSERT INTO time_series VALUES ('2018-12-02 11:00:00', 5, 3.2);
+--Testcase 260:
+INSERT INTO time_series VALUES ('2018-12-02 12:00:30', 6, 3);
+--Testcase 261:
+INSERT INTO time_series VALUES ('2018-12-03 12:00:30', 7, 2.8);
+--rows for sampling exists => return those rows
+--Testcase 262:
+EXPLAIN VERBOSE
+SELECT time_sampling(value1, '2018-12-01 11:00:00', '2018-12-02 11:00:00', 1, 'DAY') FROM time_series;
+                                                                          QUERY PLAN                                                                          
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..929.00 rows=2925 width=32)
+   Output: time_sampling(value1, '2018-12-01 11:00:00'::timestamp without time zone, '2018-12-02 11:00:00'::timestamp without time zone, 1, 'DAY'::time_unit)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 263:
+SELECT time_sampling(value1, '2018-12-01 11:00:00', '2018-12-02 11:00:00', 1, 'DAY') FROM time_series;
+ERROR:  stub time_sampling(anyelement,timestamp,timestamp,integer,time_unit) is called
+CONTEXT:  PL/pgSQL function time_sampling(anyelement,timestamp without time zone,timestamp without time zone,integer,time_unit) line 3 at RAISE
+--rows for sampling does not exist => return rows that contains interpolated values.
+--The column which is specified as the 1st parameter will be calculated by linearly interpolating the value of the previous and next rows.
+--Other values will be equal to the values of rows previous to the specified time.
+--Testcase 264:
+EXPLAIN VERBOSE
+SELECT time_sampling(value1, '2018-12-01 09:00:00', '2018-12-03 12:00:00', 1, 'DAY') FROM time_series;
+                                                                          QUERY PLAN                                                                          
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..929.00 rows=2925 width=32)
+   Output: time_sampling(value1, '2018-12-01 09:00:00'::timestamp without time zone, '2018-12-03 12:00:00'::timestamp without time zone, 1, 'DAY'::time_unit)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 265:
+SELECT time_sampling(value1, '2018-12-01 09:00:00', '2018-12-03 12:00:00', 1, 'DAY') FROM time_series;
+ERROR:  stub time_sampling(anyelement,timestamp,timestamp,integer,time_unit) is called
+CONTEXT:  PL/pgSQL function time_sampling(anyelement,timestamp without time zone,timestamp without time zone,integer,time_unit) line 3 at RAISE
+--mix exist and non-exist sampling
+--Testcase 266:
+EXPLAIN VERBOSE
+SELECT time_sampling(value1, '2018-12-01 11:00:00', '2018-12-03 12:00:00', 1, 'DAY') FROM time_series;
+                                                                          QUERY PLAN                                                                          
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..929.00 rows=2925 width=32)
+   Output: time_sampling(value1, '2018-12-01 11:00:00'::timestamp without time zone, '2018-12-03 12:00:00'::timestamp without time zone, 1, 'DAY'::time_unit)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 267:
+SELECT time_sampling(value1, '2018-12-01 11:00:00', '2018-12-03 12:00:00', 1, 'DAY') FROM time_series;
+ERROR:  stub time_sampling(anyelement,timestamp,timestamp,integer,time_unit) is called
+CONTEXT:  PL/pgSQL function time_sampling(anyelement,timestamp without time zone,timestamp without time zone,integer,time_unit) line 3 at RAISE
+--In linearly interpolating the value of the previous and next rows, if one of the values does not exist => the sampling row will not be returned
+--Testcase 268:
+EXPLAIN VERBOSE
+SELECT time_sampling(value1, '2018-12-01 09:30:00', '2018-12-01 11:00:00', 1, 'DAY') FROM time_series;
+                                                                          QUERY PLAN                                                                          
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..929.00 rows=2925 width=32)
+   Output: time_sampling(value1, '2018-12-01 09:30:00'::timestamp without time zone, '2018-12-01 11:00:00'::timestamp without time zone, 1, 'DAY'::time_unit)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 269:
+SELECT time_sampling(value1, '2018-12-01 09:30:00', '2018-12-05 11:00:00', 1, 'DAY') FROM time_series;
+ERROR:  stub time_sampling(anyelement,timestamp,timestamp,integer,time_unit) is called
+CONTEXT:  PL/pgSQL function time_sampling(anyelement,timestamp without time zone,timestamp without time zone,integer,time_unit) line 3 at RAISE
+--if the first parameter is not set, * will be added as the first parameter.
+--When specified time does not exist, all columns (except timestamp key column) will be equal to the values of rows previous to the specified time.
+--Testcase 270:
+DELETE FROM time_series WHERE value1 = 6;
+--Testcase 271:
+EXPLAIN VERBOSE
+SELECT time_sampling(value1, '2018-12-01 11:00:00', '2018-12-03 12:00:00', 1, 'DAY') FROM time_series;
+                                                                          QUERY PLAN                                                                          
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..929.00 rows=2925 width=32)
+   Output: time_sampling(value1, '2018-12-01 11:00:00'::timestamp without time zone, '2018-12-03 12:00:00'::timestamp without time zone, 1, 'DAY'::time_unit)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 272:
+SELECT time_sampling(value1, '2018-12-01 11:00:00', '2018-12-03 12:00:00', 1, 'DAY') FROM time_series;
+ERROR:  stub time_sampling(anyelement,timestamp,timestamp,integer,time_unit) is called
+CONTEXT:  PL/pgSQL function time_sampling(anyelement,timestamp without time zone,timestamp without time zone,integer,time_unit) line 3 at RAISE
+--time_sampling by SECOND
+--Testcase 273:
+DELETE FROM time_series;
+--Testcase 274:
+INSERT INTO time_series VALUES ('2018-12-01 10:00:00', 1, 1.5);
+--Testcase 275:
+INSERT INTO time_series VALUES ('2018-12-01 10:00:10', 2, 3.2);
+--Testcase 276:
+INSERT INTO time_series VALUES ('2018-12-01 10:00:20', 4, 3.5);
+--Testcase 277:
+INSERT INTO time_series VALUES ('2018-12-01 10:00:40', 6, 5.2);
+--Testcase 278:
+INSERT INTO time_series VALUES ('2018-12-01 10:01:10', 7, 6.7);
+--rows for sampling exists => return those rows
+--Testcase 279:
+EXPLAIN VERBOSE
+SELECT time_sampling(value1, '2018-12-01 10:00:00', '2018-12-01 10:00:20', 10, 'SECOND') FROM time_series;
+                                                                            QUERY PLAN                                                                            
+------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..929.00 rows=2925 width=32)
+   Output: time_sampling(value1, '2018-12-01 10:00:00'::timestamp without time zone, '2018-12-01 10:00:20'::timestamp without time zone, 10, 'SECOND'::time_unit)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 280:
+SELECT time_sampling(value1, '2018-12-01 10:00:00', '2018-12-01 10:00:20', 10, 'SECOND') FROM time_series;
+ERROR:  stub time_sampling(anyelement,timestamp,timestamp,integer,time_unit) is called
+CONTEXT:  PL/pgSQL function time_sampling(anyelement,timestamp without time zone,timestamp without time zone,integer,time_unit) line 3 at RAISE
+--rows for sampling does not exist => return rows that contains interpolated values.
+--The column which is specified as the 1st parameter will be calculated by linearly interpolating the value of the previous and next rows.
+--Other values will be equal to the values of rows previous to the specified time.
+--Testcase 281:
+EXPLAIN VERBOSE
+SELECT time_sampling(value1, '2018-12-01 10:00:03', '2018-12-01 10:00:35', 15, 'SECOND') FROM time_series;
+                                                                            QUERY PLAN                                                                            
+------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..929.00 rows=2925 width=32)
+   Output: time_sampling(value1, '2018-12-01 10:00:03'::timestamp without time zone, '2018-12-01 10:00:35'::timestamp without time zone, 15, 'SECOND'::time_unit)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 282:
+SELECT time_sampling(value1, '2018-12-01 10:00:03', '2018-12-01 10:00:35', 15, 'SECOND') FROM time_series;
+ERROR:  stub time_sampling(anyelement,timestamp,timestamp,integer,time_unit) is called
+CONTEXT:  PL/pgSQL function time_sampling(anyelement,timestamp without time zone,timestamp without time zone,integer,time_unit) line 3 at RAISE
+--mix exist and non-exist sampling
+--Testcase 283:
+EXPLAIN VERBOSE
+SELECT time_sampling(value1, '2018-12-01 10:00:00', '2018-12-01 11:00:00', 10, 'SECOND') FROM time_series;
+                                                                            QUERY PLAN                                                                            
+------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..929.00 rows=2925 width=32)
+   Output: time_sampling(value1, '2018-12-01 10:00:00'::timestamp without time zone, '2018-12-01 11:00:00'::timestamp without time zone, 10, 'SECOND'::time_unit)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 284:
+SELECT time_sampling(value1, '2018-12-01 10:00:00', '2018-12-01 11:00:00', 10, 'SECOND') FROM time_series;
+ERROR:  stub time_sampling(anyelement,timestamp,timestamp,integer,time_unit) is called
+CONTEXT:  PL/pgSQL function time_sampling(anyelement,timestamp without time zone,timestamp without time zone,integer,time_unit) line 3 at RAISE
+--In linearly interpolating the value of the previous and next rows, if one of the values does not exist => the sampling row will not be returned
+--Testcase 285:
+EXPLAIN VERBOSE
+SELECT time_sampling(value1, '2018-12-01 08:30:00', '2018-12-01 11:00:00', 20, 'SECOND') FROM time_series;
+                                                                            QUERY PLAN                                                                            
+------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..929.00 rows=2925 width=32)
+   Output: time_sampling(value1, '2018-12-01 08:30:00'::timestamp without time zone, '2018-12-01 11:00:00'::timestamp without time zone, 20, 'SECOND'::time_unit)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 286:
+SELECT time_sampling(value1, '2018-12-01 08:30:00', '2018-12-01 11:00:00', 20, 'SECOND') FROM time_series;
+ERROR:  stub time_sampling(anyelement,timestamp,timestamp,integer,time_unit) is called
+CONTEXT:  PL/pgSQL function time_sampling(anyelement,timestamp without time zone,timestamp without time zone,integer,time_unit) line 3 at RAISE
+--if the first parameter is not set, * will be added as the first parameter.
+--When specified time does not exist, all columns (except timestamp key column) will be equal to the values of rows previous to the specified time.
+--Testcase 287:
+DELETE FROM time_series WHERE value1 = 4;
+--Testcase 288:
+EXPLAIN VERBOSE
+SELECT time_sampling(value1, '2018-12-01 10:00:00', '2018-12-01 11:00:00', 10, 'SECOND') FROM time_series;
+                                                                            QUERY PLAN                                                                            
+------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..929.00 rows=2925 width=32)
+   Output: time_sampling(value1, '2018-12-01 10:00:00'::timestamp without time zone, '2018-12-01 11:00:00'::timestamp without time zone, 10, 'SECOND'::time_unit)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 289:
+SELECT time_sampling(value1, '2018-12-01 10:00:00', '2018-12-01 11:00:00', 10, 'SECOND') FROM time_series;
+ERROR:  stub time_sampling(anyelement,timestamp,timestamp,integer,time_unit) is called
+CONTEXT:  PL/pgSQL function time_sampling(anyelement,timestamp without time zone,timestamp without time zone,integer,time_unit) line 3 at RAISE
+--time_sampling by MILLISECOND
+--Testcase 290:
+DELETE FROM time_series;
+--Testcase 291:
+INSERT INTO time_series VALUES ('2018-12-01 10:00:00.100', 1, 1.5);
+--Testcase 292:
+INSERT INTO time_series VALUES ('2018-12-01 10:00:00.120', 2, 3.2);
+--Testcase 293:
+INSERT INTO time_series VALUES ('2018-12-01 10:00:00.140', 4, 3.5);
+--Testcase 294:
+INSERT INTO time_series VALUES ('2018-12-01 10:00:00.150', 6, 5.2);
+--Testcase 295:
+INSERT INTO time_series VALUES ('2018-12-01 10:00:00.160', 7, 6.7);
+--rows for sampling exists => return those rows
+--Testcase 296:
+EXPLAIN VERBOSE
+SELECT time_sampling(value1, '2018-12-01 10:00:00.100', '2018-12-01 10:00:00.140', 20, 'MILLISECOND') FROM time_series;
+                                                                                 QUERY PLAN                                                                                 
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..929.00 rows=2925 width=32)
+   Output: time_sampling(value1, '2018-12-01 10:00:00.1'::timestamp without time zone, '2018-12-01 10:00:00.14'::timestamp without time zone, 20, 'MILLISECOND'::time_unit)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 297:
+SELECT time_sampling(value1, '2018-12-01 10:00:00.100', '2018-12-01 10:00:00.140', 20, 'MILLISECOND') FROM time_series;
+ERROR:  stub time_sampling(anyelement,timestamp,timestamp,integer,time_unit) is called
+CONTEXT:  PL/pgSQL function time_sampling(anyelement,timestamp without time zone,timestamp without time zone,integer,time_unit) line 3 at RAISE
+--rows for sampling does not exist => return rows that contains interpolated values.
+--The column which is specified as the 1st parameter will be calculated by linearly interpolating the value of the previous and next rows.
+--Other values will be equal to the values of rows previous to the specified time.
+--Testcase 298:
+EXPLAIN VERBOSE
+SELECT time_sampling(value1, '2018-12-01 10:00:00.115', '2018-12-01 10:00:00.155', 15, 'MILLISECOND') FROM time_series;
+                                                                                  QUERY PLAN                                                                                   
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..929.00 rows=2925 width=32)
+   Output: time_sampling(value1, '2018-12-01 10:00:00.115'::timestamp without time zone, '2018-12-01 10:00:00.155'::timestamp without time zone, 15, 'MILLISECOND'::time_unit)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 299:
+SELECT time_sampling(value1, '2018-12-01 10:00:00.115', '2018-12-01 10:00:00.155', 15, 'MILLISECOND') FROM time_series;
+ERROR:  stub time_sampling(anyelement,timestamp,timestamp,integer,time_unit) is called
+CONTEXT:  PL/pgSQL function time_sampling(anyelement,timestamp without time zone,timestamp without time zone,integer,time_unit) line 3 at RAISE
+--mix exist and non-exist sampling
+--Testcase 300:
+EXPLAIN VERBOSE
+SELECT time_sampling(value1, '2018-12-01 10:00:00.100', '2018-12-01 10:00:00.150', 5, 'MILLISECOND') FROM time_series;
+                                                                                QUERY PLAN                                                                                 
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..929.00 rows=2925 width=32)
+   Output: time_sampling(value1, '2018-12-01 10:00:00.1'::timestamp without time zone, '2018-12-01 10:00:00.15'::timestamp without time zone, 5, 'MILLISECOND'::time_unit)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 301:
+SELECT time_sampling(value1, '2018-12-01 10:00:00.100', '2018-12-01 10:00:00.150', 5, 'MILLISECOND') FROM time_series;
+ERROR:  stub time_sampling(anyelement,timestamp,timestamp,integer,time_unit) is called
+CONTEXT:  PL/pgSQL function time_sampling(anyelement,timestamp without time zone,timestamp without time zone,integer,time_unit) line 3 at RAISE
+--In linearly interpolating the value of the previous and next rows, if one of the values does not exist => the sampling row will not be returned
+--Testcase 302:
+EXPLAIN VERBOSE
+SELECT time_sampling(value1, '2018-12-01 10:00:00.002', '2018-12-01 10:00:00.500', 20, 'MILLISECOND') FROM time_series;
+                                                                                 QUERY PLAN                                                                                  
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..929.00 rows=2925 width=32)
+   Output: time_sampling(value1, '2018-12-01 10:00:00.002'::timestamp without time zone, '2018-12-01 10:00:00.5'::timestamp without time zone, 20, 'MILLISECOND'::time_unit)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 303:
+SELECT time_sampling(value1, '2018-12-01 10:00:00.002', '2018-12-01 10:00:00.500', 20, 'MILLISECOND') FROM time_series;
+ERROR:  stub time_sampling(anyelement,timestamp,timestamp,integer,time_unit) is called
+CONTEXT:  PL/pgSQL function time_sampling(anyelement,timestamp without time zone,timestamp without time zone,integer,time_unit) line 3 at RAISE
+--if the first parameter is not set, * will be added as the first parameter.
+--When specified time does not exist, all columns (except timestamp key column) will be equal to the values of rows previous to the specified time.
+--Testcase 304:
+DELETE FROM time_series WHERE value1 = 4;
+--Testcase 305:
+EXPLAIN VERBOSE
+SELECT time_sampling(value1, '2018-12-01 10:00:00.100', '2018-12-01 10:00:00.150', 5, 'MILLISECOND') FROM time_series;
+                                                                                QUERY PLAN                                                                                 
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..929.00 rows=2925 width=32)
+   Output: time_sampling(value1, '2018-12-01 10:00:00.1'::timestamp without time zone, '2018-12-01 10:00:00.15'::timestamp without time zone, 5, 'MILLISECOND'::time_unit)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 306:
+SELECT time_sampling(value1, '2018-12-01 10:00:00.100', '2018-12-01 10:00:00.150', 5, 'MILLISECOND') FROM time_series;
+ERROR:  stub time_sampling(anyelement,timestamp,timestamp,integer,time_unit) is called
+CONTEXT:  PL/pgSQL function time_sampling(anyelement,timestamp without time zone,timestamp without time zone,integer,time_unit) line 3 at RAISE
+--max_rows
+--Testcase 307:
+DELETE FROM time_series;
+--Testcase 308:
+INSERT INTO time_series VALUES ('2018-12-01 11:00:00', 4, 4);
+--Testcase 309:
+INSERT INTO time_series VALUES ('2018-12-02 11:00:00', 5, 3.2);
+--Testcase 310:
+INSERT INTO time_series VALUES ('2018-12-02 12:00:30', 6, 3);
+--Testcase 311:
+INSERT INTO time_series VALUES ('2018-12-03 12:00:30', 7, 2.8);
+--Testcase 312:
+EXPLAIN VERBOSE
+SELECT max_rows(value2) FROM time_series;
+                                  QUERY PLAN                                  
+------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..826.80 rows=2560 width=32)
+   Output: max_rows(value2)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 313:
+SELECT max_rows(value2) FROM time_series;
+ERROR:  stub max_rows(anyelement) is called
+CONTEXT:  PL/pgSQL function max_rows(anyelement) line 3 at RAISE
+--Testcase 314:
+EXPLAIN VERBOSE
+SELECT max_rows(date) FROM time_series;
+                                  QUERY PLAN                                  
+------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..826.80 rows=2560 width=32)
+   Output: max_rows(date)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 315:
+SELECT max_rows(date) FROM time_series;
+ERROR:  stub max_rows(anyelement) is called
+CONTEXT:  PL/pgSQL function max_rows(anyelement) line 3 at RAISE
+--min_rows
+--Testcase 316:
+EXPLAIN VERBOSE
+SELECT min_rows(value2) FROM time_series;
+                                  QUERY PLAN                                  
+------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..826.80 rows=2560 width=32)
+   Output: min_rows(value2)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 317:
+SELECT min_rows(value2) FROM time_series;
+ERROR:  stub min_rows(anyelement) is called
+CONTEXT:  PL/pgSQL function min_rows(anyelement) line 3 at RAISE
+--Testcase 318:
+EXPLAIN VERBOSE
+SELECT min_rows(date) FROM time_series;
+                                  QUERY PLAN                                  
+------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..826.80 rows=2560 width=32)
+   Output: min_rows(date)
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 319:
+SELECT min_rows(date) FROM time_series;
+ERROR:  stub min_rows(anyelement) is called
+CONTEXT:  PL/pgSQL function min_rows(anyelement) line 3 at RAISE
+--
+--if WHERE clause contains functions which Griddb only supports in SELECT clause => still push down, return error of Griddb
+--
+--Testcase 320:
+EXPLAIN VERBOSE
+SELECT * FROM time_series2 WHERE time_next('2018-12-01 10:00:00') = '"2020-01-05 21:00:00,{t,f,t}"';
+                                                                                                             QUERY PLAN                                                                                                             
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Result  (cost=100.25..116.07 rows=194 width=397)
+   Output: date, date2, strcol, booleancol, bytecol, shortcol, intcol, longcol, floatcol, doublecol, blobcol, stringarray, boolarray, bytearray, shortarray, integerarray, longarray, floatarray, doublearray, timestamparray
+   One-Time Filter: (time_next('2018-12-01 10:00:00'::timestamp without time zone) = '"2020-01-05 21:00:00,{t,f,t}"'::text)
+   ->  Foreign Scan on public.time_series2  (cost=100.25..116.07 rows=194 width=397)
+         Output: date, date2, strcol, booleancol, bytecol, shortcol, intcol, longcol, floatcol, doublecol, blobcol, stringarray, boolarray, bytearray, shortarray, integerarray, longarray, floatarray, doublearray, timestamparray
+         Remote SQL: SELECT  *  FROM time_series2
+(6 rows)
+
+--Testcase 321:
+SELECT * FROM time_series2 WHERE time_next('2018-12-01 10:00:00') = '"2020-01-05 21:00:00,{t,f,t}"';
+ERROR:  stub time_next(timestamp) is called
+CONTEXT:  PL/pgSQL function time_next(timestamp without time zone) line 3 at RAISE
+--Testcase 322:
+EXPLAIN VERBOSE
+SELECT date FROM time_series WHERE time_next_only('2018-12-01 10:00:00') = time_interpolated(value1, '2018-12-01 10:10:00');
+ERROR:  stub time_next_only(timestamp) is called
+CONTEXT:  PL/pgSQL function time_next_only(timestamp without time zone) line 3 at RAISE
+--Testcase 323:
+SELECT date FROM time_series WHERE time_next_only('2018-12-01 10:00:00') = time_interpolated(value1, '2018-12-01 10:10:00');
+ERROR:  stub time_next_only(timestamp) is called
+CONTEXT:  PL/pgSQL function time_next_only(timestamp without time zone) line 3 at RAISE
+--Testcase 324:
+EXPLAIN VERBOSE
+SELECT * FROM time_series2 WHERE time_prev('2018-12-01 10:00:00') = '"2020-01-05 21:00:00,{t,f,t}"';
+                                                                                                             QUERY PLAN                                                                                                             
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Result  (cost=100.25..116.07 rows=194 width=397)
+   Output: date, date2, strcol, booleancol, bytecol, shortcol, intcol, longcol, floatcol, doublecol, blobcol, stringarray, boolarray, bytearray, shortarray, integerarray, longarray, floatarray, doublearray, timestamparray
+   One-Time Filter: (time_prev('2018-12-01 10:00:00'::timestamp without time zone) = '"2020-01-05 21:00:00,{t,f,t}"'::text)
+   ->  Foreign Scan on public.time_series2  (cost=100.25..116.07 rows=194 width=397)
+         Output: date, date2, strcol, booleancol, bytecol, shortcol, intcol, longcol, floatcol, doublecol, blobcol, stringarray, boolarray, bytearray, shortarray, integerarray, longarray, floatarray, doublearray, timestamparray
+         Remote SQL: SELECT  *  FROM time_series2
+(6 rows)
+
+--Testcase 325:
+SELECT * FROM time_series2 WHERE time_prev('2018-12-01 10:00:00') = '"2020-01-05 21:00:00,{t,f,t}"';
+ERROR:  stub time_prev(timestamp) is called
+CONTEXT:  PL/pgSQL function time_prev(timestamp without time zone) line 3 at RAISE
+--Testcase 326:
+EXPLAIN VERBOSE
+SELECT date FROM time_series WHERE time_prev_only('2018-12-01 10:00:00') = time_sampling(value1, '2018-12-01 10:00:00', '2018-12-01 10:40:00', 10, 'MINUTE');
+ERROR:  stub time_prev_only(timestamp) is called
+CONTEXT:  PL/pgSQL function time_prev_only(timestamp without time zone) line 3 at RAISE
+--Testcase 327:
+SELECT date FROM time_series WHERE time_prev_only('2018-12-01 10:00:00') = time_sampling(value1, '2018-12-01 10:00:00', '2018-12-01 10:40:00', 10, 'MINUTE');
+ERROR:  stub time_prev_only(timestamp) is called
+CONTEXT:  PL/pgSQL function time_prev_only(timestamp without time zone) line 3 at RAISE
+--Testcase 328:
+EXPLAIN VERBOSE
+SELECT * FROM time_series WHERE max_rows(date) = min_rows(value2);
+                                      QUERY PLAN                                       
+---------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..1063.94 rows=9 width=20)
+   Output: date, value1, value2
+   Remote SQL: SELECT  *  FROM time_series WHERE ((max_rows(date) = min_rows(value2)))
+(3 rows)
+
+--Testcase 329:
+SELECT * FROM time_series WHERE max_rows(date) = min_rows(value2);
+ERROR:  GridDB-API is failed by 150014
+  [150014:TQ_FUNCTION_NOT_FOUND] No such function : MAX_ROWS (address=127.0.0.1:10001, partition=91)
+  [150014:TQ_FUNCTION_NOT_FOUND] No such function : MAX_ROWS
+
+--
+-- Test syntax (xxx()::time_series).*
+--
+--Testcase 330:
+EXPLAIN VERBOSE
+SELECT (time_sampling(value1, '2018-12-01 11:00:00', '2018-12-01 12:00:00', 20, 'MINUTE')::time_series).* FROM time_series;
+                                                                                                                                                                                                                                                                       QUERY PLAN                                                                                                                                                                                                                                                                       
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..2435.38 rows=2925 width=20)
+   Output: ((time_sampling(value1, '2018-12-01 11:00:00'::timestamp without time zone, '2018-12-01 12:00:00'::timestamp without time zone, 20, 'MINUTE'::time_unit))::time_series).date, ((time_sampling(value1, '2018-12-01 11:00:00'::timestamp without time zone, '2018-12-01 12:00:00'::timestamp without time zone, 20, 'MINUTE'::time_unit))::time_series).value1, ((time_sampling(value1, '2018-12-01 11:00:00'::timestamp without time zone, '2018-12-01 12:00:00'::timestamp without time zone, 20, 'MINUTE'::time_unit))::time_series).value2
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 331:
+SELECT (time_sampling(value1, '2018-12-01 11:00:00', '2018-12-01 12:00:00', 20, 'MINUTE')::time_series).* FROM time_series;
+ERROR:  stub time_sampling(anyelement,timestamp,timestamp,integer,time_unit) is called
+CONTEXT:  PL/pgSQL function time_sampling(anyelement,timestamp without time zone,timestamp without time zone,integer,time_unit) line 3 at RAISE
+--Testcase 332:
+EXPLAIN VERBOSE
+SELECT (time_sampling(value1, '2018-12-01 11:00:00', '2018-12-01 12:00:00', 20, 'MINUTE')::time_series).date FROM time_series;
+                                                                                       QUERY PLAN                                                                                       
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..943.62 rows=2925 width=8)
+   Output: ((time_sampling(value1, '2018-12-01 11:00:00'::timestamp without time zone, '2018-12-01 12:00:00'::timestamp without time zone, 20, 'MINUTE'::time_unit))::time_series).date
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 333:
+SELECT (time_sampling(value1, '2018-12-01 11:00:00', '2018-12-01 12:00:00', 20, 'MINUTE')::time_series).date FROM time_series;
+ERROR:  stub time_sampling(anyelement,timestamp,timestamp,integer,time_unit) is called
+CONTEXT:  PL/pgSQL function time_sampling(anyelement,timestamp without time zone,timestamp without time zone,integer,time_unit) line 3 at RAISE
+--Testcase 334:
+EXPLAIN VERBOSE
+SELECT (time_sampling(value1, '2018-12-01 11:00:00', '2018-12-01 12:00:00', 20, 'MINUTE')::time_series).value1 FROM time_series;
+                                                                                        QUERY PLAN                                                                                        
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series  (cost=100.00..943.62 rows=2925 width=4)
+   Output: ((time_sampling(value1, '2018-12-01 11:00:00'::timestamp without time zone, '2018-12-01 12:00:00'::timestamp without time zone, 20, 'MINUTE'::time_unit))::time_series).value1
+   Remote SQL: SELECT  *  FROM time_series
+(3 rows)
+
+--Testcase 335:
+SELECT (time_sampling(value1, '2018-12-01 11:00:00', '2018-12-01 12:00:00', 20, 'MINUTE')::time_series).value1 FROM time_series;
+ERROR:  stub time_sampling(anyelement,timestamp,timestamp,integer,time_unit) is called
+CONTEXT:  PL/pgSQL function time_sampling(anyelement,timestamp without time zone,timestamp without time zone,integer,time_unit) line 3 at RAISE
+--
+-- Test syntax (xxx()::time_series2).*
+--
+--Testcase 336:
+DELETE FROM time_series2;
+--Testcase 337:
+INSERT INTO time_series2 VALUES ('2020-12-20 05:00:00', '2020-12-20 08:00:00', '(3.1, 2.3)', 'f', 1, 175, 1234, 7705, 15.72, 1435.22, '2F63A64D987344F83AC8', ARRAY['7777a32ebea96a918b0f','40ee382083b987e94dd1','d417cf517eca8c2a709a'],
+ARRAY['t'::boolean,'t'::boolean,'f'::boolean,'f'::boolean],ARRAY[12,29,1,14,16],ARRAY[255,124,77,51],ARRAY[2697,2641,7777],ARRAY[12475,12346,12654],ARRAY[22.5,12.11,23.54],ARRAY[3567.21,2124.23,-1254.11],
+ARRAY['2020-05-19 14:15:20'::timestamp,'2020-11-14 17:45:14'::timestamp, '2020-09-05 01:24:06']);
+--Testcase 338:
+INSERT INTO time_series2 VALUES ('2020-12-20 06:00:00', '2020-12-20 09:00:00', '(1.3, 3.2)', 'f', 2, 175, 1234, 7705, 15.72, 1435.22, '2F63A64D987344F83AC8', ARRAY['7777a32ebea96a918b0f','40ee382083b987e94dd1','d417cf517eca8c2a709a'],
+ARRAY['t'::boolean,'t'::boolean,'f'::boolean,'f'::boolean],ARRAY[12,29,1,14,16],ARRAY[255,124,77,51],ARRAY[2697,2641,7777],ARRAY[12475,12346,12654],ARRAY[22.5,12.11,23.54],ARRAY[3567.21,2124.23,-1254.11],
+ARRAY['2020-05-19 14:15:20'::timestamp,'2020-11-14 17:45:14'::timestamp, '2020-09-05 01:24:06']);
+--Testcase 339:
+EXPLAIN VERBOSE
+SELECT (time_sampling(bytecol, '2020-12-20 05:00:00', '2020-12-20 05:20:00', 20, 'MINUTE')::time_series2).* FROM time_series2;
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              QUERY PLAN                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Foreign Scan on public.time_series2  (cost=100.00..16269.50 rows=3150 width=397)
+   Output: ((time_sampling(bytecol, '2020-12-20 05:00:00'::timestamp without time zone, '2020-12-20 05:20:00'::timestamp without time zone, 20, 'MINUTE'::time_unit))::time_series2).date, ((time_sampling(bytecol, '2020-12-20 05:00:00'::timestamp without time zone, '2020-12-20 05:20:00'::timestamp without time zone, 20, 'MINUTE'::time_unit))::time_series2).date2, ((time_sampling(bytecol, '2020-12-20 05:00:00'::timestamp without time zone, '2020-12-20 05:20:00'::timestamp without time zone, 20, 'MINUTE'::time_unit))::time_series2).strcol, ((time_sampling(bytecol, '2020-12-20 05:00:00'::timestamp without time zone, '2020-12-20 05:20:00'::timestamp without time zone, 20, 'MINUTE'::time_unit))::time_series2).booleancol, ((time_sampling(bytecol, '2020-12-20 05:00:00'::timestamp without time zone, '2020-12-20 05:20:00'::timestamp without time zone, 20, 'MINUTE'::time_unit))::time_series2).bytecol, ((time_sampling(bytecol, '2020-12-20 05:00:00'::timestamp without time zone, '2020-12-20 05:20:00'::timestamp without time zone, 20, 'MINUTE'::time_unit))::time_series2).shortcol, ((time_sampling(bytecol, '2020-12-20 05:00:00'::timestamp without time zone, '2020-12-20 05:20:00'::timestamp without time zone, 20, 'MINUTE'::time_unit))::time_series2).intcol, ((time_sampling(bytecol, '2020-12-20 05:00:00'::timestamp without time zone, '2020-12-20 05:20:00'::timestamp without time zone, 20, 'MINUTE'::time_unit))::time_series2).longcol, ((time_sampling(bytecol, '2020-12-20 05:00:00'::timestamp without time zone, '2020-12-20 05:20:00'::timestamp without time zone, 20, 'MINUTE'::time_unit))::time_series2).floatcol, ((time_sampling(bytecol, '2020-12-20 05:00:00'::timestamp without time zone, '2020-12-20 05:20:00'::timestamp without time zone, 20, 'MINUTE'::time_unit))::time_series2).doublecol, ((time_sampling(bytecol, '2020-12-20 05:00:00'::timestamp without time zone, '2020-12-20 05:20:00'::timestamp without time zone, 20, 'MINUTE'::time_unit))::time_series2).blobcol, ((time_sampling(bytecol, '2020-12-20 05:00:00'::timestamp without time zone, '2020-12-20 05:20:00'::timestamp without time zone, 20, 'MINUTE'::time_unit))::time_series2).stringarray, ((time_sampling(bytecol, '2020-12-20 05:00:00'::timestamp without time zone, '2020-12-20 05:20:00'::timestamp without time zone, 20, 'MINUTE'::time_unit))::time_series2).boolarray, ((time_sampling(bytecol, '2020-12-20 05:00:00'::timestamp without time zone, '2020-12-20 05:20:00'::timestamp without time zone, 20, 'MINUTE'::time_unit))::time_series2).bytearray, ((time_sampling(bytecol, '2020-12-20 05:00:00'::timestamp without time zone, '2020-12-20 05:20:00'::timestamp without time zone, 20, 'MINUTE'::time_unit))::time_series2).shortarray, ((time_sampling(bytecol, '2020-12-20 05:00:00'::timestamp without time zone, '2020-12-20 05:20:00'::timestamp without time zone, 20, 'MINUTE'::time_unit))::time_series2).integerarray, ((time_sampling(bytecol, '2020-12-20 05:00:00'::timestamp without time zone, '2020-12-20 05:20:00'::timestamp without time zone, 20, 'MINUTE'::time_unit))::time_series2).longarray, ((time_sampling(bytecol, '2020-12-20 05:00:00'::timestamp without time zone, '2020-12-20 05:20:00'::timestamp without time zone, 20, 'MINUTE'::time_unit))::time_series2).floatarray, ((time_sampling(bytecol, '2020-12-20 05:00:00'::timestamp without time zone, '2020-12-20 05:20:00'::timestamp without time zone, 20, 'MINUTE'::time_unit))::time_series2).doublearray, ((time_sampling(bytecol, '2020-12-20 05:00:00'::timestamp without time zone, '2020-12-20 05:20:00'::timestamp without time zone, 20, 'MINUTE'::time_unit))::time_series2).timestamparray
+   Remote SQL: SELECT  *  FROM time_series2
+(3 rows)
+
+--Testcase 340:
+SELECT (time_sampling(bytecol, '2020-12-20 05:00:00', '2020-12-20 05:20:00', 20, 'MINUTE')::time_series2).* FROM time_series2;
+ERROR:  stub time_sampling(anyelement,timestamp,timestamp,integer,time_unit) is called
+CONTEXT:  PL/pgSQL function time_sampling(anyelement,timestamp without time zone,timestamp without time zone,integer,time_unit) line 3 at RAISE
+--
+-- Test aggregate function time_avg
+--
+--Testcase 341:
+EXPLAIN VERBOSE
+SELECT time_avg(value1) FROM time_series;
+                       QUERY PLAN                       
+--------------------------------------------------------
+ Foreign Scan  (cost=1.00..1.00 rows=1 width=8)
+   Output: (time_avg(value1))
+   Remote SQL: SELECT time_avg(value1) FROM time_series
+(3 rows)
+
+--Testcase 342:
+SELECT time_avg(value1) FROM time_series;
+ time_avg 
+----------
+      5.5
+(1 row)
+
+--Testcase 343:
+EXPLAIN VERBOSE
+SELECT time_avg(value2) FROM time_series;
+                       QUERY PLAN                       
+--------------------------------------------------------
+ Foreign Scan  (cost=1.00..1.00 rows=1 width=8)
+   Output: (time_avg(value2))
+   Remote SQL: SELECT time_avg(value2) FROM time_series
+(3 rows)
+
+--Testcase 344:
+SELECT time_avg(value2) FROM time_series;
+      time_avg      
+--------------------
+ 3.2469137901717393
+(1 row)
+
+-- GridDB does not support select multiple target in a query => do not push down, raise stub function error
+--Testcase 345:
+EXPLAIN VERBOSE
+SELECT time_avg(value1), time_avg(value2) FROM time_series;
+                                     QUERY PLAN                                     
+------------------------------------------------------------------------------------
+ Aggregate  (cost=1315.75..1315.76 rows=1 width=16)
+   Output: time_avg(value1), time_avg(value2)
+   ->  Foreign Scan on public.time_series  (cost=100.00..178.25 rows=2275 width=12)
+         Output: date, value1, value2
+         Remote SQL: SELECT  *  FROM time_series
+(5 rows)
+
+--Testcase 346:
+SELECT time_avg(value1), time_avg(value2) FROM time_series;
+ERROR:  stub time_avg_sfunc(double precision, anyelement) is called
+CONTEXT:  PL/pgSQL function time_avg_sfunc(double precision,anyelement) line 3 at RAISE
+-- Do not push down when expected type is not correct, raise stub function error
+--Testcase 347:
+EXPLAIN VERBOSE
+SELECT time_avg(date) FROM time_series;
+                                    QUERY PLAN                                     
+-----------------------------------------------------------------------------------
+ Aggregate  (cost=826.80..826.81 rows=1 width=8)
+   Output: time_avg(date)
+   ->  Foreign Scan on public.time_series  (cost=100.00..186.80 rows=2560 width=8)
+         Output: date, value1, value2
+         Remote SQL: SELECT  *  FROM time_series
+(5 rows)
+
+--Testcase 348:
+SELECT time_avg(date) FROM time_series;
+ERROR:  stub time_avg_sfunc(double precision, anyelement) is called
+CONTEXT:  PL/pgSQL function time_avg_sfunc(double precision,anyelement) line 3 at RAISE
+--Testcase 349:
+EXPLAIN VERBOSE
+SELECT time_avg(blobcol) FROM time_series2;
+                                                                                                             QUERY PLAN                                                                                                             
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=519.36..519.37 rows=1 width=8)
+   Output: time_avg(blobcol)
+   ->  Foreign Scan on public.time_series2  (cost=100.00..153.86 rows=1462 width=32)
+         Output: date, date2, strcol, booleancol, bytecol, shortcol, intcol, longcol, floatcol, doublecol, blobcol, stringarray, boolarray, bytearray, shortarray, integerarray, longarray, floatarray, doublearray, timestamparray
+         Remote SQL: SELECT  *  FROM time_series2
+(5 rows)
+
+--Testcase 350:
+SELECT time_avg(blobcol) FROM time_series2;
+ERROR:  stub time_avg_sfunc(double precision, anyelement) is called
+CONTEXT:  PL/pgSQL function time_avg_sfunc(double precision,anyelement) line 3 at RAISE
+--
+-- Test aggregate function min, max, count, sum, avg, variance, stddev
+--
+--Testcase 351:
+EXPLAIN VERBOSE
+SELECT min(age) FROM student;
+                   QUERY PLAN                   
+------------------------------------------------
+ Foreign Scan  (cost=1.00..1.00 rows=1 width=4)
+   Output: (min(age))
+   Remote SQL: SELECT min(age) FROM student
+(3 rows)
+
+--Testcase 352:
+SELECT min(age) FROM student;
+ min 
+-----
+  28
+(1 row)
+
+--Testcase 353:
+EXPLAIN VERBOSE
+SELECT max(gpa) FROM student;
+                   QUERY PLAN                   
+------------------------------------------------
+ Foreign Scan  (cost=1.00..1.00 rows=1 width=8)
+   Output: (max(gpa))
+   Remote SQL: SELECT max(gpa) FROM student
+(3 rows)
+
+--Testcase 354:
+SELECT max(gpa) FROM student;
+ max 
+-----
+ 3.8
+(1 row)
+
+--Testcase 355:
+EXPLAIN VERBOSE
+SELECT count(*) FROM student;
+                   QUERY PLAN                   
+------------------------------------------------
+ Foreign Scan  (cost=1.00..1.00 rows=1 width=8)
+   Output: (count(*))
+   Remote SQL: SELECT count(*) FROM student
+(3 rows)
+
+--Testcase 356:
+SELECT count(*) FROM student;
+ count 
+-------
+     4
+(1 row)
+
+--Testcase 357:
+EXPLAIN VERBOSE
+SELECT count(*) FROM student WHERE gpa < 3.5 OR age < 42;
+                                   QUERY PLAN                                   
+--------------------------------------------------------------------------------
+ Foreign Scan  (cost=1.00..1.00 rows=1 width=8)
+   Output: (count(*))
+   Remote SQL: SELECT count(*) FROM student WHERE (((gpa < 3.5) OR (age < 42)))
+(3 rows)
+
+--Testcase 358:
+SELECT count(*) FROM student WHERE gpa < 3.5 OR age < 42;
+ count 
+-------
+     4
+(1 row)
+
+--Testcase 359:
+EXPLAIN VERBOSE
+SELECT sum(age) FROM student;
+                   QUERY PLAN                   
+------------------------------------------------
+ Foreign Scan  (cost=1.00..1.00 rows=1 width=8)
+   Output: (sum(age))
+   Remote SQL: SELECT sum(age) FROM student
+(3 rows)
+
+--Testcase 360:
+SELECT sum(age) FROM student;
+ sum 
+-----
+ 153
+(1 row)
+
+--Testcase 361:
+EXPLAIN VERBOSE
+SELECT sum(age) FROM student WHERE round(gpa) > 3.5;
+                              QUERY PLAN                               
+-----------------------------------------------------------------------
+ Foreign Scan  (cost=1.00..1.00 rows=1 width=8)
+   Output: (sum(age))
+   Remote SQL: SELECT sum(age) FROM student WHERE ((round(gpa) > 3.5))
+(3 rows)
+
+--Testcase 362:
+SELECT sum(age) FROM student WHERE round(gpa) > 3.5;
+ sum 
+-----
+  58
+(1 row)
+
+--Testcase 363:
+EXPLAIN VERBOSE
+SELECT avg(gpa) FROM student;
+                   QUERY PLAN                   
+------------------------------------------------
+ Foreign Scan  (cost=1.00..1.00 rows=1 width=8)
+   Output: (avg(gpa))
+   Remote SQL: SELECT avg(gpa) FROM student
+(3 rows)
+
+--Testcase 364:
+SELECT avg(gpa) FROM student;
+        avg         
+--------------------
+ 3.2750000000000004
+(1 row)
+
+--Testcase 365:
+EXPLAIN VERBOSE
+SELECT avg(gpa) FROM student WHERE lower(name) = 'george';
+                                 QUERY PLAN                                  
+-----------------------------------------------------------------------------
+ Foreign Scan  (cost=1.00..1.00 rows=1 width=8)
+   Output: (avg(gpa))
+   Remote SQL: SELECT avg(gpa) FROM student WHERE ((lower(name) = 'george'))
+(3 rows)
+
+--Testcase 366:
+SELECT avg(gpa) FROM student WHERE lower(name) = 'george';
+ avg 
+-----
+ 3.8
+(1 row)
+
+--Testcase 367:
+EXPLAIN VERBOSE
+SELECT variance(gpa) FROM student;
+                   QUERY PLAN                    
+-------------------------------------------------
+ Foreign Scan  (cost=1.00..1.00 rows=1 width=8)
+   Output: (variance(gpa))
+   Remote SQL: SELECT variance(gpa) FROM student
+(3 rows)
+
+--Testcase 368:
+SELECT variance(gpa) FROM student;
+      variance       
+---------------------
+ 0.36249999999999716
+(1 row)
+
+--Testcase 369:
+EXPLAIN VERBOSE
+SELECT variance(gpa) FROM student WHERE gpa > 3.5;
+                             QUERY PLAN                              
+---------------------------------------------------------------------
+ Foreign Scan  (cost=1.00..1.00 rows=1 width=8)
+   Output: (variance(gpa))
+   Remote SQL: SELECT variance(gpa) FROM student WHERE ((gpa > 3.5))
+(3 rows)
+
+--Testcase 370:
+SELECT variance(gpa) FROM student WHERE gpa > 3.5;
+       variance       
+----------------------
+ 0.005000000000002558
+(1 row)
+
+--Testcase 371:
+EXPLAIN VERBOSE
+SELECT stddev(age) FROM student;
+                   QUERY PLAN                    
+-------------------------------------------------
+ Foreign Scan  (cost=1.00..1.00 rows=1 width=32)
+   Output: (stddev(age))
+   Remote SQL: SELECT stddev(age) FROM student
+(3 rows)
+
+--Testcase 372:
+SELECT stddev(age) FROM student;
+      stddev      
+------------------
+ 14.7958327466441
+(1 row)
+
+--Testcase 373:
+EXPLAIN VERBOSE
+SELECT stddev(age) FROM student WHERE char_length(name) > 4;
+                                  QUERY PLAN                                   
+-------------------------------------------------------------------------------
+ Foreign Scan  (cost=1.00..1.00 rows=1 width=32)
+   Output: (stddev(age))
+   Remote SQL: SELECT stddev(age) FROM student WHERE ((char_length(name) > 4))
+(3 rows)
+
+--Testcase 374:
+SELECT stddev(age) FROM student WHERE char_length(name) > 4;
+      stddev      
+------------------
+ 21.2132034355964
+(1 row)
+
+--Testcase 375:
+EXPLAIN VERBOSE
+SELECT max(gpa), min(age) FROM student;
+                                           QUERY PLAN                                            
+-------------------------------------------------------------------------------------------------
+ Result  (cost=20.00..20.01 rows=1 width=12)
+   Output: $0, $1
+   InitPlan 1 (returns $0)
+     ->  Limit  (cost=10.00..10.00 rows=1 width=8)
+           Output: student.gpa
+           ->  Foreign Scan on public.student  (cost=10.00..10.00 rows=10 width=8)
+                 Output: student.gpa
+                 Remote SQL: SELECT  *  FROM student WHERE ((gpa IS NOT NULL)) ORDER BY gpa DESC
+   InitPlan 2 (returns $1)
+     ->  Limit  (cost=10.00..10.00 rows=1 width=4)
+           Output: student_1.age
+           ->  Foreign Scan on public.student student_1  (cost=10.00..10.00 rows=10 width=4)
+                 Output: student_1.age
+                 Remote SQL: SELECT  *  FROM student WHERE ((age IS NOT NULL)) ORDER BY age ASC
+(14 rows)
+
+--Testcase 376:
+SELECT max(gpa), min(age) FROM student;
+ max | min 
+-----+-----
+ 3.8 |  28
+(1 row)
+
+--Delete inserted values
+--Testcase 377:
+DELETE FROM student WHERE name = 'GEORGE' or name = 'BOB';
+--Drop all foreign tables
+--Testcase 378:
+DROP FOREIGN TABLE student;
+--Testcase 379:
+DROP FOREIGN TABLE time_series;
+--Testcase 380:
+DROP FOREIGN TABLE time_series2;
+--Testcase 381:
+DROP USER MAPPING FOR public SERVER griddb_svr;
+--Testcase 382:
+DROP SERVER griddb_svr CASCADE;
+--Testcase 383:
+DROP EXTENSION griddb_fdw CASCADE;
