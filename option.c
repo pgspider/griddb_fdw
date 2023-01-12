@@ -1,7 +1,7 @@
 /*
  * GridDB Foreign Data Wrapper
  *
- * Portions Copyright (c) 2021, TOSHIBA CORPORATION
+ * Portions Copyright (c) 2018, TOSHIBA CORPORATION
  *
  * IDENTIFICATION
  *		  option.c
@@ -146,8 +146,10 @@ griddb_fdw_validator(PG_FUNCTION_ARGS)
 			ereport(ERROR,
 					(errcode(ERRCODE_FDW_INVALID_OPTION_NAME),
 					 errmsg("griddb_fdw: invalid option \"%s\"", def->defname),
-					 errhint("Valid options in this context are: %s", buf.len ? buf.data : "<none>")
-					 ));
+					 buf.len > 0
+					 ? errhint("Valid options in this context are: %s",
+					 		   buf.data)
+					 : errhint("There are no valid options in this context.")));
 		}
 
 		/*

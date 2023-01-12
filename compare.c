@@ -1,7 +1,7 @@
 /*
  * GridDB Foreign Data Wrapper
  *
- * Portions Copyright (c) 2020, TOSHIBA CORPORATION
+ * Portions Copyright (c) 2019, TOSHIBA CORPORATION
  *
  * IDENTIFICATION
  *		  compare.c
@@ -44,8 +44,8 @@
 static int
 griddb_compare_tuplekey_string(const void *a, const void *b)
 {
-	Datum	   *val1 = *(Datum **) a;
-	Datum	   *val2 = *(Datum **) b;
+	Datum	   *val1 = ((GridDBFdwModifiedRowData *)a)->values;
+	Datum	   *val2 = ((GridDBFdwModifiedRowData *)b)->values;
 	char	   *textVal1;
 	char	   *textVal2;
 	Oid			outputFunctionId;
@@ -61,8 +61,8 @@ griddb_compare_tuplekey_string(const void *a, const void *b)
 static int
 griddb_compare_tuplekey_integer(const void *a, const void *b)
 {
-	Datum	   *val1 = *(Datum **) a;
-	Datum	   *val2 = *(Datum **) b;
+	Datum	   *val1 = ((GridDBFdwModifiedRowData *)a)->values;
+	Datum	   *val2 = ((GridDBFdwModifiedRowData *)b)->values;
 	int32		intVal1 = DatumGetInt32(val1[0]);
 	int32		intVal2 = DatumGetInt32(val2[0]);
 
@@ -72,8 +72,8 @@ griddb_compare_tuplekey_integer(const void *a, const void *b)
 static int
 griddb_compare_tuplekey_long(const void *a, const void *b)
 {
-	Datum	   *val1 = *(Datum **) a;
-	Datum	   *val2 = *(Datum **) b;
+	Datum	   *val1 = ((GridDBFdwModifiedRowData *)a)->values;
+	Datum	   *val2 = ((GridDBFdwModifiedRowData *)b)->values;
 	int64		longVal1 = DatumGetInt64(val1[0]);
 	int64		longVal2 = DatumGetInt64(val2[0]);
 
@@ -83,8 +83,8 @@ griddb_compare_tuplekey_long(const void *a, const void *b)
 static int
 griddb_compare_tuplekey_timestamp(const void *a, const void *b)
 {
-	Datum	   *val1 = *(Datum **) a;
-	Datum	   *val2 = *(Datum **) b;
+	Datum	   *val1 = ((GridDBFdwModifiedRowData *)a)->values;
+	Datum	   *val2 = ((GridDBFdwModifiedRowData *)b)->values;
 	Timestamp	timestamp1 = DatumGetTimestamp(val1[0]);
 	Timestamp	timestamp2 = DatumGetTimestamp(val2[0]);
 

@@ -401,6 +401,7 @@ griddb_init(const char *addr,
 	table_info	J1_TBL,
 				J2_TBL,
 				b0,
+				b0_star,
 				tenk1,
 				tenk2,
 				INT2_TBL,
@@ -494,6 +495,7 @@ griddb_init(const char *addr,
 				regr_test_array,
 				bool_test_a,
 				bool_test_b,
+				btg,
 				agg_data_2k,
 				agg_data_20k,
 				agg_group_1,
@@ -526,8 +528,10 @@ griddb_init(const char *addr,
 				width_bucket_roundoff_tbl,
 				width_bucket_test,
 				num_input_test,
+				num_typemod_test,
 				num_test_calc,
 				num_test_int,
+				num_variance,
 				fract_only,
 				to_number_test;
 
@@ -1300,6 +1304,13 @@ griddb_init(const char *addr,
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
 
+	ret = set_tableInfo(store, "b0_star", &b0_star,
+						2,
+						"aa", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"bb", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
 	ret = set_tableInfo(store, "tenk1", &tenk1,
 						16,
 						"unique1", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
@@ -2004,6 +2015,18 @@ griddb_init(const char *addr,
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
 
+	ret = set_tableInfo(store, "btg", &btg,
+						6,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"p", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
+						"v", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE,
+						"c", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
+						"d", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
+						"e", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE);
+
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
 	ret = set_tableInfo(store, "agg_data_2k", &agg_data_2k,
 						1,
 						"g", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL);
@@ -2238,6 +2261,17 @@ griddb_init(const char *addr,
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
 
+	ret = set_tableInfo(store, "num_typemod_test", &num_typemod_test,
+						6,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"millions", GS_TYPE_DOUBLE, GS_TYPE_OPTION_NULLABLE,
+						"thousands", GS_TYPE_DOUBLE, GS_TYPE_OPTION_NULLABLE,
+						"units", GS_TYPE_DOUBLE, GS_TYPE_OPTION_NULLABLE,
+						"thousandths", GS_TYPE_DOUBLE, GS_TYPE_OPTION_NULLABLE,
+						"millionths", GS_TYPE_DOUBLE, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
 	ret = set_tableInfo(store, "num_test_calc", &num_test_calc,
 						3,
 						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
@@ -2250,6 +2284,13 @@ griddb_init(const char *addr,
 						2,
 						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
 						"x", GS_TYPE_LONG, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "num_variance", &num_variance,
+						2,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"a", GS_TYPE_DOUBLE, GS_TYPE_OPTION_NULLABLE);
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
 

@@ -2,7 +2,7 @@
  *
  * GridDB Foreign Data Wrapper
  *
- * Portions Copyright (c) 2021, TOSHIBA CORPORATION
+ * Portions Copyright (c) 2018, TOSHIBA CORPORATION
  *
  * IDENTIFICATION
  *		  griddb_fdw.h
@@ -104,7 +104,7 @@
 #define OPTION_TUPLE_COST	   "fdw_tuple_cost"
 #define OPTION_BATCH_SIZE	   "batch_size"
 #define OPTION_KEEP_CONN	   "keep_connections"
-#define CODE_VERSION 20101
+#define CODE_VERSION 20200
 /* Attribute number of rowkey column. 1st column is assigned rowkey in GridDB. */
 #define ROWKEY_ATTNO 1
 /*
@@ -294,11 +294,20 @@ typedef struct GridDBFdwRowKeyHashEntry
 }			GridDBFdwRowKeyHashEntry;
 
 /*
+ * Modified row data.
+ */
+typedef struct GridDBFdwModifiedRowData
+{
+	Datum	  *values;
+	bool	  *isnulls;
+} GridDBFdwModifiedRowData;
+
+/*
  * Modified row information.
  */
 typedef struct GridDBFdwModifiedRows
 {
-	Datum	  **target_values;	/* update or delete target row information */
+	GridDBFdwModifiedRowData *target_values; /* update or delete target row information */
 	int			field_num;		/* # of field */
 	uint64_t	num_target;		/* # of stored modified row */
 	uint64_t	max_target;		/* # of storable modified row */
@@ -343,7 +352,12 @@ extern bool griddb_is_foreign_expr(PlannerInfo *root,
 extern bool griddb_is_foreign_param(PlannerInfo *root,
 									RelOptInfo *baserel,
 									Expr *expr);
-extern Expr *griddb_find_em_expr_for_rel(EquivalenceClass *ec, RelOptInfo *rel);
+extern bool griddb_is_foreign_pathkey(PlannerInfo *root,
+									  RelOptInfo *baserel,
+									  PathKey *pathkey);
+extern EquivalenceMember *griddb_find_em_for_rel(PlannerInfo *root,
+												 EquivalenceClass *ec,
+												 RelOptInfo *rel);
 extern void griddb_deparse_select(StringInfo buf, PlannerInfo *root,
 								  RelOptInfo *foreignrel, List *remote_conds,
 								  List *pathkeys, List **retrieved_attrs,
@@ -356,6 +370,7 @@ extern bool griddb_is_foreign_function_tlist(PlannerInfo *root,
 											 RelOptInfo *baserel,
 											 List *tlist);
 extern List *griddb_pull_func_clause(Node *node);
+extern bool griddb_is_builtin(Oid oid);
 
 /* in store.c */
 extern HTAB *griddb_rowkey_hash_create(GridDBFdwFieldInfo * field_info);

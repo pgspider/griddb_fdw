@@ -1,7 +1,7 @@
 /*
  * GridDB Foreign Data Wrapper
  *
- * Portions Copyright (c) 2021, TOSHIBA CORPORATION
+ * Portions Copyright (c) 2018, TOSHIBA CORPORATION
  *
  * IDENTIFICATION
  *		  griddb_fdw.c
@@ -18,6 +18,7 @@
 #include "nodes/makefuncs.h"
 #include "catalog/pg_type.h"
 #include "catalog/pg_proc.h"
+#include "catalog/pg_opfamily.h"
 #include "commands/explain.h"
 #include "commands/defrem.h"
 #include "executor/spi.h"
@@ -62,8 +63,6 @@ enum FdwScanPrivateIndex
 {
 	/* SQL statement to execute remotely (as a String node) */
 	FdwScanPrivateSelectSql,
-	/* List of restriction clauses that can be executed remotely */
-	FdwScanPrivateRemoteConds,
 	/* Integer list of attribute numbers retrieved by the SELECT */
 	FdwScanPrivateRetrievedAttrs,
 	/* Integer representing UPDATE/DELETE target */
@@ -210,6 +209,9 @@ typedef struct GridDBFdwModifyState
 	/* for sharing data with ForeignScan */
 	GridDBFdwSMRelay *smrelay;	/* cache of the relay */
 	int			batch_size;		/* value of FDW option "batch_size" */
+
+	MemoryContext temp_cxt;		/* context for temporary data */
+
 	struct GridDBFdwModifyState *aux_fmstate;	/* foreign-insert state, if
 												 * created */
 }			GridDBFdwModifyState;
@@ -796,6 +798,14 @@ griddb_set_transmission_modes(void)
 								 PGC_USERSET, PGC_S_SESSION,
 								 GUC_ACTION_SAVE, true, 0, false);
 
+	/*
+	 * In addition force restrictive search_path, in case there are any
+	 * regproc or similar constants to be printed.
+	 */
+	(void) set_config_option("search_path", "pg_catalog",
+							 PGC_USERSET, PGC_S_SESSION,
+							 GUC_ACTION_SAVE, true, 0, false);
+
 	return nestlevel;
 }
 
@@ -982,8 +992,7 @@ griddbGetForeignPlan(PlannerInfo *root,
 	 * Build the fdw_private list that will be available to the executor.
 	 * Items in the list must match order in enum FdwScanPrivateIndex.
 	 */
-	fdw_private = list_make4(makeString(sql.data),
-							 remote_conds,
+	fdw_private = list_make3(makeString(sql.data),
 							 retrieved_attrs,
 							 makeInteger(for_update));
 	fdw_private = lappend(fdw_private, fdw_scan_tlist);
@@ -1618,6 +1627,11 @@ create_foreign_modify(EState *estate,
 	/* Set up remote query information. */
 	fmstate->target_attrs = target_attrs;
 
+	/* Create context for per-tuple temp workspace */
+	fmstate->temp_cxt = AllocSetContextCreate(estate->es_query_cxt,
+											  "griddb_fdw temporary data",
+											  ALLOCSET_SMALL_SIZES);
+
 	/* Get the row structure for gsPutRow */
 	fmstate->cont_name = griddb_get_rel_name(rte->relid);
 	fmstate->cont = griddb_get_container(user, rte->relid, fmstate->store);
@@ -1633,7 +1647,7 @@ create_foreign_modify(EState *estate,
 
 	/* Initialize auxiliary state */
 	fmstate->aux_fmstate = NULL;
-#if PG_VERSION_NUM == 140000
+#if PG_VERSION_NUM >= 140000
 	/* Set batch_size from foreign server/table options. */
 	if (operation == CMD_INSERT)
 		fmstate->batch_size = get_batch_size_option(rel);
@@ -1706,6 +1720,7 @@ griddbExecForeignInsert(EState *estate,
 	GSContainerInfo cont_info = GS_CONTAINER_INFO_INITIALIZER;
 	GSRow	   *row;
 	GridDBFdwFieldInfo field_info = {0};
+	MemoryContext oldcontext;
 
 	elog(DEBUG1, "griddb_fdw: %s", __func__);
 
@@ -1728,12 +1743,19 @@ griddbExecForeignInsert(EState *estate,
 	if (!GS_SUCCEEDED(ret))
 		griddb_REPORT_ERROR(ERROR, ret, fmstate->cont);
 	Assert(exists == GS_TRUE);
+
+	/* Switch to temp context, the allocated memory will be freed at the end of this routine */
+	oldcontext = MemoryContextSwitchTo(fmstate->temp_cxt);
+
 	griddb_make_column_info(&cont_info, &field_info);
 
 	/* Create row structure for gsPutRow */
 	griddb_bind_for_putrow(fmstate, slot, row, resultRelInfo->ri_RelationDesc,
 						   &field_info);
 	griddb_free_column_info(&field_info);
+
+	/* Switch to old context */
+	MemoryContextSwitchTo(oldcontext);
 
 	/* Insert row */
 	ret = gsPutRow(fmstate->cont, NULL, row, &exists);
@@ -1744,7 +1766,11 @@ griddbExecForeignInsert(EState *estate,
 		elog(WARNING, "row was updated instead of insert "
 			 "because same row key has already existed.");
 
+	/* Clean up */
 	gsCloseRow(&row);
+
+	/* Free allocated memory in temp context */
+	MemoryContextReset(fmstate->temp_cxt);
 
 	return slot;
 }
@@ -1762,7 +1788,7 @@ griddbExecForeignBatchInsert(EState *estate,
 							 int *numSlots)
 {
 	GridDBFdwModifyState *fmstate = (GridDBFdwModifyState *) resultRelInfo->ri_FdwState;
-	GSRow	  **rowList = (GSRow * *) palloc0(sizeof(GSRow *) * (*numSlots));
+	GSRow	  **rowList;
 	GSResult	ret;
 	GSBool		exists;
 	GSContainerInfo cont_info = GS_CONTAINER_INFO_INITIALIZER;
@@ -1770,6 +1796,7 @@ griddbExecForeignBatchInsert(EState *estate,
 	GridDBFdwFieldInfo field_info = {0};
 	int			i;
 	const void *const *rowObj;
+	MemoryContext oldcontext;
 
 	elog(DEBUG1, "griddb_fdw: %s", __func__);
 
@@ -1786,6 +1813,12 @@ griddbExecForeignBatchInsert(EState *estate,
 	if (!GS_SUCCEEDED(ret))
 		griddb_REPORT_ERROR(ERROR, ret, fmstate->cont);
 	Assert(exists == GS_TRUE);
+
+	/* Switch to temp context, the allocated memory will be freed at the end of this routine */
+	oldcontext = MemoryContextSwitchTo(fmstate->temp_cxt);
+
+	rowList = (GSRow * *) palloc0(sizeof(GSRow *) * (*numSlots));
+
 	griddb_make_column_info(&cont_info, &field_info);
 
 	for (i = 0; i < *numSlots; i++)
@@ -1799,6 +1832,9 @@ griddbExecForeignBatchInsert(EState *estate,
 		rowList[i] = row;
 	}
 	griddb_free_column_info(&field_info);
+
+	/* Switch to old context */
+	MemoryContextSwitchTo(oldcontext);
 
 	rowObj = (void *) rowList;
 
@@ -1815,6 +1851,9 @@ griddbExecForeignBatchInsert(EState *estate,
 	{
 		gsCloseRow(&rowList[i]);
 	}
+
+	/* Free allocated memory in temp context */
+	MemoryContextReset(fmstate->temp_cxt);
 
 	return slots;
 }
@@ -1855,6 +1894,22 @@ griddbGetForeignModifyBatchSize(ResultRelInfo *resultRelInfo)
 		batch_size = get_batch_size_option(resultRelInfo->ri_RelationDesc);
 
 	/*
+	 * Disable batching when we have to use RETURNING or there are any
+	 * BEFORE/AFTER ROW INSERT triggers on the foreign table.
+	 *
+	 * When there are any BEFORE ROW INSERT triggers on the table, we can't
+	 * support it, because such triggers might query the table we're inserting
+	 * into and act differently if the tuples that have already been processed
+	 * and prepared for insertion are not there.
+	 */
+	if (resultRelInfo->ri_projectReturning != NULL ||
+		resultRelInfo->ri_WithCheckOptions != NIL ||
+		(resultRelInfo->ri_TrigDesc &&
+		 (resultRelInfo->ri_TrigDesc->trig_insert_before_row ||
+		  resultRelInfo->ri_TrigDesc->trig_insert_after_row)))
+		return 1;
+
+	/*
 	 * GridDB c-API has no limit with max number of row (rowCount) in
 	 * gsPutMultipleRows(), but rowCount should be limited to 65535 (uint16)
 	 * same as postgres_fdw for safe.
@@ -1884,12 +1939,15 @@ griddbExecForeignUpdate(EState *estate,
 	bool		isnull;
 	bool		found;
 	GridDBFdwRowKeyHashEntry *rowkey_hash_entry;
+	MemoryContext oldcontext;
 
 	elog(DEBUG1, "griddb_fdw: %s", __func__);
 
 	/* Check if it is already modified or not. */
 	rowkey = ExecGetJunkAttribute(planSlot, fmstate->junk_att_no, &isnull);
 	Assert(isnull == false);
+
+	oldcontext = MemoryContextSwitchTo(fmstate->temp_cxt);
 	rowkey_hash_entry = griddb_rowkey_hash_search(fmstate->modified_rowkeys, rowkey, &found);
 	if (found)
 		return NULL;
@@ -1898,6 +1956,8 @@ griddbExecForeignUpdate(EState *estate,
 
 	if (!fmstate->bulk_mode)
 		griddb_judge_bulk_mode(fmstate, planSlot);
+
+	MemoryContextSwitchTo(oldcontext);
 
 	if (fmstate->bulk_mode)
 	{
@@ -1927,6 +1987,9 @@ griddbExecForeignUpdate(EState *estate,
 		griddb_rowkey_hash_set(rowkey_hash_entry, rowkey, attr);
 	}
 
+	/* Free memory in temp context */
+	MemoryContextReset(fmstate->temp_cxt);
+
 	/* Return NULL if nothing was updated on the remote end */
 	return slot;
 }
@@ -1949,18 +2012,30 @@ griddbExecForeignDelete(EState *estate,
 	bool		isnull;
 	bool		found;
 	GridDBFdwRowKeyHashEntry *rowkey_hash_entry;
+	MemoryContext	oldcontext;
 
 	elog(DEBUG1, "griddb_fdw: %s", __func__);
 
 	/* Check if it is already modified or not. */
 	rowkey = ExecGetJunkAttribute(planSlot, fmstate->junk_att_no, &isnull);
 	Assert(isnull == false);
+
+	/*
+	* griddb_rowkey_hash_search will create new entry if not found, so griddb_rowkey_hash_create will be called,
+	* and then griddb_get_comparator_datum is called. In griddb_get_comparator_datum, some variables will be allocated
+	* for each data type, the lifecyle of these variables is only within griddbExecForeignDelete, so we need to manage
+	* memory of these variables by using memory context.
+	*/
+	oldcontext = MemoryContextSwitchTo(fmstate->temp_cxt);
+
 	rowkey_hash_entry = griddb_rowkey_hash_search(fmstate->modified_rowkeys, rowkey, &found);
 	if (found)
 		return NULL;
 
 	if (!fmstate->bulk_mode)
 		griddb_judge_bulk_mode(fmstate, planSlot);
+
+	MemoryContextSwitchTo(oldcontext);
 
 	if (fmstate->bulk_mode)
 	{
@@ -1984,6 +2059,9 @@ griddbExecForeignDelete(EState *estate,
 		attr = TupleDescAttr(planSlot->tts_tupleDescriptor, fmstate->junk_att_no - 1);
 		griddb_rowkey_hash_set(rowkey_hash_entry, rowkey, attr);
 	}
+
+	/* Free memory which is allocated in the temp context */
+	MemoryContextReset(fmstate->temp_cxt);
 
 	/* Return NULL if nothing was deleted on the remote end */
 	return slot;
@@ -2491,8 +2569,7 @@ griddb_get_useful_pathkeys_for_relation(PlannerInfo *root, RelOptInfo *rel)
 		foreach(lc, root->query_pathkeys)
 		{
 			PathKey    *pathkey = (PathKey *) lfirst(lc);
-			EquivalenceClass *pathkey_ec = pathkey->pk_eclass;
-			Expr	   *em_expr;
+			EquivalenceMember *em = griddb_find_em_for_rel(root, pathkey->pk_eclass, rel);
 
 			/*
 			 * The planner and executor don't have any clever strategy for
@@ -2501,25 +2578,20 @@ griddb_get_useful_pathkeys_for_relation(PlannerInfo *root, RelOptInfo *rel)
 			 * end up resorting the entire data set.  So, unless we can push
 			 * down all of the query pathkeys, forget it.
 			 *
-			 * is_foreign_expr would detect volatile expressions as well, but
-			 * checking ec_has_volatile here saves some cycles.
-			 *
 			 * For Griddb, NULL value is sorted as max value. We don't
 			 * pushdown ORDER BY clause in the following cases: (1) DESC NULLS
 			 * LAST (2) ASC NULLS FIRST
 			 *
 			 * Griddb does not support ORDER BY functions/formulas.
 			 */
-			if (pathkey_ec->ec_has_volatile ||
-				!(em_expr = griddb_find_em_expr_for_rel(pathkey_ec, rel)) ||
-				!griddb_is_foreign_expr(root, rel, em_expr, false) ||
+			if (!griddb_is_foreign_pathkey(root, rel, pathkey) ||
 				((pathkey->pk_strategy == BTLessStrategyNumber) &&
 				 pathkey->pk_nulls_first) ||	/* ASC NULLS FIRST */
 				((pathkey->pk_strategy != BTLessStrategyNumber) &&
 				 !pathkey->pk_nulls_first) ||	/* DESC NULLS LAST */
-				nodeTag(em_expr) == T_OpExpr ||
-				nodeTag(em_expr) == T_FuncExpr ||
-				nodeTag(em_expr) == T_BoolExpr)
+				nodeTag(em->em_expr) == T_OpExpr ||
+				nodeTag(em->em_expr) == T_FuncExpr ||
+				nodeTag(em->em_expr) == T_BoolExpr)
 			{
 				query_pathkeys_ok = false;
 				break;
@@ -2566,16 +2638,18 @@ griddb_get_useful_pathkeys_for_relation(PlannerInfo *root, RelOptInfo *rel)
 	foreach(lc, useful_eclass_list)
 	{
 		EquivalenceClass *cur_ec = lfirst(lc);
-		Expr	   *em_expr;
 		PathKey    *pathkey;
 
 		/* If redundant with what we did above, skip it. */
 		if (cur_ec == query_ec)
 			continue;
 
+		/* Can't push down the sort if the EC's opfamily is not built-in. */
+		if (!griddb_is_builtin(linitial_oid(cur_ec->ec_opfamilies)))
+			continue;
+
 		/* If no pushable expression for this rel, skip it. */
-		em_expr = griddb_find_em_expr_for_rel(cur_ec, rel);
-		if (em_expr == NULL || !griddb_is_foreign_expr(root, rel, em_expr, false))
+		if (griddb_find_em_for_rel(root, cur_ec, rel) == NULL)
 			continue;
 
 		/* Looks like we can generate a pathkey, so let's do it. */
@@ -2717,6 +2791,55 @@ griddb_add_paths_with_pathkeys_for_rel(PlannerInfo *root, RelOptInfo *rel,
 
 	useful_pathkeys_list = griddb_get_useful_pathkeys_for_relation(root, rel);
 
+	/*
+	 * Before creating sorted paths, arrange for the passed-in EPQ path, if
+	 * any, to return columns needed by the parent ForeignScan node so that
+	 * they will propagate up through Sort nodes injected below, if necessary.
+	 */
+	if (epq_path != NULL && useful_pathkeys_list != NIL)
+	{
+		GriddbFdwRelationInfo *fpinfo = (GriddbFdwRelationInfo *) rel->fdw_private;
+		PathTarget *target = copy_pathtarget(epq_path->pathtarget);
+
+		/* Include columns required for evaluating PHVs in the tlist. */
+		add_new_columns_to_pathtarget(target,
+									  pull_var_clause((Node *) target->exprs,
+													  PVC_RECURSE_PLACEHOLDERS));
+
+		/* Include columns required for evaluating the local conditions. */
+		foreach(lc, fpinfo->local_conds)
+		{
+			RestrictInfo *rinfo = lfirst_node(RestrictInfo, lc);
+
+			add_new_columns_to_pathtarget(target,
+										  pull_var_clause((Node *) rinfo->clause,
+														  PVC_RECURSE_PLACEHOLDERS));
+		}
+
+		/*
+		 * If we have added any new columns, adjust the tlist of the EPQ path.
+		 *
+		 * Note: the plan created using this path will only be used to execute
+		 * EPQ checks, where accuracy of the plan cost and width estimates
+		 * would not be important, so we do not do set_pathtarget_cost_width()
+		 * for the new pathtarget here.  See also postgresGetForeignPlan().
+		 */
+		if (list_length(target->exprs) > list_length(epq_path->pathtarget->exprs))
+		{
+			/* The EPQ path is a join path, so it is projection-capable. */
+			Assert(is_projection_capable_path(epq_path));
+
+			/*
+			 * Use create_projection_path() here, so as to avoid modifying it
+			 * in place.
+			 */
+			epq_path = (Path *) create_projection_path(root,
+													   rel,
+													   epq_path,
+													   target);
+		}
+	}
+
 	/* Create one path for each set of pathkeys we found above. */
 	foreach(lc, useful_pathkeys_list)
 	{
@@ -2804,15 +2927,19 @@ griddb_foreign_grouping_ok(PlannerInfo *root, RelOptInfo *grouped_rel)
 		return false;
 
 	/*
-	 * The targetlist expected from this node and the targetlist pushed down
-	 * to the foreign server may be different. The latter requires
-	 * sortgrouprefs to be set to push down GROUP BY clause, but should not
-	 * have those arising from ORDER BY clause. These sortgrouprefs may be
+	 * For version before 11, the targetlist expected from this node and the
+	 * targetlist pushed down to the foreign server may be different. The latter
+	 * requires sortgrouprefs to be set to push down GROUP BY clause, but should
+	 * not have those arising from ORDER BY clause. These sortgrouprefs may be
 	 * different from those in the plan's targetlist. Use a copy of path
 	 * target to record the new sortgrouprefs.
+	 * For later version, can use reltarget directly.
 	 */
+#if PG_VERSION_NUM < 110000
 	grouping_target = copy_pathtarget(root->upper_targets[UPPERREL_GROUP_AGG]);
-
+#else
+	grouping_target = grouped_rel->reltarget;
+#endif
 	/*
 	 * Examine grouping expressions, as well as other expressions we'd need to
 	 * compute, and check whether they are safe to push down to the foreign
@@ -3570,30 +3697,36 @@ estimate_path_cost_size(PlannerInfo *root,
 }
 
 /*
- * Find an equivalence class member expression, all of whose Vars, come from
- * the indicated relation.
+ * Given an EquivalenceClass and a foreign relation, find an EC member
+ * that can be used to sort the relation remotely according to a pathkey
+ * using this EC.
+ *
+ * If there is more than one suitable candidate, return an arbitrary
+ * one of them.  If there is none, return NULL.
+ *
+ * This checks that the EC member expression uses only Vars from the given
+ * rel and is shippable.  Caller must separately verify that the pathkey's
+ * ordering operator is shippable.
  */
-extern Expr *
-griddb_find_em_expr_for_rel(EquivalenceClass *ec, RelOptInfo *rel)
+EquivalenceMember *
+griddb_find_em_for_rel(PlannerInfo *root, EquivalenceClass *ec, RelOptInfo *rel)
 {
-	ListCell   *lc_em;
+	ListCell   *lc;
 
-	foreach(lc_em, ec->ec_members)
+	foreach(lc, ec->ec_members)
 	{
-		EquivalenceMember *em = (EquivalenceMember *) lfirst(lc_em);
+		EquivalenceMember *em = (EquivalenceMember *) lfirst(lc);
 
-		if (bms_is_subset(em->em_relids, rel->relids))
-		{
-			/*
-			 * If there is more than one equivalence member whose Vars are
-			 * taken entirely from this relation, we'll be content to choose
-			 * any one of those.
-			 */
-			return em->em_expr;
-		}
+		/*
+		 * Note we require !bms_is_empty, else we'd accept constant
+		 * expressions which are not suitable for the purpose.
+		 */
+		if (bms_is_subset(em->em_relids, rel->relids) &&
+			!bms_is_empty(em->em_relids) &&
+			griddb_is_foreign_expr(root, rel, em->em_expr, false))
+			return em;
 	}
 
-	/* We didn't find any suitable equivalence class expression */
 	return NULL;
 }
 
@@ -4788,8 +4921,8 @@ griddb_find_junk_attno(GridDBFdwModifyState * fmstate, List *targetlist)
 static void
 griddb_judge_bulk_mode(GridDBFdwModifyState * fmstate, TupleTableSlot *planSlot)
 {
-	Datum	   *value1[1];
-	Datum	   *value2[1];
+	GridDBFdwModifiedRowData value1[1];
+	GridDBFdwModifiedRowData value2[1];
 	Datum		val1;
 	int			(*comparator) (const void *, const void *);
 	bool		isnull;
@@ -4810,8 +4943,10 @@ griddb_judge_bulk_mode(GridDBFdwModifyState * fmstate, TupleTableSlot *planSlot)
 	val1 = ExecGetJunkAttribute(planSlot, fmstate->junk_att_no, &isnull);
 	Assert(isnull == false);
 
-	value1[0] = &val1;
-	value2[0] = &smrelay->rowkey_val;
+	value1[0].values = &val1;
+	value1[0].isnulls = false;
+	value2[0].values = &smrelay->rowkey_val;
+	value2[0].isnulls = false;
 	comparator = griddb_get_comparator_tuplekey(gs_type);
 	if (comparator((const void *) &value1, (const void *) &value2) != 0)
 		fmstate->bulk_mode = true;
@@ -5355,8 +5490,8 @@ griddb_check_rowkey_update(GridDBFdwModifyState * fmstate, TupleTableSlot *new_s
 		bool		isnull;
 		Datum		value;
 		GSType		type;
-		Datum	   *value1[1];
-		Datum	   *value2[1];
+		GridDBFdwModifiedRowData value1[1];
+		GridDBFdwModifiedRowData value2[1];
 
 		if ((attnum < 0) || (attnum != ROWKEY_ATTNO))
 			continue;
@@ -5368,8 +5503,10 @@ griddb_check_rowkey_update(GridDBFdwModifyState * fmstate, TupleTableSlot *new_s
 		else
 			type = smrelay->field_info.column_types[attnum - 1];
 
-		value1[0] = &value;
-		value2[0] = &smrelay->rowkey_val;
+		value1[0].values = &value;
+		value1[0].isnulls = false;
+		value2[0].values = &smrelay->rowkey_val;
+		value2[0].isnulls = false;
 		comparator = griddb_get_comparator_tuplekey(type);
 		if (comparator((const void *) &value1, (const void *) &value2) != 0)
 			elog(ERROR, "new rowkey column update is not supported");
