@@ -4,6 +4,7 @@ GridDB Foreign Data Wrapper for PostgreSQL
 This is a foreign data wrapper (FDW) to connect [PostgreSQL](https://www.postgresql.org/)
 to [GridDB](https://github.com/griddb).
 
+<img src="https://upload.wikimedia.org/wikipedia/commons/2/29/Postgresql_elephant.svg" align="center" height="100" alt="PostgreSQL"/>	+	<img src="https://griddb.org/brand-resources/griddb-logo/png/color.png" align="center" height="150" alt="GridDB"/>
 
 Contents
 --------
