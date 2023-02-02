@@ -1,0 +1,44 @@
+{
+   "name": "griddb_fdw",
+   "abstract": "Foreign Data Wrapper for GridDB databases",
+   "description": "PostgreSQL extension which implements a Foreign Data Wrapper (FDW) for GridDB.",
+   "version": "0.0.1",
+   "maintainer": "pgspider",
+   "license": "",
+   "provides": {
+      "sgriddb_fdw": {
+         "abstract": "Foreign Data Wrapper for GridDB databases",
+         "file": "griddb_fdw.c",
+         "docfile": "README.md",
+         "version": "0.0.1"
+      }
+   },
+   "prereqs": {
+      "runtime": {
+         "requires": {
+            "PostgreSQL": "10.0.0"
+         }
+      }
+   },
+   "resources": {
+      "bugtracker": {
+         "web": "http://github.com/pgspider/griddb_fdw/issues/"
+      },
+      "repository": {
+        "url":  "git://github.com/pgspider/griddb_fdw.git",
+        "web":  "https://github.com/pgspider/griddb_fdw/",
+        "type": "git"
+      }
+   },
+   "generated_by": "mkgrgis",
+   "meta-spec": {
+      "version": "1.0.0",
+      "url": "http://pgxn.org/meta/spec.txt"
+   },
+   "tags": [
+      "griddb",
+      "fdw",
+      "foreign data wrapper",
+      "griddb_fdw"
+   ]
+}
