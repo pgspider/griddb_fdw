@@ -54,6 +54,8 @@ For PostgreSQL version 14 or later:
 
 ### Notes about features
 
+Also see [Limitations](#limitations).
+
 Supported platforms
 -------------------
 
@@ -216,12 +218,16 @@ Character set handling
 Examples
 --------
 
-Install the extension:
+### Install the extension:
+
+Once for a database you need, as PostgreSQL superuser.
 ```sql
 	CREATE EXTENSION griddb_fdw;
 ```
 
-Create a foreign server with appropriate configuration:
+### Create a foreign server with appropriate configuration:
+
+Once for a foreign datasource you need, as PostgreSQL superuser.
 
 ```sql
 	CREATE SERVER griddb_svr
@@ -231,25 +237,42 @@ Create a foreign server with appropriate configuration:
 	  port '31999',
 	  clustername 'ktymCluster',
 	  database 'public'
-	  );
+	);
 ```
+
+### Grant usage on foreign server to normal user in PostgreSQL:
+
+Once for a normal user (non-superuser) in PostgreSQL, as PostgreSQL superuser. It is a good idea to use a superuser only where really necessary, so let's allow a normal user to use the foreign server (this is not required for the example to work, but it's secirity recomedation).
+
+```sql
+	GRANT USAGE ON FOREIGN SERVER sqlite_server TO pguser;
+```
+Where `pguser` is a sample user for works with foreign server (and foreign tables).
+
+### User mapping
+
 Create an appropriate user mapping:
 ```sql
     	CREATE USER MAPPING
-	FOR CURRENT_USER
+	FOR pguser
 	SERVER griddb_svr 
     	OPTIONS (
 	  username 'username',
 	  password 'password'
-	  );
+	);
 ```
+Where `pguser` is a sample user for works with foreign server (and foreign tables).
+
+### Create foreign table
+All `CREATE FOREIGN TABLE` SQL commands can be executed as a normal PostgreSQL user if there were correct `GRANT USAGE ON FOREIGN SERVER`. No need PostgreSQL supersuer for secirity reasons but also works with PostgreSQL supersuer.
+
 Create a foreign table referencing the griddb table `fdw_test`:
 ```sql
 	CREATE FOREIGN TABLE ft1 (
 	  c1 text,
 	  c2 float,
 	  c3 integer
-	  )
+	)
 	SERVER griddb_svr;
 ```
 Query the foreign table.
@@ -258,15 +281,15 @@ Query the foreign table.
 ```
 The **container must have rowkey on GridDB in order to execute update and delete query**.	
 
-Import a griddb schema:
+### Import a GridDB schema:
 
 ```sql
 	IMPORT FOREIGN SCHEMA public
 	FROM SERVER griddb_svr
 	INTO public
 	OPTIONS (
-	 recreate 'true'
-	 );
+	  recreate 'true'
+	);
 ```
 
 After schema is imported, we can access tables.
@@ -275,39 +298,31 @@ To use `CREATE FOREIGN TABLE` is not recommended.
 Limitations
 -----------
 ### SQL commands
-#### Record is updated by `INSERT` command if a record with same rowkey as new record exists in GridDB.
+- Record is updated by `INSERT` command if a record with same rowkey as new record exists in GridDB.
 In this case, `griddb_fdw` raises the warning.
 
 ```sql
 INSERT INTO ft1 VALUES(100, 'AAA');
 INSERT INTO ft1 VALUES(100, 'BBB'); -- Same as "UPDATE ft1 SET b = 'BBB' WHERE a = 100;"
 ```
-#### Don't support ON CONFLICT.
-PostgreSQL has upsert (update or insert) feature. When inserting a new row into the table, PostgreSQL will update the row if it already exists, otherwise, PostgreSQL inserts the new row.
-However, `griddb_fdw` does not support the upsert feature now. For example, it shows an error message if user executes the following query.
+- Don't support `ON CONFLICT`. PostgreSQL has upsert (update or insert) feature. When inserting a new row into the table, PostgreSQL will update the row if it already exists, otherwise, PostgreSQL inserts the new row. However, `griddb_fdw` does not support the upsert feature now. For example, it shows an error message if user executes the following query.
 
 ```sql
 INSERT INTO ft1(c1, c2) VALUES(11, 12) ON CONFLICT DO NOTHING;
 ```
 
-#### Don't support `RETURNING`.
-Returning is way to obtain data if rows are modified by `INSERT`, `UPDATE`, and `DELETE` commands. `griddb_fdw` does not support this feature. 
-
+- Don't support `RETURNING`. Returning is way to obtain data if rows are modified by `INSERT`, `UPDATE`, and `DELETE` commands. `griddb_fdw` does not support this feature.
 ```sql
 INSERT INTO ft1 (c0, c1) VALUES (1, 2) RETURNING c0, c1;
 ```
-
-#### Don't support DIRECT MODIFICATION
-#### Don't support `IMPORT FOREIGN SCHEMA` with option `import_generated` or `LIMIT TO` clause
-#### Don't support `SAVEPOINT`. 
-Savepoint does not work. **Warning is returned**.
+- Don't support DIRECT MODIFICATION
+- Don't support `IMPORT FOREIGN SCHEMA` with option `import_generated` or `LIMIT TO` clause
+- Don't support `SAVEPOINT`. Savepoint does not work, **warning** is returned.
 
 ### Other
 
-#### Do not push down `ANY`/`ALL` `ARRAY` with the argument is subquery. 
-
-#### GridDB does not support `numeric` data type as PostgreSQL.
-Therefore, it can not store numbers with too high precision and scale.
+- Do not push down `ANY`/`ALL` `ARRAY` with the argument is subquery. 
+- GridDB does not support `numeric` data type as PostgreSQL. Therefore, it can not store numbers with too high precision and scale.
 
 #### Limitations related in rowkey-column attribute.
 GridDB can set a rowkey attribute to the 1st column.
