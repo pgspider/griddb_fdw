@@ -10,13 +10,13 @@
          "abstract": "Foreign Data Wrapper for GridDB databases",
          "file": "griddb_fdw.c",
          "docfile": "README.md",
-         "version": "0.0.1"
+         "version": "2.3.0"
       }
    },
    "prereqs": {
       "runtime": {
          "requires": {
-            "PostgreSQL": "10.0.0"
+            "PostgreSQL": "11.0.0"
          }
       }
    },
