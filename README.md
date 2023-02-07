@@ -2,7 +2,7 @@ GridDB Foreign Data Wrapper for PostgreSQL
 ==========================================
 
 This is a foreign data wrapper (FDW) to connect [PostgreSQL](https://www.postgresql.org/)
-to [GridDB](https://github.com/griddb).
+to [GridDB](https://github.com/griddb). This FDW works with PostgreSQL 11, 12, 13, 14, 15 and confirmed with GridDB 5.0.0.
 
 <img src="https://upload.wikimedia.org/wikipedia/commons/2/29/Postgresql_elephant.svg" align="center" height="100" alt="PostgreSQL"/>	+	<img src="https://griddb.org/brand-resources/griddb-logo/png/color.png" align="center" height="150" alt="GridDB"/>
 
@@ -163,8 +163,6 @@ command:
 
 - **fdw_tuple_cost** as *integer*, optional
 
-- **rowkey** as *string*, optional
-
 
 The following column-level options are available:
 
@@ -243,7 +241,7 @@ Once for a foreign datasource you need, as PostgreSQL superuser.
 
 ### Grant usage on foreign server to normal user in PostgreSQL:
 
-Once for a normal user (non-superuser) in PostgreSQL, as PostgreSQL superuser. It is a good idea to use a superuser only where really necessary, so let's allow a normal user to use the foreign server (this is not required for the example to work, but it's secirity recomedation).
+Once for a normal user (non-superuser) in PostgreSQL, as PostgreSQL superuser. It is a good idea to use a superuser only where really necessary, so let's allow a normal user to use the foreign server (this is not required for the example to work, but it's security recomedation).
 
 ```sql
 	GRANT USAGE ON FOREIGN SERVER sqlite_server TO pguser;
@@ -265,7 +263,7 @@ Create an appropriate user mapping:
 Where `pguser` is a sample user for works with foreign server (and foreign tables).
 
 ### Create foreign table
-All `CREATE FOREIGN TABLE` SQL commands can be executed as a normal PostgreSQL user if there were correct `GRANT USAGE ON FOREIGN SERVER`. No need PostgreSQL supersuer for secirity reasons but also works with PostgreSQL supersuer.
+All `CREATE FOREIGN TABLE` SQL commands can be executed as a normal PostgreSQL user if there were correct `GRANT USAGE ON FOREIGN SERVER`. No need PostgreSQL supersuer for security reasons but also works with PostgreSQL supersuer.
 
 Create a foreign table referencing the griddb table `fdw_test`:
 ```sql
