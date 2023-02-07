@@ -62,11 +62,6 @@ Supported platforms
 `griddb_fdw` was developed on Linux, and should run on any
 reasonably POSIX-compliant system.
 
-`griddb_fdw` is designed to be compatible with PostgreSQL 10 ~ 15.
-
-`griddb_fdw` is confirmed in GridDB 5.0.0.
-
-
 Installation
 ------------
 
