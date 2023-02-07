@@ -33,7 +33,6 @@ Features
 
 For PostgreSQL version 14 or later:
 - Support bulk `INSERT` by using `batch_size` option.
-
 - Support list cached connections to foreign servers by using function `griddb_get_connection()`.
 - Support discard cached connections to foreign servers by using function `griddb_disconnect('server_name')`, `griddb_disconnect_all()`.
 - Support deparse `ANY`/`ALL ARRAY` with the argument is constant.
@@ -188,9 +187,16 @@ from PostgreSQL 14.
 
 Functions
 ---------
+As well as the standard `griddb_fdw_handler()` and `griddb_fdw_validator()`
+functions, `griddb_fdw` provides the following user-callable utility functions:
 
-Functions from this FDW in PostgreSQL catalog are **yet not described**.
+*Functions from this FDW in PostgreSQL catalog are* **yet not described**.
 
+**griddb_get_connection()**
+
+**griddb_disconnect('server_name')**
+
+**griddb_disconnect_all()**
 
 Identifier case handling
 ------------------------
