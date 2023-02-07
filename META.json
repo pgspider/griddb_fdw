@@ -2,7 +2,7 @@
    "name": "griddb_fdw",
    "abstract": "Foreign Data Wrapper for GridDB databases",
    "description": "PostgreSQL extension which implements a Foreign Data Wrapper (FDW) for GridDB.",
-   "version": "0.0.1",
+   "version": "2.3.0",
    "maintainer": "pgspider",
    "license": "",
    "provides": {
