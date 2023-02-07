@@ -72,12 +72,14 @@ Prerequisites:
 GridDB's C client library. This library can be downloaded from the [GridDB](https://github.com/griddb) website on github.
 
 1. Download GridDB's C client and unpack it into `griddb_fdw` directory as griddb.
+    
     Build GridDB's C client
     
     * `gridstore.h` should be in `griddb_fdw/griddb/client/c/include`.
     * `libgridstore.so` should be in `griddb/bin`.
 
 2. Build and install griddb_fdw
+    
     Change into the griddb_fdw source directory.
 <pre>
 $ make
