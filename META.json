@@ -6,7 +6,7 @@
    "maintainer": "pgspider",
    "license": "",
    "provides": {
-      "sgriddb_fdw": {
+      "griddb_fdw": {
          "abstract": "Foreign Data Wrapper for GridDB databases",
          "file": "griddb_fdw.c",
          "docfile": "README.md",
