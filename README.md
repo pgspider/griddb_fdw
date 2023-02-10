@@ -99,9 +99,9 @@ Usage
 
 `griddb_fdw` accepts the following options via the `CREATE SERVER` command:
 
-- **keep_connections** as *boolean*, optional
+- **keep_connections** as *boolean*, optional, default `true`
 
-  Controls whether griddb_fdw keeps the connections to the foreign server open so that the subsequent queries can re-use them. The default is on. If set to off, all connections to the foreign server will be discarded at the end of transaction. Losed connections will be re-established when they are necessary by future queries using a foreign table.
+  Controls whether griddb_fdw keeps the connections to the foreign server open so that the subsequent queries can re-use them. If set to off, all connections to the foreign server will be discarded at the end of transaction. Losed connections will be re-established when they are necessary by future queries using a foreign table.
 
 - **host** as *string*, optional
 
@@ -124,20 +124,20 @@ Usage
   If you want to use fixed list mode instead of multicast mode, you have to specify `notification_member` instead of `host` and `port`:
 `notification_member '10.18.18.18:10001'`
 
-- **updatable** as *boolean*, optional
+- **updatable** as *boolean*, optional, default `true`
 
-- **batch_size** as *integer*, optional
+- **batch_size** as *integer*, optional, default `1`
 
 ## CREATE USER MAPPING options
 
 `griddb_fdw` accepts the following options via the `CREATE USER MAPPING`
 command:
 
-- **username**
+- **username** as *string*
 
   The griddb username to connect as.
 
-- **password**
+- **password** as *string*
 
   The griddb user's password.
 
@@ -147,13 +147,13 @@ command:
 `griddb_fdw` accepts the following table-level options via the
 `CREATE FOREIGN TABLE` command.
 
-- **table_name** as *string*
+- **table_name** as *string*, default name of foreign table
 
-- **updatable** as *boolean*, optional
+- **updatable** as *boolean*, optional, default `true`
 
 - **use_remote_estimate** as *boolean*, optional
 
-- **batch_size** as *integer*, optional
+- **batch_size** as *integer*, optional, default value comes from similar foreign server option
 
 - **fdw_startup_cost** as *interger*, optional
 
@@ -162,9 +162,9 @@ command:
 
 The following column-level options are available:
 
-- **column_name** as *string*, optional
+- **column_name** as *string*, optional, default name of foreign column
 
-- **rowkey** as *boolean*, optional
+- **rowkey** as *boolean*, optional, default `false`
 
 
 ## IMPORT FOREIGN SCHEMA options
@@ -172,7 +172,7 @@ The following column-level options are available:
 `griddb_fdw` supports [IMPORT FOREIGN SCHEMA](https://www.postgresql.org/docs/current/sql-importforeignschema.html)
 (when running with PostgreSQL 9.5 or later) and accepts the following custom options:
 
-- **recreate** as *boolean*, optional
+- **recreate** as *boolean*, optional, default `false`
 
   If 'true', table schema will be updated.
 
