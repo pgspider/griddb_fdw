@@ -149,7 +149,7 @@ command:
 
 - **table_name** as *string*, default name of foreign table
 
-- **updatable** as *boolean*, optional, default `true`
+- **updatable** as *boolean*, optional, default value comes from similar foreign server option
 
 - **use_remote_estimate** as *boolean*, optional
 
