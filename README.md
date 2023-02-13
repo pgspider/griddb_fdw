@@ -199,12 +199,24 @@ Identifier case handling
 ------------------------
 
 PostgreSQL folds identifiers to lower case by default.
-Rules and problems with griddb identifiers **yet not tested and described**.
+Rules and problems with GridDB identifiers **yet not tested and described**.
 
 Generated columns
 -----------------
 
-Behavoiur within generated columns **yet not tested and described**. 
+GridDB does not support generated column, so data will be generated at FDW layer.
+`griddb_fdw` supports generated columns in foreign tables based on output of GridDB. Example:
+```sql
+	CREATE FOREIGN TABLE grem1 (
+  	  id serial OPTIONS (rowkey 'true'),
+	  a int,
+	  b int GENERATED ALWAYS as (a * 2) STORED
+	)
+	SERVER griddb_svr 
+	OPTIONS(
+	  table_name 'gloc1'
+	);
+```
 
 For more details on generated columns see:
 
@@ -318,7 +330,8 @@ INSERT INTO ft1(c1, c2) VALUES(11, 12) ON CONFLICT DO NOTHING;
 INSERT INTO ft1 (c0, c1) VALUES (1, 2) RETURNING c0, c1;
 ```
 - Don't support DIRECT MODIFICATION
-- Don't support `IMPORT FOREIGN SCHEMA` with option `import_generated` or `LIMIT TO` clause
+- Don't support push down `LIMIT TO` | `EXCEPT` filter in `IMPORT FOREIGN SCHEMA`. These filters will run locally.
+`griddb_fdw` makes `CREATE FOREIGN TABLE` statements for all existed tables in remote server, and then PostgreSQL's core checks `LIMIT TO` or `EXCEPT` conditions.
 - Don't support `SAVEPOINT`. Savepoint does not work, **warning** is returned.
 
 ### Other
@@ -353,7 +366,7 @@ Example2:
 BEGIN;
 SELECT * FROM ft1, ft2 WHERE ft1.a = ft2.a FOR UPDATE; -- No response
 ```
-This is because GridDB manages a transaction by container unit and griddb_fdw creates GSContainer instances for each foreign tables even if the container is same in GridDB.
+This is because GridDB manages a transaction by container unit and `griddb_fdw` creates GSContainer instances for each foreign tables even if the container is same in GridDB.
 
 #### Don't support an arbitrary column mapping.
 `griddb_fdw` is assumed that a column structure on PostgreSQL is same as that of griddb.
@@ -385,7 +398,7 @@ Types are not match.
 	SERVER griddb_svr;
 ```
 There is unknown column.
-Even if unknown column is dropped, griddb cannot access `ft1` correctly.
+Even if unknown column is dropped, GridDB cannot access `ft1` correctly.
 
 ```sql
 	CREATE FOREIGN TABLE ft1 (
