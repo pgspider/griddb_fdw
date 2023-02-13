@@ -450,4 +450,4 @@ the following two paragraphs appear in all copies.
 
 See the [`LICENSE`][1] file for full details.
 
-[1]: LICENSE.md
+[1]: LICENSE
