@@ -111,11 +111,11 @@ Usage
 
   GridDB notification port.
 
-- **database** as *string*, optional
+- **database** as *string*, optional, default `public`
 
-  GridDB database name. Default is `public` if skipped.
+  GridDB database name.
 
-- **clustername** as *boolean*, optional
+- **clustername** as *boolean*, optional, default `false`
 
   GridDB cluster name.
   
@@ -133,11 +133,11 @@ Usage
 `griddb_fdw` accepts the following options via the `CREATE USER MAPPING`
 command:
 
-- **username** as *string*
+- **username** as *string*, no default
 
   The griddb username to connect as.
 
-- **password** as *string*
+- **password** as *string*, no default
 
   The griddb user's password.
 
