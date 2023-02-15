@@ -19,9 +19,10 @@ Contents
 8. [Character set handling](#character-set-handling)
 9. [Examples](#examples)
 10. [Limitations](#limitations)
-11. [Contributing](#contributing)
-12. [Useful links](#useful-links)
-13. [License](#license)
+11. [Tests](#tests)
+12. [Contributing](#contributing)
+13. [Useful links](#useful-links)
+14. [License](#license)
 
 Features
 --------
@@ -411,6 +412,12 @@ Even if unknown column is dropped, GridDB cannot access `ft1` correctly.
 	
 	ALTER FOREIGN TABLE ft1 DROP COLUMN c0;
 ```
+
+Tests
+-----
+
+Tests for group of PostgreSQL versions are provided. There is no testing for different GridDB versions.
+See [test.sh](test.sh) and [expected](expected).
 
 Contributing
 ------------
