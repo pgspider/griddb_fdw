@@ -115,7 +115,7 @@ Usage
 
   GridDB database name.
 
-- **clustername** as *boolean*, optional, default `false`
+- **clustername** as *string*, optional, no default
 
   GridDB cluster name.
   
