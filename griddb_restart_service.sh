@@ -1,7 +1,7 @@
 #!/bin/bash
 # script restart griddb server
 
-GRIDDB_HOME=$HOME/src/griddb-4.6.0
+GRIDDB_HOME=${HOME}/src/griddb-5.1.0
 
 export GS_HOME=${GRIDDB_HOME}
 export GS_LOG=${GRIDDB_HOME}/log

@@ -2,7 +2,8 @@ GridDB Foreign Data Wrapper for PostgreSQL
 ==========================================
 
 This is a foreign data wrapper (FDW) to connect [PostgreSQL](https://www.postgresql.org/)
-to [GridDB](https://github.com/griddb). This FDW works with PostgreSQL 11, 12, 13, 14, 15 and confirmed with GridDB 5.0.0.
+to [GridDB](https://github.com/griddb). This FDW works with PostgreSQL 12, 13, 14, 15, 16 and confirmed with GridDB 5.1.0.
+
 
 <img src="https://upload.wikimedia.org/wikipedia/commons/2/29/Postgresql_elephant.svg" align="center" height="100" alt="PostgreSQL"/>	+	<img src="https://docs.griddb.net/logo.png" align="center" height="100" alt="GridDB"/>
 
@@ -447,7 +448,7 @@ Reference FDW realisation, `postgres_fdw`
  
 License
 -------
-Copyright (c) 2018, TOSHIBA CORPORATION
+Copyright (c) 2018, TOSHIBA CORPORATION  
 Copyright (c) 2011-2016, EnterpriseDB Corporation
 
 Permission to use, copy, modify, and distribute this software and its
