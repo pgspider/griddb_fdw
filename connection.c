@@ -714,7 +714,9 @@ griddb_get_connections(PG_FUNCTION_ARGS)
 	HASH_SEQ_STATUS scan;
 	ConnCacheEntry *entry;
 
-#if PG_VERSION_NUM >= 150000
+#if PG_VERSION_NUM > 150000
+	InitMaterializedSRF(fcinfo, 0);
+#elif PG_VERSION_NUM == 150000
 	SetSingleFuncCall(fcinfo, 0);
 #else
 	/* check to see if caller supports us returning a tuplestore */

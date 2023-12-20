@@ -138,6 +138,7 @@ static Node *griddb_deparse_sort_group_clause(Index ref, List *tlist, bool force
 											  deparse_expr_cxt *context);
 static void griddb_append_function_name(Oid funcid, deparse_expr_cxt *context);
 static bool exist_in_function_list(char *funcname, const char **funclist);
+static GSType convert_pgtyp_to_gstyp(Oid type_oid);
 
 /* List of unique function of GridDB */
 static const char *GridDBUniqueFunction[] = {
@@ -2844,4 +2845,106 @@ exist_in_function_list(char *funcname, const char **funclist)
 			return true;
 	}
 	return false;
+}
+
+/*
+ * Convert type OID info of Postgresql table into a type name of Griddb.
+ */
+static GSType
+convert_pgtyp_to_gstyp(Oid type_oid)
+{
+	switch (type_oid)
+	{
+		case TEXTOID:
+		case CHAROID:
+		case VARCHAROID:
+			return GS_TYPE_STRING;
+		case BOOLOID:
+			return GS_TYPE_BOOL;
+		case INT2OID:
+			return GS_TYPE_SHORT;
+		case INT4OID:
+			return GS_TYPE_INTEGER;
+		case INT8OID:
+			return GS_TYPE_LONG;
+		case FLOAT4OID:
+			return GS_TYPE_FLOAT;
+		case FLOAT8OID:
+			return GS_TYPE_DOUBLE;
+		case TIMESTAMPOID:
+			return GS_TYPE_TIMESTAMP;
+		case BYTEAOID:
+			return GS_TYPE_BLOB;
+		case TEXTARRAYOID:
+			return GS_TYPE_STRING_ARRAY;
+		case BOOLARRAYOID:
+			return GS_TYPE_BOOL_ARRAY;
+		case INT2ARRAYOID:
+			return GS_TYPE_SHORT_ARRAY;
+		case INT4ARRAYOID:
+			return GS_TYPE_INTEGER_ARRAY;
+		case INT8ARRAYOID:
+			return GS_TYPE_LONG_ARRAY;
+		case FLOAT4ARRAYOID:
+			return GS_TYPE_FLOAT_ARRAY;
+		case FLOAT8ARRAYOID:
+			return GS_TYPE_DOUBLE_ARRAY;
+		case TIMESTAMPARRAYOID:
+			return GS_TYPE_TIMESTAMP_ARRAY;
+		default:
+			elog(ERROR, "cannot convert %d to GSType", type_oid);
+	}
+}
+
+/*
+ * Construct Container Infomation for CREATING
+ */
+GSContainerInfo
+griddb_set_container_info(GSContainerInfo containerinfo, Relation rel)
+{
+	TupleDesc	tupdesc = RelationGetDescr(rel);
+	int			i;
+	int column_count = 0;
+	GSContainerInfo container_info;
+	GSColumnInfo	columnInfo;
+	GSColumnInfo *columnInfoList;
+
+	container_info = (GSContainerInfo) GS_CONTAINER_INFO_INITIALIZER;
+
+	/* count number of columns */
+	for (i = 0; i < tupdesc->natts; i++)
+	{
+		Form_pg_attribute att = TupleDescAttr(tupdesc, i);
+
+		/* Ignore dropped columns. */
+		if (att->attisdropped)
+			continue;
+
+		column_count++;
+	}
+
+	columnInfoList = palloc0(column_count * sizeof(GSColumnInfo));
+
+	/* deparse column */
+	for (i = 0; i < tupdesc->natts; i++)
+	{
+		Form_pg_attribute att = TupleDescAttr(tupdesc, i);
+
+		/* Ignore dropped columns. */
+		if (att->attisdropped)
+			continue;
+
+		/* Use attribute name */
+		columnInfo.name = NameStr(att->attname);
+		columnInfo.type = convert_pgtyp_to_gstyp(att->atttypid);
+		if (att->attnotnull)
+			columnInfo.options = GS_TYPE_OPTION_NOT_NULL;
+
+		columnInfoList[i] = columnInfo;
+	}
+
+	container_info.columnInfoList = columnInfoList;
+	container_info.columnCount = column_count;
+
+	return container_info;
 }

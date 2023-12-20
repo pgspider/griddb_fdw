@@ -1,0 +1,963 @@
+--
+-- INT4
+--
+\set ECHO none
+--Testcase 1:
+DROP EXTENSION griddb_fdw cascade;
+NOTICE:  drop cascades to 6 other objects
+DETAIL:  drop cascades to server griddb_svr
+drop cascades to user mapping for public on server griddb_svr
+drop cascades to foreign table float8_tbl
+drop cascades to foreign table float8_tmp
+drop cascades to foreign table non_error_throwing_api
+drop cascades to foreign table test_data
+--Testcase 2:
+CREATE EXTENSION griddb_fdw;
+--Testcase 3:
+CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS (host :GRIDDB_HOST, port :GRIDDB_PORT, clustername 'griddbfdwTestCluster');
+--Testcase 4:
+CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS (username :GRIDDB_USER, password :GRIDDB_PASS);
+--Testcase 5:
+CREATE FOREIGN TABLE INT4_TBL(id serial OPTIONS (rowkey 'true'), f1 int4) SERVER griddb_svr;
+--Testcase 6:
+CREATE FOREIGN TABLE INT4_TMP(id serial OPTIONS (rowkey 'true'), a int4, b int4) SERVER griddb_svr;
+--Testcase 7:
+INSERT INTO INT4_TBL(f1) VALUES ('   0  ');
+--Testcase 8:
+INSERT INTO INT4_TBL(f1) VALUES ('123456     ');
+--Testcase 9:
+INSERT INTO INT4_TBL(f1) VALUES ('    -123456');
+--Testcase 10:
+INSERT INTO INT4_TBL(f1) VALUES ('34.5');
+ERROR:  invalid input syntax for type integer: "34.5"
+LINE 1: INSERT INTO INT4_TBL(f1) VALUES ('34.5');
+                                         ^
+-- largest and smallest values
+--Testcase 11:
+INSERT INTO INT4_TBL(f1) VALUES ('2147483647');
+--Testcase 12:
+INSERT INTO INT4_TBL(f1) VALUES ('-2147483647');
+-- bad input values -- should give errors
+--Testcase 13:
+INSERT INTO INT4_TBL(f1) VALUES ('1000000000000');
+ERROR:  value "1000000000000" is out of range for type integer
+LINE 1: INSERT INTO INT4_TBL(f1) VALUES ('1000000000000');
+                                         ^
+--Testcase 14:
+INSERT INTO INT4_TBL(f1) VALUES ('asdf');
+ERROR:  invalid input syntax for type integer: "asdf"
+LINE 1: INSERT INTO INT4_TBL(f1) VALUES ('asdf');
+                                         ^
+--Testcase 15:
+INSERT INTO INT4_TBL(f1) VALUES ('     ');
+ERROR:  invalid input syntax for type integer: "     "
+LINE 1: INSERT INTO INT4_TBL(f1) VALUES ('     ');
+                                         ^
+--Testcase 16:
+INSERT INTO INT4_TBL(f1) VALUES ('   asdf   ');
+ERROR:  invalid input syntax for type integer: "   asdf   "
+LINE 1: INSERT INTO INT4_TBL(f1) VALUES ('   asdf   ');
+                                         ^
+--Testcase 17:
+INSERT INTO INT4_TBL(f1) VALUES ('- 1234');
+ERROR:  invalid input syntax for type integer: "- 1234"
+LINE 1: INSERT INTO INT4_TBL(f1) VALUES ('- 1234');
+                                         ^
+--Testcase 18:
+INSERT INTO INT4_TBL(f1) VALUES ('123       5');
+ERROR:  invalid input syntax for type integer: "123       5"
+LINE 1: INSERT INTO INT4_TBL(f1) VALUES ('123       5');
+                                         ^
+--Testcase 19:
+INSERT INTO INT4_TBL(f1) VALUES ('');
+ERROR:  invalid input syntax for type integer: ""
+LINE 1: INSERT INTO INT4_TBL(f1) VALUES ('');
+                                         ^
+--Testcase 20:
+SELECT f1 FROM INT4_TBL;
+     f1      
+-------------
+           0
+      123456
+     -123456
+  2147483647
+ -2147483647
+(5 rows)
+
+-- Also try it with non-error-throwing API
+--Testcase 149:
+CREATE FOREIGN TABLE non_error_throwing_api(id serial OPTIONS (rowkey 'true'), f1 text) SERVER griddb_svr;
+--Testcase 150:
+INSERT INTO non_error_throwing_api VALUES (1, '34'), (2, 'asdf'), (3, '1000000000000');
+--Testcase 151:
+SELECT pg_input_is_valid(f1, 'int4') FROM non_error_throwing_api WHERE id = 1;
+ pg_input_is_valid 
+-------------------
+ t
+(1 row)
+
+--Testcase 152:
+SELECT pg_input_is_valid(f1, 'int4') FROM non_error_throwing_api WHERE id = 2;
+ pg_input_is_valid 
+-------------------
+ f
+(1 row)
+
+--Testcase 153:
+SELECT pg_input_is_valid(f1, 'int4') FROM non_error_throwing_api WHERE id = 3;
+ pg_input_is_valid 
+-------------------
+ f
+(1 row)
+
+--Testcase 154:
+SELECT * FROM pg_input_error_info((SELECT f1 FROM non_error_throwing_api WHERE id = 3), 'int4');
+                        message                         | detail | hint | sql_error_code 
+--------------------------------------------------------+--------+------+----------------
+ value "1000000000000" is out of range for type integer |        |      | 22003
+(1 row)
+
+--Testcase 155:
+DELETE FROM non_error_throwing_api;
+--Testcase 21:
+SELECT i.f1 FROM INT4_TBL i WHERE i.f1 <> int2 '0';
+     f1      
+-------------
+      123456
+     -123456
+  2147483647
+ -2147483647
+(4 rows)
+
+--Testcase 22:
+SELECT i.f1 FROM INT4_TBL i WHERE i.f1 <> int4 '0';
+     f1      
+-------------
+      123456
+     -123456
+  2147483647
+ -2147483647
+(4 rows)
+
+--Testcase 23:
+SELECT i.f1 FROM INT4_TBL i WHERE i.f1 = int2 '0';
+ f1 
+----
+  0
+(1 row)
+
+--Testcase 24:
+SELECT i.f1 FROM INT4_TBL i WHERE i.f1 = int4 '0';
+ f1 
+----
+  0
+(1 row)
+
+--Testcase 25:
+SELECT i.f1 FROM INT4_TBL i WHERE i.f1 < int2 '0';
+     f1      
+-------------
+     -123456
+ -2147483647
+(2 rows)
+
+--Testcase 26:
+SELECT i.f1 FROM INT4_TBL i WHERE i.f1 < int4 '0';
+     f1      
+-------------
+     -123456
+ -2147483647
+(2 rows)
+
+--Testcase 27:
+SELECT i.f1 FROM INT4_TBL i WHERE i.f1 <= int2 '0';
+     f1      
+-------------
+           0
+     -123456
+ -2147483647
+(3 rows)
+
+--Testcase 28:
+SELECT i.f1 FROM INT4_TBL i WHERE i.f1 <= int4 '0';
+     f1      
+-------------
+           0
+     -123456
+ -2147483647
+(3 rows)
+
+--Testcase 29:
+SELECT i.f1 FROM INT4_TBL i WHERE i.f1 > int2 '0';
+     f1     
+------------
+     123456
+ 2147483647
+(2 rows)
+
+--Testcase 30:
+SELECT i.f1 FROM INT4_TBL i WHERE i.f1 > int4 '0';
+     f1     
+------------
+     123456
+ 2147483647
+(2 rows)
+
+--Testcase 31:
+SELECT i.f1 FROM INT4_TBL i WHERE i.f1 >= int2 '0';
+     f1     
+------------
+          0
+     123456
+ 2147483647
+(3 rows)
+
+--Testcase 32:
+SELECT i.f1 FROM INT4_TBL i WHERE i.f1 >= int4 '0';
+     f1     
+------------
+          0
+     123456
+ 2147483647
+(3 rows)
+
+-- positive odds
+--Testcase 33:
+SELECT i.f1 FROM INT4_TBL i WHERE (i.f1 % int2 '2') = int2 '1';
+     f1     
+------------
+ 2147483647
+(1 row)
+
+-- any evens
+--Testcase 34:
+SELECT i.f1 FROM INT4_TBL i WHERE (i.f1 % int4 '2') = int2 '0';
+   f1    
+---------
+       0
+  123456
+ -123456
+(3 rows)
+
+--Testcase 35:
+SELECT i.f1, i.f1 * int2 '2' AS x FROM INT4_TBL i;
+ERROR:  integer out of range
+--Testcase 36:
+SELECT i.f1, i.f1 * int2 '2' AS x FROM INT4_TBL i
+WHERE abs(f1) < 1073741824;
+   f1    |    x    
+---------+---------
+       0 |       0
+  123456 |  246912
+ -123456 | -246912
+(3 rows)
+
+--Testcase 37:
+SELECT i.f1, i.f1 * int4 '2' AS x FROM INT4_TBL i;
+ERROR:  integer out of range
+--Testcase 38:
+SELECT i.f1, i.f1 * int4 '2' AS x FROM INT4_TBL i
+WHERE abs(f1) < 1073741824;
+   f1    |    x    
+---------+---------
+       0 |       0
+  123456 |  246912
+ -123456 | -246912
+(3 rows)
+
+--Testcase 39:
+SELECT i.f1, i.f1 + int2 '2' AS x FROM INT4_TBL i;
+ERROR:  integer out of range
+--Testcase 40:
+SELECT i.f1, i.f1 + int2 '2' AS x FROM INT4_TBL i
+WHERE f1 < 2147483646;
+     f1      |      x      
+-------------+-------------
+           0 |           2
+      123456 |      123458
+     -123456 |     -123454
+ -2147483647 | -2147483645
+(4 rows)
+
+--Testcase 41:
+SELECT i.f1, i.f1 + int4 '2' AS x FROM INT4_TBL i;
+ERROR:  integer out of range
+--Testcase 42:
+SELECT i.f1, i.f1 + int4 '2' AS x FROM INT4_TBL i
+WHERE f1 < 2147483646;
+     f1      |      x      
+-------------+-------------
+           0 |           2
+      123456 |      123458
+     -123456 |     -123454
+ -2147483647 | -2147483645
+(4 rows)
+
+--Testcase 43:
+SELECT i.f1, i.f1 - int2 '2' AS x FROM INT4_TBL i;
+ERROR:  integer out of range
+--Testcase 44:
+SELECT i.f1, i.f1 - int2 '2' AS x FROM INT4_TBL i
+WHERE f1 > -2147483647;
+     f1     |     x      
+------------+------------
+          0 |         -2
+     123456 |     123454
+    -123456 |    -123458
+ 2147483647 | 2147483645
+(4 rows)
+
+--Testcase 45:
+SELECT i.f1, i.f1 - int4 '2' AS x FROM INT4_TBL i;
+ERROR:  integer out of range
+--Testcase 46:
+SELECT i.f1, i.f1 - int4 '2' AS x FROM INT4_TBL i
+WHERE f1 > -2147483647;
+     f1     |     x      
+------------+------------
+          0 |         -2
+     123456 |     123454
+    -123456 |    -123458
+ 2147483647 | 2147483645
+(4 rows)
+
+--Testcase 47:
+SELECT i.f1, i.f1 / int2 '2' AS x FROM INT4_TBL i;
+     f1      |      x      
+-------------+-------------
+           0 |           0
+      123456 |       61728
+     -123456 |      -61728
+  2147483647 |  1073741823
+ -2147483647 | -1073741823
+(5 rows)
+
+--Testcase 48:
+SELECT i.f1, i.f1 / int4 '2' AS x FROM INT4_TBL i;
+     f1      |      x      
+-------------+-------------
+           0 |           0
+      123456 |       61728
+     -123456 |      -61728
+  2147483647 |  1073741823
+ -2147483647 | -1073741823
+(5 rows)
+
+--
+-- more complex expressions
+--
+-- variations on unary minus parsing
+BEGIN;
+--Testcase 49:
+DELETE FROM INT4_TBL;
+--Testcase 50:
+INSERT INTO INT4_TBL(f1) VALUES (-2);
+--Testcase 51:
+SELECT (f1+3) as one FROM INT4_TBL;
+ one 
+-----
+   1
+(1 row)
+
+ROLLBACK;
+BEGIN;
+--Testcase 52:
+DELETE FROM INT4_TBL;
+--Testcase 53:
+INSERT INTO INT4_TBL(f1) VALUES (4);
+--Testcase 54:
+SELECT (f1-2) as two FROM INT4_TBL;
+ two 
+-----
+   2
+(1 row)
+
+ROLLBACK;
+BEGIN;
+--Testcase 55:
+DELETE FROM INT4_TBL;
+--Testcase 56:
+INSERT INTO INT4_TBL(f1) VALUES (2);
+--Testcase 57:
+SELECT (f1- -1) as three FROM INT4_TBL;
+ three 
+-------
+     3
+(1 row)
+
+ROLLBACK;
+BEGIN;
+--Testcase 58:
+DELETE FROM INT4_TBL;
+--Testcase 59:
+INSERT INTO INT4_TBL(f1) VALUES (2);
+--Testcase 60:
+SELECT (f1 - -2) as four FROM INT4_TBL;
+ four 
+------
+    4
+(1 row)
+
+ROLLBACK;
+BEGIN;
+--Testcase 61:
+DELETE FROM INT4_TMP;
+--Testcase 62:
+INSERT INTO INT4_TMP(a, b) VALUES (int2 '2' * int2 '2', int2 '16' / int2 '4');
+--Testcase 63:
+SELECT (a = b) as true FROM INT4_TMP;
+ true 
+------
+ t
+(1 row)
+
+ROLLBACK;
+BEGIN;
+--Testcase 64:
+DELETE FROM INT4_TMP;
+--Testcase 65:
+INSERT INTO INT4_TMP(a, b) VALUES (int4 '2' * int2 '2', int2 '16' / int4 '4');
+--Testcase 66:
+SELECT (a = b) as true FROM INT4_TMP;
+ true 
+------
+ t
+(1 row)
+
+ROLLBACK;
+BEGIN;
+--Testcase 67:
+DELETE FROM INT4_TMP;
+--Testcase 68:
+INSERT INTO INT4_TMP(a, b) VALUES (int2 '2' * int4 '2', int4 '16' / int2 '4');
+--Testcase 69:
+SELECT (a = b) as true FROM INT4_TMP;
+ true 
+------
+ t
+(1 row)
+
+ROLLBACK;
+BEGIN;
+--Testcase 70:
+DELETE FROM INT4_TMP;
+--Testcase 71:
+INSERT INTO INT4_TMP(a, b) VALUES (int4 '1000', int4 '999');
+--Testcase 72:
+SELECT (a < b) as false FROM INT4_TMP;
+ false 
+-------
+ f
+(1 row)
+
+ROLLBACK;
+BEGIN;
+--Testcase 73:
+DELETE FROM INT4_TBL;
+--Testcase 74:
+INSERT INTO INT4_TBL(f1) VALUES (factorial(4));
+--Testcase 75:
+SELECT f1 as twenty_four FROM INT4_TBL;
+ twenty_four 
+-------------
+          24
+(1 row)
+
+ROLLBACK;
+BEGIN;
+--Testcase 76:
+DELETE FROM INT4_TBL;
+--Testcase 77:
+INSERT INTO INT4_TBL(f1) VALUES (1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1);
+--Testcase 78:
+SELECT f1 as ten FROM INT4_TBL;
+ ten 
+-----
+  10
+(1 row)
+
+ROLLBACK;
+BEGIN;
+--Testcase 79:
+DELETE FROM INT4_TBL;
+--Testcase 80:
+INSERT INTO INT4_TBL(f1) VALUES (2 + 2 / 2);
+--Testcase 81:
+SELECT f1 as three FROM INT4_TBL;
+ three 
+-------
+     3
+(1 row)
+
+ROLLBACK;
+BEGIN;
+--Testcase 82:
+DELETE FROM INT4_TBL;
+--Testcase 83:
+INSERT INTO INT4_TBL(f1) VALUES ((2 + 2) / 2);
+--Testcase 84:
+SELECT f1 as two FROM INT4_TBL;
+ two 
+-----
+   2
+(1 row)
+
+ROLLBACK;
+-- corner case
+BEGIN;
+--Testcase 85:
+DELETE FROM INT4_TBL;
+--Testcase 86:
+INSERT INTO INT4_TBL(f1) VALUES ((-1::int4<<31));
+--Testcase 87:
+SELECT f1::text AS text FROM INT4_TBL;
+    text     
+-------------
+ -2147483648
+(1 row)
+
+--Testcase 88:
+SELECT (f1+1)::text FROM INT4_TBL;
+    text     
+-------------
+ -2147483647
+(1 row)
+
+ROLLBACK;
+-- check sane handling of INT_MIN overflow cases
+BEGIN;
+--Testcase 89:
+DELETE FROM INT4_TBL;
+--Testcase 90:
+INSERT INTO INT4_TBL(f1) VALUES ((-2147483648)::int4);
+--Testcase 91:
+SELECT (f1 * (-1)::int4) FROM INT4_TBL;
+ERROR:  integer out of range
+ROLLBACK;
+BEGIN;
+--Testcase 92:
+DELETE FROM INT4_TBL;
+--Testcase 93:
+INSERT INTO INT4_TBL(f1) VALUES ((-2147483648)::int4);
+--Testcase 94:
+SELECT (f1 / (-1)::int4) FROM INT4_TBL;
+ERROR:  integer out of range
+ROLLBACK;
+BEGIN;
+--Testcase 95:
+DELETE FROM INT4_TBL;
+--Testcase 96:
+INSERT INTO INT4_TBL(f1) VALUES ((-2147483648)::int4);
+--Testcase 97:
+SELECT (f1 % (-1)::int4) FROM INT4_TBL;
+ ?column? 
+----------
+        0
+(1 row)
+
+ROLLBACK;
+BEGIN;
+--Testcase 98:
+DELETE FROM INT4_TBL;
+--Testcase 99:
+INSERT INTO INT4_TBL(f1) VALUES ((-2147483648)::int4);
+--Testcase 100:
+SELECT (f1 * (-1)::int2) FROM INT4_TBL;
+ERROR:  integer out of range
+ROLLBACK;
+BEGIN;
+--Testcase 101:
+DELETE FROM INT4_TBL;
+--Testcase 102:
+INSERT INTO INT4_TBL(f1) VALUES ((-2147483648)::int4);
+--Testcase 103:
+SELECT (f1 / (-1)::int2) FROM INT4_TBL;
+ERROR:  integer out of range
+ROLLBACK;
+BEGIN;
+--Testcase 104:
+DELETE FROM INT4_TBL;
+--Testcase 105:
+INSERT INTO INT4_TBL(f1) VALUES ((-2147483648)::int4);
+--Testcase 106:
+SELECT (f1 % (-1)::int2) FROM INT4_TBL;
+ ?column? 
+----------
+        0
+(1 row)
+
+ROLLBACK;
+-- check rounding when casting from float
+--Testcase 107:
+CREATE FOREIGN TABLE FLOAT8_TBL(id serial OPTIONS (rowkey 'true'), f1 float8) SERVER griddb_svr; 
+BEGIN;
+--Testcase 108:
+DELETE FROM FLOAT8_TBL;
+--Testcase 109:
+INSERT INTO FLOAT8_TBL(f1) VALUES 
+	(-2.5::float8),
+        (-1.5::float8),
+        (-0.5::float8),
+        (0.0::float8),
+        (0.5::float8),
+        (1.5::float8),
+        (2.5::float8);
+--Testcase 110:
+SELECT f1 as x, f1::int4 AS int4_value FROM FLOAT8_TBL;
+  x   | int4_value 
+------+------------
+ -2.5 |         -2
+ -1.5 |         -2
+ -0.5 |          0
+    0 |          0
+  0.5 |          0
+  1.5 |          2
+  2.5 |          2
+(7 rows)
+
+ROLLBACK;
+-- check rounding when casting from numeric
+BEGIN;
+--Testcase 111:
+DELETE FROM FLOAT8_TBL;
+--Testcase 112:
+INSERT INTO FLOAT8_TBL(f1) VALUES 
+	(-2.5::numeric),
+        (-1.5::numeric),
+        (-0.5::numeric),
+        (0.0::numeric),
+        (0.5::numeric),
+        (1.5::numeric),
+        (2.5::numeric);
+--Testcase 113:
+SELECT f1::numeric as x, f1::numeric::int4 AS int4_value FROM FLOAT8_TBL;
+  x   | int4_value 
+------+------------
+ -2.5 |         -3
+ -1.5 |         -2
+ -0.5 |         -1
+    0 |          0
+  0.5 |          1
+  1.5 |          2
+  2.5 |          3
+(7 rows)
+
+ROLLBACK;
+-- test gcd()
+BEGIN;
+--Testcase 114:
+DELETE FROM INT4_TMP;
+--Testcase 115:
+INSERT INTO INT4_TMP(a, b) VALUES (0::int4, 0::int4);
+--Testcase 116:
+INSERT INTO INT4_TMP(a, b) VALUES (0::int4, 6410818::int4);
+--Testcase 117:
+INSERT INTO INT4_TMP(a, b) VALUES (61866666::int4, 6410818::int4);
+--Testcase 118:
+INSERT INTO INT4_TMP(a, b) VALUES (-61866666::int4, 6410818::int4);
+--Testcase 119:
+INSERT INTO INT4_TMP(a, b) VALUES ((-2147483648)::int4, 1::int4);
+--Testcase 120:
+INSERT INTO INT4_TMP(a, b) VALUES ((-2147483648)::int4, 2147483647::int4);
+--Testcase 121:
+INSERT INTO INT4_TMP(a, b) VALUES ((-2147483648)::int4, 1073741824::int4);
+--Testcase 122:
+SELECT a, b, gcd(a, b), gcd(a, -b), gcd(b, a), gcd(-b, a) FROM INT4_TMP;
+      a      |     b      |    gcd     |    gcd     |    gcd     |    gcd     
+-------------+------------+------------+------------+------------+------------
+           0 |          0 |          0 |          0 |          0 |          0
+           0 |    6410818 |    6410818 |    6410818 |    6410818 |    6410818
+    61866666 |    6410818 |       1466 |       1466 |       1466 |       1466
+   -61866666 |    6410818 |       1466 |       1466 |       1466 |       1466
+ -2147483648 |          1 |          1 |          1 |          1 |          1
+ -2147483648 | 2147483647 |          1 |          1 |          1 |          1
+ -2147483648 | 1073741824 | 1073741824 | 1073741824 | 1073741824 | 1073741824
+(7 rows)
+
+ROLLBACK;
+BEGIN;
+--Testcase 123:
+DELETE FROM INT4_TMP;
+--Testcase 124:
+INSERT INTO INT4_TMP(a, b) VALUES ((-2147483648)::int4, 0::int4);
+--Testcase 125:
+SELECT gcd(a, b) FROM INT4_TMP;    -- overflow
+ERROR:  integer out of range
+ROLLBACK;
+BEGIN;
+--Testcase 126:
+DELETE FROM INT4_TMP;
+--Testcase 127:
+INSERT INTO INT4_TMP(a, b) VALUES ((-2147483648)::int4, (-2147483648)::int4);
+--Testcase 128:
+SELECT gcd(a, b) FROM INT4_TMP;    -- overflow
+ERROR:  integer out of range
+ROLLBACK;
+-- test lcm()
+BEGIN;
+--Testcase 129:
+DELETE FROM INT4_TMP;
+--Testcase 130:
+INSERT INTO INT4_TMP(a, b) VALUES (0::int4, 0::int4);
+--Testcase 131:
+INSERT INTO INT4_TMP(a, b) VALUES (0::int4, 42::int4);
+--Testcase 132:
+INSERT INTO INT4_TMP(a, b) VALUES (42::int4, 42::int4);
+--Testcase 133:
+INSERT INTO INT4_TMP(a, b) VALUES (330::int4, 462::int4);
+--Testcase 134:
+INSERT INTO INT4_TMP(a, b) VALUES (-330::int4, 462::int4);
+--Testcase 135:
+INSERT INTO INT4_TMP(a, b) VALUES ((-2147483648)::int4, 0::int4);
+--Testcase 136:
+SELECT a, b, lcm(a, b), lcm(a, -b), lcm(b, a), lcm(-b, a) FROM INT4_TMP;
+      a      |  b  | lcm  | lcm  | lcm  | lcm  
+-------------+-----+------+------+------+------
+           0 |   0 |    0 |    0 |    0 |    0
+           0 |  42 |    0 |    0 |    0 |    0
+          42 |  42 |   42 |   42 |   42 |   42
+         330 | 462 | 2310 | 2310 | 2310 | 2310
+        -330 | 462 | 2310 | 2310 | 2310 | 2310
+ -2147483648 |   0 |    0 |    0 |    0 |    0
+(6 rows)
+
+ROLLBACK;
+BEGIN;
+--Testcase 137:
+DELETE FROM INT4_TMP;
+--Testcase 138:
+INSERT INTO INT4_TMP(a, b) VALUES ((-2147483648)::int4, 1::int4);
+--Testcase 139:
+SELECT lcm(a, b) FROM INT4_TMP;    -- overflow
+ERROR:  integer out of range
+ROLLBACK;
+BEGIN;
+--Testcase 140:
+DELETE FROM INT4_TMP;
+--Testcase 141:
+INSERT INTO INT4_TMP(a, b) VALUES (2147483647::int4, 2147483646::int4);
+--Testcase 142:
+SELECT lcm(a, b) FROM INT4_TMP;    -- overflow
+ERROR:  integer out of range
+ROLLBACK;
+BEGIN;
+-- non-decimal literals
+DELETE FROM INT4_TBL;
+--Testcase 156:
+INSERT INTO INT4_TBL(f1) VALUES ('0b100101');
+--Testcase 157:
+INSERT INTO INT4_TBL(f1) VALUES ('0o273');
+--Testcase 158:
+INSERT INTO INT4_TBL(f1) VALUES ('0x42F');
+--Testcase 159:
+SELECT * FROM INT4_TBL;
+ id |  f1  
+----+------
+ 21 |   37
+ 22 |  187
+ 23 | 1071
+(3 rows)
+
+--Testcase 160:
+ROLLBACK;
+--Testcase 161:
+INSERT INTO INT4_TBL(f1) VALUES ('0b');
+ERROR:  invalid input syntax for type integer: "0b"
+LINE 1: INSERT INTO INT4_TBL(f1) VALUES ('0b');
+                                         ^
+--Testcase 162:
+INSERT INTO INT4_TBL(f1) VALUES ('0o');
+ERROR:  invalid input syntax for type integer: "0o"
+LINE 1: INSERT INTO INT4_TBL(f1) VALUES ('0o');
+                                         ^
+--Testcase 163:
+INSERT INTO INT4_TBL(f1) VALUES ('0x');
+ERROR:  invalid input syntax for type integer: "0x"
+LINE 1: INSERT INTO INT4_TBL(f1) VALUES ('0x');
+                                         ^
+-- cases near overflow
+BEGIN;
+--Testcase 164:
+INSERT INTO INT4_TBL(f1) VALUES ('0b1111111111111111111111111111111');
+--Testcase 165:
+SELECT * FROM INT4_TBL;
+ id |     f1      
+----+-------------
+  1 |           0
+  2 |      123456
+  3 |     -123456
+  4 |  2147483647
+  5 | -2147483647
+ 24 |  2147483647
+(6 rows)
+
+ROLLBACK;
+--Testcase 166:
+INSERT INTO INT4_TBL(f1) VALUES ('0b10000000000000000000000000000000');
+ERROR:  value "0b10000000000000000000000000000000" is out of range for type integer
+LINE 1: INSERT INTO INT4_TBL(f1) VALUES ('0b100000000000000000000000...
+                                         ^
+BEGIN;
+--Testcase 167:
+INSERT INTO INT4_TBL(f1) VALUES ('0o17777777777');
+--Testcase 168:
+SELECT * FROM INT4_TBL;
+ id |     f1      
+----+-------------
+  1 |           0
+  2 |      123456
+  3 |     -123456
+  4 |  2147483647
+  5 | -2147483647
+ 25 |  2147483647
+(6 rows)
+
+ROLLBACK;
+--Testcase 169:
+INSERT INTO INT4_TBL(f1) VALUES ('0o20000000000');
+ERROR:  value "0o20000000000" is out of range for type integer
+LINE 1: INSERT INTO INT4_TBL(f1) VALUES ('0o20000000000');
+                                         ^
+BEGIN;
+--Testcase 170:
+INSERT INTO INT4_TBL(f1) VALUES ('0x7FFFFFFF');
+--Testcase 171:
+SELECT * FROM INT4_TBL;
+ id |     f1      
+----+-------------
+  1 |           0
+  2 |      123456
+  3 |     -123456
+  4 |  2147483647
+  5 | -2147483647
+ 26 |  2147483647
+(6 rows)
+
+ROLLBACK;
+--Testcase 172:
+INSERT INTO INT4_TBL(f1) VALUES ('0x80000000');
+ERROR:  value "0x80000000" is out of range for type integer
+LINE 1: INSERT INTO INT4_TBL(f1) VALUES ('0x80000000');
+                                         ^
+--Testcase 173:
+BEGIN;
+--Testcase 174:
+INSERT INTO INT4_TBL(f1) VALUES ('-0b10000000000000000000000000000000');
+--Testcase 175:
+SELECT * FROM INT4_TBL;
+ id |     f1      
+----+-------------
+  1 |           0
+  2 |      123456
+  3 |     -123456
+  4 |  2147483647
+  5 | -2147483647
+ 27 | -2147483648
+(6 rows)
+
+ROLLBACK;
+--Testcase 176:
+INSERT INTO INT4_TBL(f1) VALUES ('-0b10000000000000000000000000000001');
+ERROR:  value "-0b10000000000000000000000000000001" is out of range for type integer
+LINE 1: INSERT INTO INT4_TBL(f1) VALUES ('-0b10000000000000000000000...
+                                         ^
+BEGIN;
+--Testcase 177:
+INSERT INTO INT4_TBL(f1) VALUES ('-0o20000000000');
+--Testcase 178:
+SELECT * FROM INT4_TBL;
+ id |     f1      
+----+-------------
+  1 |           0
+  2 |      123456
+  3 |     -123456
+  4 |  2147483647
+  5 | -2147483647
+ 28 | -2147483648
+(6 rows)
+
+ROLLBACK;
+--Testcase 179:
+INSERT INTO INT4_TBL(f1) VALUES ('-0o20000000001');
+ERROR:  value "-0o20000000001" is out of range for type integer
+LINE 1: INSERT INTO INT4_TBL(f1) VALUES ('-0o20000000001');
+                                         ^
+BEGIN;
+--Testcase 180:
+INSERT INTO INT4_TBL(f1) VALUES ('-0x80000000');
+--Testcase 181:
+SELECT * FROM INT4_TBL;
+ id |     f1      
+----+-------------
+  1 |           0
+  2 |      123456
+  3 |     -123456
+  4 |  2147483647
+  5 | -2147483647
+ 29 | -2147483648
+(6 rows)
+
+ROLLBACK;
+--Testcase 182:
+INSERT INTO INT4_TBL(f1) VALUES ('-0x80000001');
+ERROR:  value "-0x80000001" is out of range for type integer
+LINE 1: INSERT INTO INT4_TBL(f1) VALUES ('-0x80000001');
+                                         ^
+-- underscores
+BEGIN;
+--Testcase 177:
+INSERT INTO INT4_TBL(f1) VALUES ('1_000_000');
+--Testcase 178:
+INSERT INTO INT4_TBL(f1) VALUES ('1_2_3');
+--Testcase 179:
+INSERT INTO INT4_TBL(f1) VALUES ('0x1EEE_FFFF');
+--Testcase 180:
+INSERT INTO INT4_TBL(f1) VALUES ('0o2_73');
+--Testcase 181:
+INSERT INTO INT4_TBL(f1) VALUES ('0b_10_0101');
+--Testcase 182:
+SELECT * FROM INT4_TBL;
+ id |     f1      
+----+-------------
+  1 |           0
+  2 |      123456
+  3 |     -123456
+  4 |  2147483647
+  5 | -2147483647
+ 30 |     1000000
+ 31 |         123
+ 32 |   518979583
+ 33 |         187
+ 34 |          37
+(10 rows)
+
+ROLLBACK;
+-- error cases
+--Testcase 183:
+INSERT INTO INT4_TBL(f1) VALUES ('_100');
+ERROR:  invalid input syntax for type integer: "_100"
+LINE 1: INSERT INTO INT4_TBL(f1) VALUES ('_100');
+                                         ^
+--Testcase 184:
+INSERT INTO INT4_TBL(f1) VALUES ('100_');
+ERROR:  invalid input syntax for type integer: "100_"
+LINE 1: INSERT INTO INT4_TBL(f1) VALUES ('100_');
+                                         ^
+--Testcase 185:
+INSERT INTO INT4_TBL(f1) VALUES ('100__000');
+ERROR:  invalid input syntax for type integer: "100__000"
+LINE 1: INSERT INTO INT4_TBL(f1) VALUES ('100__000');
+                                         ^
+--Testcase 143:
+DROP FOREIGN TABLE INT4_TMP;
+--Testcase 144:
+DROP FOREIGN TABLE INT4_TBL;
+--Testcase 145:
+DROP FOREIGN TABLE FLOAT8_TBL;
+--Testcase 146:
+DROP USER MAPPING FOR public SERVER griddb_svr;
+--Testcase 147:
+DROP SERVER griddb_svr CASCADE;
+NOTICE:  drop cascades to foreign table non_error_throwing_api
+--Testcase 148:
+DROP EXTENSION griddb_fdw CASCADE;

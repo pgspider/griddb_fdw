@@ -30,6 +30,7 @@
 #include "optimizer/appendinfo.h"
 #endif
 #include "optimizer/cost.h"
+#include "optimizer/inherit.h"
 #include "optimizer/paths.h"
 #include "optimizer/pathnode.h"
 #include "optimizer/planmain.h"
@@ -132,6 +133,15 @@ enum FdwPathPrivateIndex
 	FdwPathPrivateHasFinalSort,
 	/* has-limit flag (as an integer Value node) */
 	FdwPathPrivateHasLimit
+};
+
+/*
+ * DDL commands
+ */
+enum GridDBFdwDDLCommand
+{
+	DDL_COMMAND_CREATE,		/* Create data source */
+	DDL_COMMAND_DROP		/* Drop data source */
 };
 
 /*
@@ -390,6 +400,8 @@ static void griddb_add_foreign_final_paths(PlannerInfo *root, RelOptInfo *input_
 static int	get_batch_size_option(Relation rel);
 #endif
 
+static bool check_existed_container(Oid serverOid, char* tbl_name);
+
 void
 _PG_init()
 {
@@ -566,7 +578,6 @@ griddbGetForeignRelSize(PlannerInfo *root,
 {
 	GriddbFdwRelationInfo *fpinfo;
 	ListCell   *lc;
-	RangeTblEntry *rte = planner_rt_fetch(baserel->relid, root);
 	griddb_opt *options = NULL;
 
 	elog(DEBUG1, "griddb_fdw: %s", __func__);
@@ -602,13 +613,18 @@ griddbGetForeignRelSize(PlannerInfo *root,
 	/*
 	 * If the table or the server is configured to use remote estimates,
 	 * identify which user to do remote access as during planning.  This
-	 * should match what ExecCheckRTEPerms() does.  If we fail due to lack of
-	 * permissions, the query would have failed at runtime anyway.
+	 * should match what ExecCheckPermissions() does.  If we fail due to lack
+	 * of permissions, the query would have failed at runtime anyway.
 	 */
 	if (fpinfo->use_remote_estimate)
 	{
+#if (PG_VERSION_NUM >= 160000)
+		Oid			userid;
+		userid = OidIsValid(baserel->userid) ? baserel->userid : GetUserId();
+#else
+		RangeTblEntry *rte = planner_rt_fetch(baserel->relid, root);
 		Oid			userid = rte->checkAsUser ? rte->checkAsUser : GetUserId();
-
+#endif
 		fpinfo->user = GetUserMapping(userid, fpinfo->server->serverid);
 	}
 	else
@@ -1119,8 +1135,7 @@ griddbBeginForeignScan(ForeignScanState *node, int eflags)
 
 	/*
 	 * Identify which user to do the remote access as.  This should match what
-	 * ExecCheckRTEPerms() does.  In case of a join, use the lowest-numbered
-	 * member RTE as a representative; we would get the same result from any.
+	 * ExecCheckPermissions() does.
 	 */
 	if (fsplan->scan.scanrelid > 0)
 	{
@@ -1131,7 +1146,12 @@ griddbBeginForeignScan(ForeignScanState *node, int eflags)
 	{
 		rte = list_nth(fsplan->fdw_private, FDWScanRTE);
 	}
+
+#if (PG_VERSION_NUM >= 160000)
+	userid = OidIsValid(fsplan->checkAsUser) ? fsplan->checkAsUser : GetUserId();
+#else
 	userid = rte->checkAsUser ? rte->checkAsUser : GetUserId();
+#endif
 
 	/* Get info about foreign table. */
 	table = GetForeignTable(rte->relid);
@@ -1535,10 +1555,18 @@ griddbPlanForeignModify(PlannerInfo *root,
 		int			col;
 		Bitmapset  *allUpdatedCols;
 
-		allUpdatedCols = rte->updatedCols;
-#if (PG_VERSION_NUM >= 120000)
+#if ((PG_VERSION_NUM >= 130010 && PG_VERSION_NUM < 140000) || \
+	 (PG_VERSION_NUM >= 140007 && PG_VERSION_NUM < 150000) || \
+	  PG_VERSION_NUM >= 150002)
+		/* get_rel_all_updated_cols is supported from pg 13.10, 14.7, 15.2 and 16 */
+		RelOptInfo *rel = find_base_rel(root, resultRelation);
+		allUpdatedCols = get_rel_all_updated_cols(root, rel);
+#elif (PG_VERSION_NUM >= 120000)
 		allUpdatedCols = bms_union(rte->updatedCols, rte->extraUpdatedCols);
+#else
+		allUpdatedCols = rte->updatedCols;
 #endif
+
 		col = -1;
 		while ((col = bms_next_member(allUpdatedCols, col)) >= 0)
 		{
@@ -1611,15 +1639,23 @@ create_foreign_modify(EState *estate,
 	ForeignTable *table;
 	UserMapping *user;
 	Oid			serverOid;
+	Oid			userid;
 
 	/* Begin constructing PgFdwModifyState. */
 	fmstate = (GridDBFdwModifyState *) palloc0(sizeof(GridDBFdwModifyState));
 	fmstate->rel = rel;
 
+	/* Identify which user to do the remote access as. */
+#if (PG_VERSION_NUM >= 160000)
+	userid = ExecGetResultRelCheckAsUser(resultRelInfo, estate);
+#else
+	userid = GetUserId();
+#endif
+
 	/* Get info about foreign table. */
 	table = GetForeignTable(RelationGetRelid(rel));
 	serverOid = table->serverid;
-	user = GetUserMapping(GetUserId(), serverOid);
+	user = GetUserMapping(userid, serverOid);
 
 	/* Open connection; report that we'll create a prepared statement. */
 	fmstate->store = griddb_get_connection(user, false, serverOid);
@@ -1870,16 +1906,15 @@ static int
 griddbGetForeignModifyBatchSize(ResultRelInfo *resultRelInfo)
 {
 	int			batch_size;
-	GridDBFdwModifyState *fmstate = resultRelInfo->ri_FdwState ?
-	(GridDBFdwModifyState *) resultRelInfo->ri_FdwState :
-	NULL;
+	GridDBFdwModifyState *fmstate = (GridDBFdwModifyState *) resultRelInfo->ri_FdwState;
 
 	/* should be called only once */
 	Assert(resultRelInfo->ri_BatchSize == 0);
 
 	/*
-	 * Should never get called when the insert is being performed as part of a
-	 * row movement operation.
+	 * Should never get called when the insert is being performed on a table
+	 * that is also among the target relations of an UPDATE operation, because
+	 * postgresBeginForeignInsert() currently rejects such insert attempts.
 	 */
 	Assert(fmstate == NULL || fmstate->aux_fmstate == NULL);
 
@@ -1907,6 +1942,15 @@ griddbGetForeignModifyBatchSize(ResultRelInfo *resultRelInfo)
 		(resultRelInfo->ri_TrigDesc &&
 		 (resultRelInfo->ri_TrigDesc->trig_insert_before_row ||
 		  resultRelInfo->ri_TrigDesc->trig_insert_after_row)))
+		return 1;
+
+	/*
+	 * If the foreign table has no columns, disable batching as the INSERT
+	 * syntax doesn't allow batching multiple empty rows into a zero-column
+	 * table in a single statement.  This is needed for COPY FROM, in which
+	 * case fmstate must be non-NULL.
+	 */
+	if (fmstate && list_length(fmstate->target_attrs) == 0)
 		return 1;
 
 	/*
@@ -3009,10 +3053,10 @@ griddb_foreign_grouping_ok(PlannerInfo *root, RelOptInfo *grouped_rel)
 			 */
 			foreach(l, aggvars)
 			{
-				Expr	   *expr = (Expr *) lfirst(l);
+				Expr	   *aggref = (Expr *) lfirst(l);
 
-				if (IsA(expr, Aggref))
-					tlist = add_to_flat_tlist(tlist, list_make1(expr));
+				if (IsA(aggref, Aggref))
+					tlist = add_to_flat_tlist(tlist, list_make1(aggref));
 			}
 
 			/*
@@ -5557,3 +5601,187 @@ get_batch_size_option(Relation rel)
 	return batch_size;
 }
 #endif
+
+/*
+ * ExecForeignDDL is a public function that is called by core code.
+ * It executes DDL command on remote server.
+ *
+ * serverOid: remote server to get connected
+ * rel: relation to be created
+ * operation:
+ * 		0: CREATE command
+ * 		1: DROP command
+ * exists_flag:
+ *		in CREATE DDL: true if `IF NOT EXIST` is specified
+ *		in DROP DDL: true if `IF EXIST` is specified
+ */
+int
+ExecForeignDDL(Oid serverOid,
+			   Relation rel,
+			   int operation,
+			   bool exists_flag)
+{
+	GSContainerInfo	containerinfo;
+	UserMapping *user = NULL;
+	GSGridStore *store = NULL;
+	GSContainer *container;
+	GSResult		ret = GS_RESULT_OK;
+	char *tbl_name = NULL;
+	ListCell   *lc = NULL;
+	ForeignTable *table;
+	bool RowKeyAssigned = false;
+	List *column_options;
+	bool isContainerExisted = false;
+
+	elog(DEBUG1, "griddb_fdw: %s", __func__);
+
+	if (operation != DDL_COMMAND_CREATE && operation != DDL_COMMAND_DROP)
+	{
+		elog(ERROR, "Only support CREATE/DROP DATASOURCE");
+	}
+
+	/* obtain additional catalog information. */
+	table = GetForeignTable(RelationGetRelid(rel));
+
+	/*
+	 * Use value of FDW options if any, instead of the name of object itself.
+	 */
+	foreach(lc, table->options)
+	{
+		DefElem    *def = (DefElem *) lfirst(lc);
+
+		if (strcmp(def->defname, OPTION_TABLE) == 0)
+		{
+			tbl_name = defGetString(def);
+			break;
+		}
+	}
+
+	if (tbl_name == NULL)
+		tbl_name = RelationGetRelationName(rel);
+
+	column_options = GetForeignColumnOptions(RelationGetRelid(rel), ROWKEY_ATTNO);
+
+	foreach(lc, column_options)
+	{
+		DefElem    *def = (DefElem *) lfirst(lc);
+
+		if (strcmp(def->defname, OPTION_ROWKEY) == 0)
+		{
+			RowKeyAssigned = true;
+			break;
+		}
+	}
+
+	/*
+	 * Get connection to the foreign server.  Connection manager will
+	 * establish new connection if necessary.
+	 */
+	user = GetUserMapping(GetUserId(), serverOid);
+	store = griddb_get_connection(user, false, RelationGetRelid(rel));
+
+	isContainerExisted = check_existed_container(serverOid, tbl_name);
+
+	/* create query */
+	if (operation == DDL_COMMAND_CREATE)
+	{
+		containerinfo = griddb_set_container_info(containerinfo, rel);
+		/* Create a Collection (Delete if schema setting is NULL) */
+		containerinfo.type = GS_CONTAINER_COLLECTION;
+		if (RowKeyAssigned)
+			containerinfo.rowKeyAssigned = GS_FALSE;
+
+		if (exists_flag)
+		{
+			/*
+			 * If container is not existed, create container.
+			 * If container is existed, do nothing.
+			 */
+			if (!isContainerExisted)
+				ret = gsPutContainerGeneral(store, tbl_name, &containerinfo, GS_FALSE, &container);
+		}
+		else
+		{
+			/*
+			 * If container is existed, show error message and do not create container.
+			 * If container is not existed, create container.
+			 */
+			if (isContainerExisted)
+			{
+				elog(ERROR, "Container \"%s\" has already existed\n", tbl_name);
+			}
+			else
+			{
+				ret = gsPutContainerGeneral(store, tbl_name, &containerinfo, GS_TRUE, &container);
+			}
+		}
+
+		if (!GS_SUCCEEDED(ret))
+		{
+			elog(ERROR, "Create container \"%s\" failed\n", tbl_name);
+		}
+	}
+	else
+	{
+		/* operation == DDL_COMMAND_DROP */
+		if (exists_flag)
+		{
+			if (isContainerExisted)
+				gsDropContainer(store, tbl_name);
+		}
+		else
+		{
+			if (!isContainerExisted)
+			{
+				elog(ERROR, "Container \"%s\" is not existed\n", tbl_name);
+			}
+			else
+			{
+				ret = gsDropContainer(store, tbl_name);
+			}
+		}
+
+		if (!GS_SUCCEEDED(ret))
+		{
+			elog(ERROR, "Can not drop container \"%s\"\n", tbl_name);
+		}
+	}
+
+	/* Releasing resource */
+	griddb_release_connection(store);
+
+	return 0;
+}
+
+/* Check container is exised or not */
+static bool
+check_existed_container(Oid serverOid, char* tbl_name)
+{
+	ForeignServer *server;
+	UserMapping *mapping;
+	GSGridStore *store;
+	GSResult	ret;
+	GSContainerInfo info = GS_CONTAINER_INFO_INITIALIZER;
+	GSBool		exists;
+
+	/*
+	 * Get connection to the foreign server.  Connection manager will
+	 * establish new connection if necessary.
+	 */
+	server = GetForeignServer(serverOid);
+	mapping = GetUserMapping(GetUserId(), server->serverid);
+	store = griddb_get_connection(mapping, false, serverOid);
+
+	/* Get schema of container */
+	ret = gsGetContainerInfo(store, (GSChar *)tbl_name, &info, &exists);
+	if (!GS_SUCCEEDED(ret))
+		griddb_REPORT_ERROR(ERROR, ret, store);
+
+	/* Container has already existed */
+	if (exists == GS_TRUE)
+	{
+		return true;
+	}
+
+	return false;
+}

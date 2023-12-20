@@ -104,7 +104,7 @@
 #define OPTION_TUPLE_COST	   "fdw_tuple_cost"
 #define OPTION_BATCH_SIZE	   "batch_size"
 #define OPTION_KEEP_CONN	   "keep_connections"
-#define CODE_VERSION 20200
+#define CODE_VERSION 20300
 /* Attribute number of rowkey column. 1st column is assigned rowkey in GridDB. */
 #define ROWKEY_ATTNO 1
 /*
@@ -321,6 +321,14 @@ extern Datum griddb_make_datum_from_row(GSRow * row, int32_t attid, GSType gs_ty
 extern void griddb_set_row_field(GSRow * row, Datum value, GSType gs_type, int pindex);
 extern int	griddb_set_transmission_modes(void);
 extern void griddb_reset_transmission_modes(int nestlevel);
+extern
+#if PG_VERSION_NUM >= 160000
+PGDLLEXPORT
+#endif
+int	ExecForeignDDL(Oid serverOid,
+				   Relation rel,
+				   int operation,
+				   bool if_not_exists);
 
 /* in option.c */
 extern bool griddb_is_valid_option(const char *option, Oid context);
@@ -371,6 +379,7 @@ extern bool griddb_is_foreign_function_tlist(PlannerInfo *root,
 											 List *tlist);
 extern List *griddb_pull_func_clause(Node *node);
 extern bool griddb_is_builtin(Oid oid);
+extern GSContainerInfo griddb_set_container_info(GSContainerInfo containerinfo, Relation rel);
 
 /* in store.c */
 extern HTAB *griddb_rowkey_hash_create(GridDBFdwFieldInfo * field_info);

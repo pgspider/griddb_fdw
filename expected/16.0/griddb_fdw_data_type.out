@@ -1,0 +1,1131 @@
+\set ECHO none
+--Testcase 1:
+CREATE EXTENSION griddb_fdw;
+--Testcase 2:
+CREATE SERVER griddb_svr FOREIGN DATA WRAPPER griddb_fdw OPTIONS (host :GRIDDB_HOST, port :GRIDDB_PORT, clustername 'griddbfdwTestCluster');
+--Testcase 3:
+CREATE USER MAPPING FOR public SERVER griddb_svr OPTIONS (username :GRIDDB_USER, password :GRIDDB_PASS);
+IMPORT FOREIGN SCHEMA griddb_schema FROM SERVER griddb_svr INTO public;
+-- GridDB containers type_XXX must be created for this test on GridDB server
+/*
+CREATE TABLE type_string (col1 text primary key, col2 text)
+CREATE TABLE type_boolean (col1 integer primary key, col2 boolean)
+CREATE TABLE type_byte (col1 integer primary key, col2 char)
+CREATE TABLE type_short (col1 integer primary key, col2 short)
+CREATE TABLE type_integer (col1 integer primary key, col2 integer)
+CREATE TABLE type_long (col1 long primary key, col2 long)
+CREATE TABLE type_float (col1 integer primary key, col2 float)
+CREATE TABLE type_double (col1 integer primary key, col2 double)
+CREATE TABLE type_timestamp (col1 timestamp primary key, col2 timestamp)
+CREATE TABLE type_blob (col1 integer primary key, col2 blob)
+CREATE TABLE type_string_array (col1 integer primary key, col2 text[])
+CREATE TABLE type_bool_array (col1 integer primary key, col2 boolean[])
+CREATE TABLE type_byte_array (col1 integer primary key, col2 char[])
+CREATE TABLE type_short_array (col1 integer primary key, col2 short[])
+CREATE TABLE type_integer_array (col1 integer primary key, col2 integer[])
+CREATE TABLE type_long_array (col1 integer primary key, col2 long[])
+CREATE TABLE type_float_array (col1 integer primary key, col2 float[])
+CREATE TABLE type_double_array (col1 integer primary key, col2 double[])
+CREATE TABLE type_timestamp_array (col1 integer primary key, col2 timestamp[])
+-- CREATE TABLE type_geometry (col1 integer primary key, col2 geometry)
+*/
+--Testcase 4:
+CREATE TABLE tbl_string(col1 text);
+--Testcase 5:
+INSERT INTO tbl_string VALUES('stringba');
+--Testcase 6:
+INSERT INTO tbl_string VALUES('stringaaa');
+--Testcase 7:
+CREATE TABLE tbl_integer(col1 integer);
+--Testcase 8:
+INSERT INTO tbl_integer VALUES(32771);
+--Testcase 9:
+INSERT INTO tbl_integer VALUES(32769);
+--Testcase 10:
+CREATE TABLE tbl_long(col1 bigint);
+--Testcase 11:
+INSERT INTO tbl_long VALUES(2147483651);
+--Testcase 12:
+INSERT INTO tbl_long VALUES(2147483648);
+--Testcase 13:
+CREATE TABLE tbl_timestamp(col1 timestamp);
+--Testcase 14:
+INSERT INTO tbl_timestamp VALUES(to_timestamp('2010.07.01 08:15:00.123', 'YYYY.MM.DD HH24:MI:SS.MS'));
+--Testcase 15:
+INSERT INTO tbl_timestamp VALUES(to_timestamp('2000.01.01 00:00:00.000', 'YYYY.MM.DD HH24:MI:SS.MS'));
+--Testcase 16:
+DELETE FROM type_string;
+--Testcase 17:
+DELETE FROM type_boolean;
+--Testcase 18:
+DELETE FROM type_byte;
+--Testcase 19:
+DELETE FROM type_short;
+--Testcase 20:
+DELETE FROM type_integer;
+--Testcase 21:
+DELETE FROM type_long;
+--Testcase 22:
+DELETE FROM type_float;
+--Testcase 23:
+DELETE FROM type_double;
+--Testcase 24:
+DELETE FROM type_timestamp;
+--Testcase 25:
+DELETE FROM type_blob;
+--Testcase 26:
+DELETE FROM type_string_array;
+--Testcase 27:
+DELETE FROM type_bool_array;
+--Testcase 28:
+DELETE FROM type_byte_array;
+--Testcase 29:
+DELETE FROM type_short_array;
+--Testcase 30:
+DELETE FROM type_integer_array;
+--Testcase 31:
+DELETE FROM type_long_array;
+--Testcase 32:
+DELETE FROM type_float_array;
+--Testcase 33:
+DELETE FROM type_double_array;
+--Testcase 34:
+DELETE FROM type_timestamp_array;
+-- DELETE FROM type_geometry;
+--Testcase 35:
+INSERT INTO type_string(col1,col2) VALUES ('stringbaaa', 'STRINGBAAA');
+--Testcase 36:
+INSERT INTO type_string(col1,col2) VALUES ('stringaaa', 'STRINGAAA');
+--Testcase 37:
+INSERT INTO type_string(col1,col2) VALUES ('stringab', 'STRINGAB');
+--Testcase 38:
+INSERT INTO type_string(col1,col2) VALUES ('stringba', 'STRINGBA');
+--Testcase 39:
+INSERT INTO type_boolean(col1,col2) VALUES (1, TRUE);
+--Testcase 40:
+INSERT INTO type_boolean(col1,col2) VALUES (2, FALSE);
+--Testcase 41:
+INSERT INTO type_byte(col1,col2) VALUES (1, -128);
+--Testcase 42:
+INSERT INTO type_byte(col1,col2) VALUES (2, 127);
+--Testcase 43:
+INSERT INTO type_short(col1,col2) VALUES (1, 1);
+--Testcase 44:
+INSERT INTO type_short(col1,col2) VALUES (2, 2);
+--Testcase 45:
+INSERT INTO type_short(col1,col2) VALUES (3, 3);
+--Testcase 46:
+INSERT INTO type_short(col1,col2) VALUES (4, 4);
+--Testcase 47:
+INSERT INTO type_integer(col1,col2) VALUES (32769, -32772);
+--Testcase 48:
+INSERT INTO type_integer(col1,col2) VALUES (32772, -32769);
+--Testcase 49:
+INSERT INTO type_integer(col1,col2) VALUES (32770, -32771);
+--Testcase 50:
+INSERT INTO type_integer(col1,col2) VALUES (32768, -32773);
+--Testcase 51:
+INSERT INTO type_integer(col1,col2) VALUES (32771, -32770);
+--Testcase 52:
+INSERT INTO type_long(col1,col2) VALUES (2147483649, -2147483652);
+--Testcase 53:
+INSERT INTO type_long(col1,col2) VALUES (2147483652, -2147483649);
+--Testcase 54:
+INSERT INTO type_long(col1,col2) VALUES (2147483650, -2147483651);
+--Testcase 55:
+INSERT INTO type_long(col1,col2) VALUES (2147483648, -2147483653);
+--Testcase 56:
+INSERT INTO type_long(col1,col2) VALUES (2147483651, -2147483650);
+--Testcase 57:
+INSERT INTO type_float(col1,col2) VALUES (1, 1.58);
+--Testcase 58:
+INSERT INTO type_float(col1,col2) VALUES (2, 3.14);
+--Testcase 59:
+INSERT INTO type_double(col1,col2) VALUES (1, 3.14159265);
+--Testcase 60:
+INSERT INTO type_double(col1,col2) VALUES (2, 5.67890123);
+--Testcase 61:
+INSERT INTO type_timestamp(col1,col2) VALUES (to_timestamp('2000.1.1 00:00:00.000', 'YYYY.MM.DD HH24:MI:SS.MS'), to_timestamp('2200.1.1 00:00:00.000', 'YYYY.MM.DD HH24:MI:SS.MS'));
+--Testcase 62:
+INSERT INTO type_timestamp(col1,col2) VALUES (to_timestamp('2010.7.2 00:01:23.456', 'YYYY.MM.DD HH24:MI:SS.MS'), to_timestamp('2210.7.2 00:01:23.456', 'YYYY.MM.DD HH24:MI:SS.MS'));
+--Testcase 63:
+INSERT INTO type_timestamp(col1,col2) VALUES (to_timestamp('2010.7.2 00:01:23.45', 'YYYY.MM.DD HH24:MI:SS.MS'), to_timestamp('2210.7.2 00:01:23.45', 'YYYY.MM.DD HH24:MI:SS.MS'));
+--Testcase 64:
+INSERT INTO type_timestamp(col1,col2) VALUES (to_timestamp('2010.7.1 08:15:00.123', 'YYYY.MM.DD HH24:MI:SS.MS'), to_timestamp('2210.7.1 08:15:00.123', 'YYYY.MM.DD HH24:MI:SS.MS'));
+--Testcase 65:
+INSERT INTO type_timestamp(col1,col2) VALUES (to_timestamp('1999.12.31 23:59:59.999', 'YYYY.MM.DD HH24:MI:SS.MS'), to_timestamp('2199.12.31 23:59:59.999', 'YYYY.MM.DD HH24:MI:SS.MS'));
+--Testcase 66:
+INSERT INTO type_blob(col1,col2) VALUES (1, bytea('\xDEADBEEF'));
+--Testcase 67:
+INSERT INTO type_string_array(col1,col2) VALUES (1, ARRAY['s1', 's2', 's3']);
+--Testcase 68:
+INSERT INTO type_bool_array(col1,col2) VALUES (1, ARRAY[TRUE, FALSE, TRUE, FALSE]);
+--Testcase 69:
+INSERT INTO type_byte_array(col1,col2) VALUES (1, ARRAY[-128, 0, 127]);
+--Testcase 70:
+INSERT INTO type_short_array(col1,col2) VALUES (1, ARRAY[100, 200, 300]);
+--Testcase 71:
+INSERT INTO type_integer_array(col1,col2) VALUES (1, ARRAY[1, 32768, 65537]);
+--Testcase 72:
+INSERT INTO type_long_array(col1,col2) VALUES (1, ARRAY[1, 2147483648, 4294967297]);
+--Testcase 73:
+INSERT INTO type_float_array(col1,col2) VALUES (1, ARRAY[3.14, 3.149, 3.1492]);
+--Testcase 74:
+INSERT INTO type_double_array(col1,col2) VALUES (1, ARRAY[3.14926, 3.149265, 3.1492653]);
+--Testcase 75:
+INSERT INTO type_timestamp_array(col1,col2) VALUES (1, ARRAY[to_timestamp('2017.11.06 12:34:56.789', 'YYYY.MM.DD HH24:MI:SS.MS'), to_timestamp('2017.11.07 12:34:56.789', 'YYYY.MM.DD HH24:MI:SS.MS'), to_timestamp('2017.11.08 12:34:56.789', 'YYYY.MM.DD HH24:MI:SS.MS')]);
+-- INSERT INTO type_geometry(col1,col2) VALUES (1, '');
+--Testcase 76:
+SELECT * FROM type_string;
+    col1    |    col2    
+------------+------------
+ stringbaaa | STRINGBAAA
+ stringaaa  | STRINGAAA
+ stringab   | STRINGAB
+ stringba   | STRINGBA
+(4 rows)
+
+--Testcase 77:
+SELECT * FROM type_boolean;
+ col1 | col2 
+------+------
+    1 | t
+    2 | f
+(2 rows)
+
+--Testcase 78:
+SELECT * FROM type_byte;
+ col1 | col2 
+------+------
+    1 | -128
+    2 |  127
+(2 rows)
+
+--Testcase 79:
+SELECT * FROM type_short;
+ col1 | col2 
+------+------
+    1 |    1
+    2 |    2
+    3 |    3
+    4 |    4
+(4 rows)
+
+--Testcase 80:
+SELECT * FROM type_integer;
+ col1  |  col2  
+-------+--------
+ 32769 | -32772
+ 32772 | -32769
+ 32770 | -32771
+ 32768 | -32773
+ 32771 | -32770
+(5 rows)
+
+--Testcase 81:
+SELECT * FROM type_long;
+    col1    |    col2     
+------------+-------------
+ 2147483649 | -2147483652
+ 2147483652 | -2147483649
+ 2147483650 | -2147483651
+ 2147483648 | -2147483653
+ 2147483651 | -2147483650
+(5 rows)
+
+--Testcase 82:
+SELECT * FROM type_float;
+ col1 | col2 
+------+------
+    1 | 1.58
+    2 | 3.14
+(2 rows)
+
+--Testcase 83:
+SELECT * FROM type_double;
+ col1 |    col2    
+------+------------
+    1 | 3.14159265
+    2 | 5.67890123
+(2 rows)
+
+--Testcase 84:
+SELECT * FROM type_timestamp;
+             col1             |             col2             
+------------------------------+------------------------------
+ Sat Jan 01 00:00:00 2000     | Wed Jan 01 00:00:00 2200
+ Fri Jul 02 00:01:23.456 2010 | Mon Jul 02 00:01:23.456 2210
+ Fri Jul 02 00:01:23.45 2010  | Mon Jul 02 00:01:23.45 2210
+ Thu Jul 01 08:15:00.123 2010 | Sun Jul 01 08:15:00.123 2210
+ Fri Dec 31 23:59:59.999 1999 | Tue Dec 31 23:59:59.999 2199
+(5 rows)
+
+--Testcase 85:
+SELECT * FROM type_blob;
+ col1 |    col2    
+------+------------
+    1 | \xdeadbeef
+(1 row)
+
+--Testcase 86:
+SELECT * FROM type_string_array;
+ col1 |    col2    
+------+------------
+    1 | {s1,s2,s3}
+(1 row)
+
+--Testcase 87:
+SELECT * FROM type_bool_array;
+ col1 |   col2    
+------+-----------
+    1 | {t,f,t,f}
+(1 row)
+
+--Testcase 88:
+SELECT * FROM type_byte_array;
+ col1 |     col2     
+------+--------------
+    1 | {-128,0,127}
+(1 row)
+
+--Testcase 89:
+SELECT * FROM type_short_array;
+ col1 |     col2      
+------+---------------
+    1 | {100,200,300}
+(1 row)
+
+--Testcase 90:
+SELECT * FROM type_integer_array;
+ col1 |      col2       
+------+-----------------
+    1 | {1,32768,65537}
+(1 row)
+
+--Testcase 91:
+SELECT * FROM type_long_array;
+ col1 |           col2            
+------+---------------------------
+    1 | {1,2147483648,4294967297}
+(1 row)
+
+--Testcase 92:
+SELECT * FROM type_float_array;
+ col1 |        col2         
+------+---------------------
+    1 | {3.14,3.149,3.1492}
+(1 row)
+
+--Testcase 93:
+SELECT * FROM type_double_array;
+ col1 |             col2             
+------+------------------------------
+    1 | {3.14926,3.149265,3.1492653}
+(1 row)
+
+--Testcase 94:
+SELECT * FROM type_timestamp_array;
+ col1 |                                              col2                                              
+------+------------------------------------------------------------------------------------------------
+    1 | {"Mon Nov 06 12:34:56.789 2017","Tue Nov 07 12:34:56.789 2017","Wed Nov 08 12:34:56.789 2017"}
+(1 row)
+
+-- SELECT * FROM type_geometry;
+-- test of inequality in where clause 
+--Testcase 95:
+SELECT * FROM type_string WHERE col2 < 'STRINGBA';
+   col1    |   col2    
+-----------+-----------
+ stringaaa | STRINGAAA
+ stringab  | STRINGAB
+(2 rows)
+
+--Testcase 96:
+SELECT * FROM type_string WHERE col2 >= 'STRINGAB';
+    col1    |    col2    
+------------+------------
+ stringbaaa | STRINGBAAA
+ stringab   | STRINGAB
+ stringba   | STRINGBA
+(3 rows)
+
+-- function test
+--Testcase 97:
+SELECT * FROM type_string WHERE char_length(col1) > 8;
+    col1    |    col2    
+------------+------------
+ stringbaaa | STRINGBAAA
+ stringaaa  | STRINGAAA
+(2 rows)
+
+--Testcase 98:
+SELECT * FROM type_string WHERE concat(col1,col2) = 'stringabSTRINGAB';
+   col1   |   col2   
+----------+----------
+ stringab | STRINGAB
+(1 row)
+
+--Testcase 99:
+SELECT * FROM type_string WHERE upper(col1) = 'STRINGAB';
+   col1   |   col2   
+----------+----------
+ stringab | STRINGAB
+(1 row)
+
+--Testcase 100:
+SELECT * FROM type_string WHERE lower(col2) = 'stringab';
+   col1   |   col2   
+----------+----------
+ stringab | STRINGAB
+(1 row)
+
+--Testcase 101:
+SELECT * FROM type_string WHERE substring(col1 from 5 for 3) = 'nga';
+   col1    |   col2    
+-----------+-----------
+ stringaaa | STRINGAAA
+ stringab  | STRINGAB
+(2 rows)
+
+--Testcase 102:
+SELECT * FROM type_float WHERE round(col2) = 3;
+ col1 | col2 
+------+------
+    2 | 3.14
+(1 row)
+
+--Testcase 103:
+SELECT * FROM type_double WHERE round(col2) = 3;
+ col1 |    col2    
+------+------------
+    1 | 3.14159265
+(1 row)
+
+--Testcase 104:
+SELECT * FROM type_float WHERE ceiling(col2) = 4;
+ col1 | col2 
+------+------
+    2 | 3.14
+(1 row)
+
+--Testcase 105:
+SELECT * FROM type_double WHERE ceiling(col2) = 4;
+ col1 |    col2    
+------+------------
+    1 | 3.14159265
+(1 row)
+
+--Testcase 106:
+SELECT * FROM type_float WHERE ceil(col2) = 4;
+ col1 | col2 
+------+------
+    2 | 3.14
+(1 row)
+
+--Testcase 107:
+SELECT * FROM type_double WHERE ceil(col2) = 4;
+ col1 |    col2    
+------+------------
+    1 | 3.14159265
+(1 row)
+
+--Testcase 108:
+SELECT * FROM type_float WHERE floor(col2) = 3;
+ col1 | col2 
+------+------
+    2 | 3.14
+(1 row)
+
+--Testcase 109:
+SELECT * FROM type_double WHERE floor(col2) = 3;
+ col1 |    col2    
+------+------------
+    1 | 3.14159265
+(1 row)
+
+--Testcase 110:
+SELECT * FROM type_timestamp WHERE col2 > now();
+             col1             |             col2             
+------------------------------+------------------------------
+ Sat Jan 01 00:00:00 2000     | Wed Jan 01 00:00:00 2200
+ Fri Jul 02 00:01:23.456 2010 | Mon Jul 02 00:01:23.456 2210
+ Fri Jul 02 00:01:23.45 2010  | Mon Jul 02 00:01:23.45 2210
+ Thu Jul 01 08:15:00.123 2010 | Sun Jul 01 08:15:00.123 2210
+ Fri Dec 31 23:59:59.999 1999 | Tue Dec 31 23:59:59.999 2199
+(5 rows)
+
+-- UPDATE test1 (Not rowkey column is updated)
+--Testcase 111:
+UPDATE type_string SET col2 = 'stringX' WHERE col1 = 'stringba';
+--Testcase 112:
+SELECT * FROM type_string;
+    col1    |    col2    
+------------+------------
+ stringbaaa | STRINGBAAA
+ stringaaa  | STRINGAAA
+ stringab   | STRINGAB
+ stringba   | stringX
+(4 rows)
+
+--Testcase 113:
+UPDATE type_string SET col2 = 'stringY' WHERE col1 = 'stringbaaa' OR col1 = 'stringab';
+--Testcase 114:
+SELECT * FROM type_string;
+    col1    |   col2    
+------------+-----------
+ stringbaaa | stringY
+ stringaaa  | STRINGAAA
+ stringab   | stringY
+ stringba   | stringX
+(4 rows)
+
+--Testcase 115:
+UPDATE type_string SET col2 = col1 || 'Z' WHERE col1 = 'stringbaaa' OR col1 = 'stringaaa';
+--Testcase 116:
+SELECT * FROM type_string;
+    col1    |    col2     
+------------+-------------
+ stringbaaa | stringbaaaZ
+ stringaaa  | stringaaaZ
+ stringab   | stringY
+ stringba   | stringX
+(4 rows)
+
+--Testcase 117:
+UPDATE type_integer SET col2 = 100 WHERE col1 = 32769;
+--Testcase 118:
+SELECT * FROM type_integer;
+ col1  |  col2  
+-------+--------
+ 32769 |    100
+ 32772 | -32769
+ 32770 | -32771
+ 32768 | -32773
+ 32771 | -32770
+(5 rows)
+
+--Testcase 119:
+UPDATE type_integer SET col2 = 200 WHERE col1 = 32771 OR col1 = 32770;
+--Testcase 120:
+SELECT * FROM type_integer;
+ col1  |  col2  
+-------+--------
+ 32769 |    100
+ 32772 | -32769
+ 32770 |    200
+ 32768 | -32773
+ 32771 |    200
+(5 rows)
+
+--Testcase 121:
+UPDATE type_integer SET col2 = col1 + 100 WHERE col1 = 32768 OR col1 = 32770;
+--Testcase 122:
+SELECT * FROM type_integer;
+ col1  |  col2  
+-------+--------
+ 32769 |    100
+ 32772 | -32769
+ 32770 |  32870
+ 32768 |  32868
+ 32771 |    200
+(5 rows)
+
+--Testcase 123:
+UPDATE type_long SET col2 = 123456789 WHERE col1 = 2147483652;
+--Testcase 124:
+SELECT * FROM type_long;
+    col1    |    col2     
+------------+-------------
+ 2147483649 | -2147483652
+ 2147483652 |   123456789
+ 2147483650 | -2147483651
+ 2147483648 | -2147483653
+ 2147483651 | -2147483650
+(5 rows)
+
+--Testcase 125:
+UPDATE type_long SET col2 = 1000 WHERE col1 = 2147483650 OR col1 = 2147483649;
+--Testcase 126:
+SELECT * FROM type_long;
+    col1    |    col2     
+------------+-------------
+ 2147483649 |        1000
+ 2147483652 |   123456789
+ 2147483650 |        1000
+ 2147483648 | -2147483653
+ 2147483651 | -2147483650
+(5 rows)
+
+--Testcase 127:
+UPDATE type_long SET col2 = col1 + 111 WHERE col1 = 2147483651 OR col1 = 2147483649;
+--Testcase 128:
+SELECT * FROM type_long;
+    col1    |    col2     
+------------+-------------
+ 2147483649 |  2147483760
+ 2147483652 |   123456789
+ 2147483650 |        1000
+ 2147483648 | -2147483653
+ 2147483651 |  2147483762
+(5 rows)
+
+--Testcase 129:
+UPDATE type_timestamp SET col2 = to_timestamp('2010.08.01 08:15:00.123', 'YYYY.MM.DD HH24:MI:SS.MS') WHERE col1 = to_timestamp('2010.07.01 08:15:00.123', 'YYYY.MM.DD HH24:MI:SS.MS');
+--Testcase 130:
+SELECT * FROM type_timestamp;
+             col1             |             col2             
+------------------------------+------------------------------
+ Sat Jan 01 00:00:00 2000     | Wed Jan 01 00:00:00 2200
+ Fri Jul 02 00:01:23.456 2010 | Mon Jul 02 00:01:23.456 2210
+ Fri Jul 02 00:01:23.45 2010  | Mon Jul 02 00:01:23.45 2210
+ Thu Jul 01 08:15:00.123 2010 | Sun Aug 01 08:15:00.123 2010
+ Fri Dec 31 23:59:59.999 1999 | Tue Dec 31 23:59:59.999 2199
+(5 rows)
+
+--Testcase 131:
+SELECT * FROM type_timestamp WHERE col1 = timestamp '2010-07-01 08:15:00.123';
+             col1             |             col2             
+------------------------------+------------------------------
+ Thu Jul 01 08:15:00.123 2010 | Sun Aug 01 08:15:00.123 2010
+(1 row)
+
+-- Push donw timestamp as ISO format
+--Testcase 132:
+explain (verbose,costs off) SELECT * FROM type_timestamp WHERE col1 = timestamp '2010-07-01 08:15:00.123';
+                                             QUERY PLAN                                              
+-----------------------------------------------------------------------------------------------------
+ Foreign Scan on public.type_timestamp
+   Output: col1, col2
+   Remote SQL: SELECT  *  FROM type_timestamp WHERE ((col1 = TIMESTAMP('2010-07-01T08:15:00.123Z')))
+(3 rows)
+
+--Testcase 133:
+UPDATE type_timestamp SET col2 = to_timestamp('2100.01.02 10:20:30.400', 'YYYY.MM.DD HH24:MI:SS.MS') WHERE col1 = to_timestamp('1999.12.31 23:59:59.999', 'YYYY.MM.DD HH24:MI:SS.MS') OR col1 = to_timestamp('2000.01.01 00:00:00.000', 'YYYY.MM.DD HH24:MI:SS.MS');
+--Testcase 134:
+SELECT * FROM type_timestamp;
+             col1             |             col2             
+------------------------------+------------------------------
+ Sat Jan 01 00:00:00 2000     | Sat Jan 02 10:20:30.4 2100
+ Fri Jul 02 00:01:23.456 2010 | Mon Jul 02 00:01:23.456 2210
+ Fri Jul 02 00:01:23.45 2010  | Mon Jul 02 00:01:23.45 2210
+ Thu Jul 01 08:15:00.123 2010 | Sun Aug 01 08:15:00.123 2010
+ Fri Dec 31 23:59:59.999 1999 | Sat Jan 02 10:20:30.4 2100
+(5 rows)
+
+--Testcase 135:
+UPDATE type_timestamp SET col2 = (col1 + INTERVAL '1 DAY') WHERE col1 = to_timestamp('2010.07.02 00:01:23.456', 'YYYY.MM.DD HH24:MI:SS.MS') OR col1 = to_timestamp('2010.07.02 00:01:23.45', 'YYYY.MM.DD HH24:MI:SS.MS');
+--Testcase 136:
+SELECT * FROM type_timestamp;
+             col1             |             col2             
+------------------------------+------------------------------
+ Sat Jan 01 00:00:00 2000     | Sat Jan 02 10:20:30.4 2100
+ Fri Jul 02 00:01:23.456 2010 | Sat Jul 03 00:01:23.456 2010
+ Fri Jul 02 00:01:23.45 2010  | Sat Jul 03 00:01:23.45 2010
+ Thu Jul 01 08:15:00.123 2010 | Sun Aug 01 08:15:00.123 2010
+ Fri Dec 31 23:59:59.999 1999 | Sat Jan 02 10:20:30.4 2100
+(5 rows)
+
+-- Reset modified records
+--Testcase 137:
+DELETE FROM type_string;
+--Testcase 138:
+INSERT INTO type_string(col1,col2) VALUES ('stringbaaa', 'STRINGBAAA');
+--Testcase 139:
+INSERT INTO type_string(col1,col2) VALUES ('stringaaa', 'STRINGAAA');
+--Testcase 140:
+INSERT INTO type_string(col1,col2) VALUES ('stringab', 'STRINGAB');
+--Testcase 141:
+INSERT INTO type_string(col1,col2) VALUES ('stringba', 'STRINGBA');
+--Testcase 142:
+DELETE FROM type_integer;
+--Testcase 143:
+INSERT INTO type_integer(col1,col2) VALUES (32769, -32772);
+--Testcase 144:
+INSERT INTO type_integer(col1,col2) VALUES (32772, -32769);
+--Testcase 145:
+INSERT INTO type_integer(col1,col2) VALUES (32770, -32771);
+--Testcase 146:
+INSERT INTO type_integer(col1,col2) VALUES (32768, -32773);
+--Testcase 147:
+INSERT INTO type_integer(col1,col2) VALUES (32771, -32770);
+--Testcase 148:
+DELETE FROM type_long;
+--Testcase 149:
+INSERT INTO type_long(col1,col2) VALUES (2147483649, -2147483652);
+--Testcase 150:
+INSERT INTO type_long(col1,col2) VALUES (2147483652, -2147483649);
+--Testcase 151:
+INSERT INTO type_long(col1,col2) VALUES (2147483650, -2147483651);
+--Testcase 152:
+INSERT INTO type_long(col1,col2) VALUES (2147483648, -2147483653);
+--Testcase 153:
+INSERT INTO type_long(col1,col2) VALUES (2147483651, -2147483650);
+--Testcase 154:
+DELETE FROM type_timestamp;
+--Testcase 155:
+INSERT INTO type_timestamp(col1,col2) VALUES (to_timestamp('2000.01.01 00:00:00.000', 'YYYY.MM.DD HH24:MI:SS.MS'), to_timestamp('2200.1.1 00:00:00.000', 'YYYY.MM.DD HH24:MI:SS.MS'));
+--Testcase 156:
+INSERT INTO type_timestamp(col1,col2) VALUES (to_timestamp('2010.7.2 00:01:23.456', 'YYYY.MM.DD HH24:MI:SS.MS'), to_timestamp('2210.7.2 00:01:23.456', 'YYYY.MM.DD HH24:MI:SS.MS'));
+--Testcase 157:
+INSERT INTO type_timestamp(col1,col2) VALUES (to_timestamp('2010.7.2 00:01:23.450', 'YYYY.MM.DD HH24:MI:SS.MS'), to_timestamp('2210.7.2 00:01:23.450', 'YYYY.MM.DD HH24:MI:SS.MS'));
+--Testcase 158:
+INSERT INTO type_timestamp(col1,col2) VALUES (to_timestamp('2010.7.1 08:15:00.123', 'YYYY.MM.DD HH24:MI:SS.MS'), to_timestamp('2210.7.1 08:15:00.123', 'YYYY.MM.DD HH24:MI:SS.MS'));
+--Testcase 159:
+INSERT INTO type_timestamp(col1,col2) VALUES (to_timestamp('1999.12.31 23:59:59.999', 'YYYY.MM.DD HH24:MI:SS.MS'), to_timestamp('2199.12.31 23:59:59.999', 'YYYY.MM.DD HH24:MI:SS.MS'));
+-- UPDATE test2 (random order)
+--Testcase 160:
+SET ENABLE_HASHJOIN TO OFF;
+--Testcase 161:
+UPDATE type_string SET col2 = 'stringX' WHERE col1 IN (SELECT col1 FROM tbl_string);
+--Testcase 162:
+SELECT * FROM type_string;
+    col1    |    col2    
+------------+------------
+ stringbaaa | STRINGBAAA
+ stringaaa  | stringX
+ stringab   | STRINGAB
+ stringba   | stringX
+(4 rows)
+
+--Testcase 163:
+UPDATE type_string SET col2 = col1 || 'Z' WHERE col1 IN (SELECT col1 FROM tbl_string);
+--Testcase 164:
+SELECT * FROM type_string;
+    col1    |    col2    
+------------+------------
+ stringbaaa | STRINGBAAA
+ stringaaa  | stringaaaZ
+ stringab   | STRINGAB
+ stringba   | stringbaZ
+(4 rows)
+
+--Testcase 165:
+UPDATE type_integer SET col2 = 100 WHERE col1 IN (SELECT col1 FROM tbl_integer);
+--Testcase 166:
+SELECT * FROM type_integer;
+ col1  |  col2  
+-------+--------
+ 32769 |    100
+ 32772 | -32769
+ 32770 | -32771
+ 32768 | -32773
+ 32771 |    100
+(5 rows)
+
+--Testcase 167:
+UPDATE type_integer SET col2 = col1 + 100 WHERE col1 IN (SELECT col1 FROM tbl_integer);
+--Testcase 168:
+SELECT * FROM type_integer;
+ col1  |  col2  
+-------+--------
+ 32769 |  32869
+ 32772 | -32769
+ 32770 | -32771
+ 32768 | -32773
+ 32771 |  32871
+(5 rows)
+
+--Testcase 169:
+UPDATE type_long SET col2 = 123456789 WHERE col1 IN (SELECT col1 FROM tbl_long);
+--Testcase 170:
+SELECT * FROM type_long;
+    col1    |    col2     
+------------+-------------
+ 2147483649 | -2147483652
+ 2147483652 | -2147483649
+ 2147483650 | -2147483651
+ 2147483648 |   123456789
+ 2147483651 |   123456789
+(5 rows)
+
+--Testcase 171:
+UPDATE type_long SET col2 = col1 + 111 WHERE col1 IN (SELECT col1 FROM tbl_long);
+--Testcase 172:
+SELECT * FROM type_long;
+    col1    |    col2     
+------------+-------------
+ 2147483649 | -2147483652
+ 2147483652 | -2147483649
+ 2147483650 | -2147483651
+ 2147483648 |  2147483759
+ 2147483651 |  2147483762
+(5 rows)
+
+--Testcase 173:
+UPDATE type_timestamp SET col2 = to_timestamp('2010.8.1 08:15:00.123', 'YYYY.MM.DD HH24:MI:SS.MS') WHERE col1 IN (SELECT col1 FROM tbl_timestamp);
+--Testcase 174:
+SELECT * FROM type_timestamp;
+             col1             |             col2             
+------------------------------+------------------------------
+ Sat Jan 01 00:00:00 2000     | Sun Aug 01 08:15:00.123 2010
+ Fri Jul 02 00:01:23.456 2010 | Mon Jul 02 00:01:23.456 2210
+ Fri Jul 02 00:01:23.45 2010  | Mon Jul 02 00:01:23.45 2210
+ Thu Jul 01 08:15:00.123 2010 | Sun Aug 01 08:15:00.123 2010
+ Fri Dec 31 23:59:59.999 1999 | Tue Dec 31 23:59:59.999 2199
+(5 rows)
+
+--Testcase 175:
+UPDATE type_timestamp SET col2 = (col1 + INTERVAL '10 DAY') WHERE col1 IN (SELECT col1 FROM tbl_timestamp);
+--Testcase 176:
+SELECT * FROM type_timestamp;
+             col1             |             col2             
+------------------------------+------------------------------
+ Sat Jan 01 00:00:00 2000     | Tue Jan 11 00:00:00 2000
+ Fri Jul 02 00:01:23.456 2010 | Mon Jul 02 00:01:23.456 2210
+ Fri Jul 02 00:01:23.45 2010  | Mon Jul 02 00:01:23.45 2210
+ Thu Jul 01 08:15:00.123 2010 | Sun Jul 11 08:15:00.123 2010
+ Fri Dec 31 23:59:59.999 1999 | Tue Dec 31 23:59:59.999 2199
+(5 rows)
+
+--Testcase 177:
+SET ENABLE_HASHJOIN TO ON;
+-- Reset modified records
+--Testcase 178:
+DELETE FROM type_string;
+--Testcase 179:
+INSERT INTO type_string(col1,col2) VALUES ('stringbaaa', 'STRINGBAAA');
+--Testcase 180:
+INSERT INTO type_string(col1,col2) VALUES ('stringaaa', 'STRINGAAA');
+--Testcase 181:
+INSERT INTO type_string(col1,col2) VALUES ('stringab', 'STRINGAB');
+--Testcase 182:
+INSERT INTO type_string(col1,col2) VALUES ('stringba', 'STRINGBA');
+--Testcase 183:
+DELETE FROM type_integer;
+--Testcase 184:
+INSERT INTO type_integer(col1,col2) VALUES (32769, -32772);
+--Testcase 185:
+INSERT INTO type_integer(col1,col2) VALUES (32772, -32769);
+--Testcase 186:
+INSERT INTO type_integer(col1,col2) VALUES (32770, -32771);
+--Testcase 187:
+INSERT INTO type_integer(col1,col2) VALUES (32768, -32773);
+--Testcase 188:
+INSERT INTO type_integer(col1,col2) VALUES (32771, -32770);
+--Testcase 189:
+DELETE FROM type_long;
+--Testcase 190:
+INSERT INTO type_long(col1,col2) VALUES (2147483649, -2147483652);
+--Testcase 191:
+INSERT INTO type_long(col1,col2) VALUES (2147483652, -2147483649);
+--Testcase 192:
+INSERT INTO type_long(col1,col2) VALUES (2147483650, -2147483651);
+--Testcase 193:
+INSERT INTO type_long(col1,col2) VALUES (2147483648, -2147483653);
+--Testcase 194:
+INSERT INTO type_long(col1,col2) VALUES (2147483651, -2147483650);
+--Testcase 195:
+DELETE FROM type_timestamp;
+--Testcase 196:
+INSERT INTO type_timestamp(col1,col2) VALUES (to_timestamp('2000.01.01 00:00:00.000', 'YYYY.MM.DD HH24:MI:SS.MS'), to_timestamp('2200.1.1 00:00:00.000', 'YYYY.MM.DD HH24:MI:SS.MS'));
+--Testcase 197:
+INSERT INTO type_timestamp(col1,col2) VALUES (to_timestamp('2010.7.2 00:01:23.456', 'YYYY.MM.DD HH24:MI:SS.MS'), to_timestamp('2210.7.2 00:01:23.456', 'YYYY.MM.DD HH24:MI:SS.MS'));
+--Testcase 198:
+INSERT INTO type_timestamp(col1,col2) VALUES (to_timestamp('2010.7.2 00:01:23.450', 'YYYY.MM.DD HH24:MI:SS.MS'), to_timestamp('2210.7.2 00:01:23.450', 'YYYY.MM.DD HH24:MI:SS.MS'));
+--Testcase 199:
+INSERT INTO type_timestamp(col1,col2) VALUES (to_timestamp('2010.7.1 08:15:00.123', 'YYYY.MM.DD HH24:MI:SS.MS'), to_timestamp('2210.7.1 08:15:00.123', 'YYYY.MM.DD HH24:MI:SS.MS'));
+--Testcase 200:
+INSERT INTO type_timestamp(col1,col2) VALUES (to_timestamp('1999.12.31 23:59:59.999', 'YYYY.MM.DD HH24:MI:SS.MS'), to_timestamp('2199.12.31 23:59:59.999', 'YYYY.MM.DD HH24:MI:SS.MS'));
+-- UPDATE test3 (Update rowkey column -> error)
+--Testcase 201:
+UPDATE type_string SET col1 = 'stringX' WHERE col1 = 'stringba';
+ERROR:  rowkey-column update is not supported
+--Testcase 202:
+SELECT * FROM type_string;
+    col1    |    col2    
+------------+------------
+ stringbaaa | STRINGBAAA
+ stringaaa  | STRINGAAA
+ stringab   | STRINGAB
+ stringba   | STRINGBA
+(4 rows)
+
+-- DELETE test1
+--Testcase 203:
+DELETE FROM type_string WHERE col1 = 'stringba';
+--Testcase 204:
+SELECT * FROM type_string;
+    col1    |    col2    
+------------+------------
+ stringbaaa | STRINGBAAA
+ stringaaa  | STRINGAAA
+ stringab   | STRINGAB
+(3 rows)
+
+--Testcase 205:
+DELETE FROM type_string WHERE col1 = 'stringbaaa' OR col1 = 'stringab';
+--Testcase 206:
+SELECT * FROM type_string;
+   col1    |   col2    
+-----------+-----------
+ stringaaa | STRINGAAA
+(1 row)
+
+--Testcase 207:
+DELETE FROM type_integer WHERE col1 = 32769;
+--Testcase 208:
+SELECT * FROM type_integer;
+ col1  |  col2  
+-------+--------
+ 32772 | -32769
+ 32770 | -32771
+ 32768 | -32773
+ 32771 | -32770
+(4 rows)
+
+--Testcase 209:
+DELETE FROM type_integer WHERE col1 = 32771 OR col1 = 32770;
+--Testcase 210:
+SELECT * FROM type_integer;
+ col1  |  col2  
+-------+--------
+ 32772 | -32769
+ 32768 | -32773
+(2 rows)
+
+--Testcase 211:
+DELETE FROM type_long WHERE col1 = 2147483652;
+--Testcase 212:
+SELECT * FROM type_long;
+    col1    |    col2     
+------------+-------------
+ 2147483649 | -2147483652
+ 2147483650 | -2147483651
+ 2147483648 | -2147483653
+ 2147483651 | -2147483650
+(4 rows)
+
+--Testcase 213:
+DELETE FROM type_long WHERE col1 = 2147483650 OR col1 = 2147483648;
+--Testcase 214:
+SELECT * FROM type_long;
+    col1    |    col2     
+------------+-------------
+ 2147483649 | -2147483652
+ 2147483651 | -2147483650
+(2 rows)
+
+--Testcase 215:
+DELETE FROM type_timestamp WHERE col1 = to_timestamp('2010.7.1 08:15:00.123', 'YYYY.MM.DD HH24:MI:SS.MS');
+--Testcase 216:
+SELECT * FROM type_timestamp;
+             col1             |             col2             
+------------------------------+------------------------------
+ Sat Jan 01 00:00:00 2000     | Wed Jan 01 00:00:00 2200
+ Fri Jul 02 00:01:23.456 2010 | Mon Jul 02 00:01:23.456 2210
+ Fri Jul 02 00:01:23.45 2010  | Mon Jul 02 00:01:23.45 2210
+ Fri Dec 31 23:59:59.999 1999 | Tue Dec 31 23:59:59.999 2199
+(4 rows)
+
+--Testcase 217:
+DELETE FROM type_timestamp WHERE col1 = to_timestamp('1999.12.31 23:59:59.999', 'YYYY.MM.DD HH24:MI:SS.MS') OR col1 = to_timestamp('2000.1.1 00:00:00.000', 'YYYY.MM.DD HH24:MI:SS.MS');
+--Testcase 218:
+SELECT * FROM type_timestamp;
+             col1             |             col2             
+------------------------------+------------------------------
+ Fri Jul 02 00:01:23.456 2010 | Mon Jul 02 00:01:23.456 2210
+ Fri Jul 02 00:01:23.45 2010  | Mon Jul 02 00:01:23.45 2210
+(2 rows)
+
+-- Reset modified records
+--Testcase 219:
+DELETE FROM type_string;
+--Testcase 220:
+INSERT INTO type_string(col1,col2) VALUES ('stringbaaa', 'STRINGBAAA');
+--Testcase 221:
+INSERT INTO type_string(col1,col2) VALUES ('stringaaa', 'STRINGAAA');
+--Testcase 222:
+INSERT INTO type_string(col1,col2) VALUES ('stringab', 'STRINGAB');
+--Testcase 223:
+INSERT INTO type_string(col1,col2) VALUES ('stringba', 'STRINGBA');
+--Testcase 224:
+DELETE FROM type_integer;
+--Testcase 225:
+INSERT INTO type_integer(col1,col2) VALUES (32769, -32772);
+--Testcase 226:
+INSERT INTO type_integer(col1,col2) VALUES (32772, -32769);
+--Testcase 227:
+INSERT INTO type_integer(col1,col2) VALUES (32770, -32771);
+--Testcase 228:
+INSERT INTO type_integer(col1,col2) VALUES (32768, -32773);
+--Testcase 229:
+INSERT INTO type_integer(col1,col2) VALUES (32771, -32770);
+--Testcase 230:
+DELETE FROM type_long;
+--Testcase 231:
+INSERT INTO type_long(col1,col2) VALUES (2147483649, -2147483652);
+--Testcase 232:
+INSERT INTO type_long(col1,col2) VALUES (2147483652, -2147483649);
+--Testcase 233:
+INSERT INTO type_long(col1,col2) VALUES (2147483650, -2147483651);
+--Testcase 234:
+INSERT INTO type_long(col1,col2) VALUES (2147483648, -2147483653);
+--Testcase 235:
+INSERT INTO type_long(col1,col2) VALUES (2147483651, -2147483650);
+--Testcase 236:
+DELETE FROM type_timestamp;
+--Testcase 237:
+INSERT INTO type_timestamp(col1,col2) VALUES (to_timestamp('2000.01.01 00:00:00.000', 'YYYY.MM.DD HH24:MI:SS.MS'), to_timestamp('2200.1.1 00:00:00.000', 'YYYY.MM.DD HH24:MI:SS.MS'));
+--Testcase 238:
+INSERT INTO type_timestamp(col1,col2) VALUES (to_timestamp('2010.7.2 00:01:23.456', 'YYYY.MM.DD HH24:MI:SS.MS'), to_timestamp('2210.7.2 00:01:23.456', 'YYYY.MM.DD HH24:MI:SS.MS'));
+--Testcase 239:
+INSERT INTO type_timestamp(col1,col2) VALUES (to_timestamp('2010.7.2 00:01:23.450', 'YYYY.MM.DD HH24:MI:SS.MS'), to_timestamp('2210.7.2 00:01:23.450', 'YYYY.MM.DD HH24:MI:SS.MS'));
+--Testcase 240:
+INSERT INTO type_timestamp(col1,col2) VALUES (to_timestamp('2010.7.1 08:15:00.123', 'YYYY.MM.DD HH24:MI:SS.MS'), to_timestamp('2210.7.1 08:15:00.123', 'YYYY.MM.DD HH24:MI:SS.MS'));
+--Testcase 241:
+INSERT INTO type_timestamp(col1,col2) VALUES (to_timestamp('1999.12.31 23:59:59.999', 'YYYY.MM.DD HH24:MI:SS.MS'), to_timestamp('2199.12.31 23:59:59.999', 'YYYY.MM.DD HH24:MI:SS.MS'));
+-- DELETE test2 (random order)
+--Testcase 242:
+SET ENABLE_HASHJOIN TO OFF;
+--Testcase 243:
+DELETE FROM type_string WHERE col1 IN (SELECT col1 FROM tbl_string);
+--Testcase 244:
+SELECT * FROM type_string;
+    col1    |    col2    
+------------+------------
+ stringbaaa | STRINGBAAA
+ stringab   | STRINGAB
+(2 rows)
+
+--Testcase 245:
+DELETE FROM type_integer WHERE col1 IN (SELECT col1 FROM tbl_integer);
+--Testcase 246:
+SELECT * FROM type_integer;
+ col1  |  col2  
+-------+--------
+ 32772 | -32769
+ 32770 | -32771
+ 32768 | -32773
+(3 rows)
+
+--Testcase 247:
+DELETE FROM type_long WHERE col1 IN (SELECT col1 FROM tbl_long);
+--Testcase 248:
+SELECT * FROM type_long;
+    col1    |    col2     
+------------+-------------
+ 2147483649 | -2147483652
+ 2147483652 | -2147483649
+ 2147483650 | -2147483651
+(3 rows)
+
+--Testcase 249:
+DELETE FROM type_timestamp WHERE col1 IN (SELECT col1 FROM tbl_timestamp);
+--Testcase 250:
+SELECT * FROM type_timestamp;
+             col1             |             col2             
+------------------------------+------------------------------
+ Fri Jul 02 00:01:23.456 2010 | Mon Jul 02 00:01:23.456 2210
+ Fri Jul 02 00:01:23.45 2010  | Mon Jul 02 00:01:23.45 2210
+ Fri Dec 31 23:59:59.999 1999 | Tue Dec 31 23:59:59.999 2199
+(3 rows)
+
+--Testcase 251:
+SET ENABLE_HASHJOIN TO ON;
+-- Clean up
+--Testcase 252:
+DELETE FROM type_string;
+--Testcase 253:
+DELETE FROM type_boolean;
+--Testcase 254:
+DELETE FROM type_byte;
+--Testcase 255:
+DELETE FROM type_short;
+--Testcase 256:
+DELETE FROM type_integer;
+--Testcase 257:
+DELETE FROM type_long;
+--Testcase 258:
+DELETE FROM type_float;
+--Testcase 259:
+DELETE FROM type_double;
+--Testcase 260:
+DELETE FROM type_timestamp;
+--Testcase 261:
+DELETE FROM type_blob;
+--Testcase 262:
+DELETE FROM type_string_array;
+--Testcase 263:
+DELETE FROM type_bool_array;
+--Testcase 264:
+DELETE FROM type_byte_array;
+--Testcase 265:
+DELETE FROM type_short_array;
+--Testcase 266:
+DELETE FROM type_integer_array;
+--Testcase 267:
+DELETE FROM type_long_array;
+--Testcase 268:
+DELETE FROM type_float_array;
+--Testcase 269:
+DELETE FROM type_double_array;
+--Testcase 270:
+DELETE FROM type_timestamp_array;
+-- DELETE FROM type_geometry;
+--Testcase 271:
+DROP FOREIGN TABLE type_string;
+--Testcase 272:
+DROP FOREIGN TABLE type_boolean;
+--Testcase 273:
+DROP FOREIGN TABLE type_byte;
+--Testcase 274:
+DROP FOREIGN TABLE type_short;
+--Testcase 275:
+DROP FOREIGN TABLE type_integer;
+--Testcase 276:
+DROP FOREIGN TABLE type_long;
+--Testcase 277:
+DROP FOREIGN TABLE type_float;
+--Testcase 278:
+DROP FOREIGN TABLE type_double;
+--Testcase 279:
+DROP FOREIGN TABLE type_timestamp;
+--Testcase 280:
+DROP FOREIGN TABLE type_blob;
+--Testcase 281:
+DROP FOREIGN TABLE type_string_array;
+--Testcase 282:
+DROP FOREIGN TABLE type_bool_array;
+--Testcase 283:
+DROP FOREIGN TABLE type_byte_array;
+--Testcase 284:
+DROP FOREIGN TABLE type_short_array;
+--Testcase 285:
+DROP FOREIGN TABLE type_integer_array;
+--Testcase 286:
+DROP FOREIGN TABLE type_long_array;
+--Testcase 287:
+DROP FOREIGN TABLE type_float_array;
+--Testcase 288:
+DROP FOREIGN TABLE type_double_array;
+--Testcase 289:
+DROP FOREIGN TABLE type_timestamp_array;
+-- DROP FOREIGN TABLE type_geometry;
+--Testcase 290:
+CREATE OR REPLACE FUNCTION drop_all_foreign_tables() RETURNS void AS $$
+DECLARE
+  tbl_name varchar;
+  cmd varchar;
+BEGIN
+  FOR tbl_name IN SELECT foreign_table_name FROM information_schema._pg_foreign_tables LOOP
+    cmd := 'DROP FOREIGN TABLE ' || quote_ident(tbl_name);
+
+--Testcase 291:
+    EXECUTE cmd;
+  END LOOP;
+  RETURN;
+END
+$$ LANGUAGE plpgsql;
+--Testcase 292:
+SELECT drop_all_foreign_tables();
+ drop_all_foreign_tables 
+-------------------------
+ 
+(1 row)
+
+--Testcase 293:
+DROP USER MAPPING FOR public SERVER griddb_svr;
+--Testcase 294:
+DROP SERVER griddb_svr CASCADE;
+--Testcase 295:
+DROP EXTENSION griddb_fdw CASCADE;

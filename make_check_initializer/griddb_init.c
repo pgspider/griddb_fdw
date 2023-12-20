@@ -373,17 +373,21 @@ griddb_init(const char *addr,
 				batch_table_p0,
 				batch_table_p1,
 				batch_cp_upd_test1,
+				batch_cp_upd_test3,
 				tru_rtable0,
 				tru_rtable1,
 				tru_pk_table,
 				tru_rtable_parent,
 				tru_rtable_child,
 				reindex_local,
-				reind_local_10_20;
+				reind_local_10_20,
+				child_local,
+				tab_batch_sharded_p1_remote;
 
 	/* For float4 */
 	table_info	FLOAT4_TBL;
 	table_info	test_data;
+	table_info	non_error_throwing_api;
 
 	/* For float8 */
 	table_info	FLOAT8_TBL,
@@ -464,7 +468,11 @@ griddb_init(const char *addr,
 				join_foo,
 				join_bar,
 				q1,
-				q2;
+				q2,
+				t,
+				parted_b1,
+				t1_join,
+				t2_join;
 
 	/* For select_having */
 	table_info	test_having;
@@ -489,8 +497,10 @@ griddb_init(const char *addr,
 				agg_t4,
 				agg_t5,
 				agg_t6,
+				agg_t7,
 				VARCHAR_TBL,
 				bytea_test_table,
+				pagg_test,
 				regr_test,
 				regr_test_array,
 				bool_test_a,
@@ -505,7 +515,12 @@ griddb_init(const char *addr,
 				agg_hash_1,
 				agg_hash_2,
 				agg_hash_3,
-				agg_hash_4;
+				agg_hash_4,
+				v1,
+				v2,
+				t1_agg,
+				t2_agg,
+				float_tb;
 
 	/* For prepare */
 	table_info	road,
@@ -1220,6 +1235,29 @@ griddb_init(const char *addr,
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
 
+	ret = set_tableInfo(store, "child_local", &child_local,
+						4,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"b", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE,
+						"c", GS_TYPE_DOUBLE, GS_TYPE_OPTION_NULLABLE,
+						"a", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "tab_batch_sharded_p1_remote", &tab_batch_sharded_p1_remote,
+						2,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"data", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "batch_cp_upd_test3", &batch_cp_upd_test3,
+						2,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"a", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
 	ret = set_tableInfo(store, "FLOAT4_TBL", &FLOAT4_TBL,
 						2,
 						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
@@ -1231,6 +1269,13 @@ griddb_init(const char *addr,
 						2,
 						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
 						"bits", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "non_error_throwing_api", &non_error_throwing_api,
+						2,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"f1", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE);
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
 
@@ -1792,6 +1837,31 @@ griddb_init(const char *addr,
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
 
+	ret = set_tableInfo(store, "t", &q2,
+						1,
+						"a", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "parted_b1", &parted_b1,
+						1,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "t1_join", &t1_join,
+						1,
+						"a", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "t2_join", &t2_join,
+						2,
+						"a", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"b", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
 	ret = set_tableInfo(store, "join_bar", &join_bar,
 						2,
 						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
@@ -1953,6 +2023,12 @@ griddb_init(const char *addr,
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
 
+	ret = set_tableInfo(store, "agg_t7", &agg_t7,
+						1,
+						"v", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
 	ret = set_tableInfo(store, "VARCHAR_TBL", &VARCHAR_TBL,
 						1,
 						"f1", GS_TYPE_STRING, GS_TYPE_OPTION_NOT_NULL);
@@ -1963,6 +2039,14 @@ griddb_init(const char *addr,
 						2,
 						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
 						"v", GS_TYPE_BLOB, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "pagg_test", &pagg_test,
+						3,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"x", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE,
+						"y", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE);
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
 
@@ -2112,6 +2196,41 @@ griddb_init(const char *addr,
 						"c1", GS_TYPE_DOUBLE, GS_TYPE_OPTION_NULLABLE,
 						"c2", GS_TYPE_STRING, GS_TYPE_OPTION_NULLABLE,
 						"c3", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "v1", &v1,
+						2,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"v", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "v2", &v2,
+						2,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"v", GS_TYPE_STRING_ARRAY, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "t1_agg", &t1_agg,
+						2,
+						"f1", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"f2", GS_TYPE_INTEGER, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "t2_agg", &t2_agg,
+						2,
+						"f1", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"f2", GS_TYPE_LONG, GS_TYPE_OPTION_NULLABLE);
+	if (!GS_SUCCEEDED(ret))
+		goto EXIT;
+
+	ret = set_tableInfo(store, "float_tb", &float_tb,
+						2,
+						"id", GS_TYPE_INTEGER, GS_TYPE_OPTION_NOT_NULL,
+						"f1", GS_TYPE_FLOAT, GS_TYPE_OPTION_NULLABLE);
 	if (!GS_SUCCEEDED(ret))
 		goto EXIT;
 
