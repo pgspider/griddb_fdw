@@ -42,7 +42,11 @@
 #define DEFAULT_FDW_STARTUP_COST	100.0
 
 /* Default CPU cost to process 1 row (above and beyond cpu_tuple_cost). */
+#if PG_VERSION_NUM >= 170000
+#define DEFAULT_FDW_TUPLE_COST		0.2
+#else
 #define DEFAULT_FDW_TUPLE_COST		0.01
+#endif
 
 /* If no remote estimates, assume a sort costs 20% extra */
 #define DEFAULT_FDW_SORT_MULTIPLIER 1.2
@@ -104,7 +108,7 @@
 #define OPTION_TUPLE_COST	   "fdw_tuple_cost"
 #define OPTION_BATCH_SIZE	   "batch_size"
 #define OPTION_KEEP_CONN	   "keep_connections"
-#define CODE_VERSION 20300
+#define CODE_VERSION 20400
 /* Attribute number of rowkey column. 1st column is assigned rowkey in GridDB. */
 #define ROWKEY_ATTNO 1
 /*
@@ -332,11 +336,11 @@ int	ExecForeignDDL(Oid serverOid,
 
 /* in option.c */
 extern bool griddb_is_valid_option(const char *option, Oid context);
-extern griddb_opt * griddb_get_options(Oid foreigntableid);
+extern griddb_opt * griddb_get_options(Oid foreigntableid, Oid userid);
 
 /* in connection.c */
 extern GSGridStore * griddb_get_connection(UserMapping *user, bool will_prep_stmt,
-										   Oid foreigntableid);
+										   Oid foreigntableid, Oid userid);
 extern char *griddb_get_rel_name(Oid relid);
 extern GSContainer * griddb_get_container(UserMapping *user, Oid relid, GSGridStore * store);
 extern void griddb_release_connection(GSGridStore * store);
@@ -401,6 +405,6 @@ extern void griddb_modify_targets_apply(GridDBFdwModifiedRows * modified_rows,
 
 /* in compare.c */
 extern int	(*griddb_get_comparator_tuplekey(GSType gs_type)) (const void *, const void *);
-extern int	(*griddb_get_comparator_datum(GSType gs_type)) (const void *, const void *);
+extern int	(*griddb_get_comparator_datum(GSType gs_type)) (const void *, const void *, Size keysize);
 
 #endif							/* GRIDDB_FDW_H */

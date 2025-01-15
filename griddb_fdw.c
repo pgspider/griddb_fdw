@@ -117,7 +117,7 @@ enum FdwDirectModifyPrivateIndex
 	/* Integer list of attribute numbers retrieved by RETURNING */
 	FdwDirectModifyPrivateRetrievedAttrs,
 	/* set-processed flag (as an integer Value node) */
-	FdwDirectModifyPrivateSetProcessed
+	FdwDirectModifyPrivateSetProcessed,
 };
 
 /*
@@ -132,7 +132,7 @@ enum FdwPathPrivateIndex
 	/* has-final-sort flag (as an integer Value node) */
 	FdwPathPrivateHasFinalSort,
 	/* has-limit flag (as an integer Value node) */
-	FdwPathPrivateHasLimit
+	FdwPathPrivateHasLimit,
 };
 
 /*
@@ -141,7 +141,7 @@ enum FdwPathPrivateIndex
 enum GridDBFdwDDLCommand
 {
 	DDL_COMMAND_CREATE,		/* Create data source */
-	DDL_COMMAND_DROP		/* Drop data source */
+	DDL_COMMAND_DROP,		/* Drop data source */
 };
 
 /*
@@ -388,7 +388,11 @@ static List *griddb_get_useful_pathkeys_for_relation(PlannerInfo *root,
 													 RelOptInfo *rel);
 static List *griddb_get_useful_ecs_for_relation(PlannerInfo *root, RelOptInfo *rel);
 static void griddb_add_paths_with_pathkeys_for_rel(PlannerInfo *root, RelOptInfo *rel,
-												   Path *epq_path);
+#if PG_VERSION_NUM >= 170000
+											Path *epq_path, List *restrictlist);
+#else
+											Path *epq_path);
+#endif
 static void griddb_add_foreign_final_paths(PlannerInfo *root, RelOptInfo *input_rel,
 										   RelOptInfo *final_rel
 #if (PG_VERSION_NUM >= 120000)
@@ -400,7 +404,7 @@ static void griddb_add_foreign_final_paths(PlannerInfo *root, RelOptInfo *input_
 static int	get_batch_size_option(Relation rel);
 #endif
 
-static bool check_existed_container(Oid serverOid, char* tbl_name);
+static bool check_existed_container(Oid serverOid, char* tbl_name, Oid userid);
 
 void
 _PG_init()
@@ -598,7 +602,7 @@ griddbGetForeignRelSize(PlannerInfo *root,
 	fpinfo->server = GetForeignServer(fpinfo->table->serverid);
 
 	/* Fetch options */
-	options = griddb_get_options(foreigntableid);
+	options = griddb_get_options(foreigntableid, InvalidOid);
 
 	/*
 	 * Extract user-settable option values.  Note that per-table setting of
@@ -759,11 +763,18 @@ griddbGetForeignPaths(PlannerInfo *root,
 								   NULL,	/* no outer rel either */
 #endif
 								   NULL,	/* no extra plan */
+#if PG_VERSION_NUM >= 170000
+								   NIL, /* no fdw_restrictinfo list */
+#endif
 								   NIL);	/* no fdw_private list */
 	add_path(baserel, (Path *) path);
 
 	/* Add paths with pathkeys */
+#if PG_VERSION_NUM >= 170000
+	griddb_add_paths_with_pathkeys_for_rel(root, baserel, NULL, NIL);
+#else
 	griddb_add_paths_with_pathkeys_for_rel(root, baserel, NULL);
+#endif
 
 	/*
 	 * If we're not using remote estimates, stop here.  We have no way to
@@ -1161,8 +1172,7 @@ griddbBeginForeignScan(ForeignScanState *node, int eflags)
 	 * Get connection to the foreign server.  Connection manager will
 	 * establish new connection if necessary.
 	 */
-	fsstate->store = griddb_get_connection(user, false,
-										   rte->relid);
+	fsstate->store = griddb_get_connection(user, false, rte->relid, userid);
 
 	fsstate->cont_name = griddb_get_rel_name(rte->relid);
 	fsstate->cont = griddb_get_container(user, rte->relid, fsstate->store);
@@ -1649,7 +1659,7 @@ create_foreign_modify(EState *estate,
 #if (PG_VERSION_NUM >= 160000)
 	userid = ExecGetResultRelCheckAsUser(resultRelInfo, estate);
 #else
-	userid = GetUserId();
+	userid = rte->checkAsUser ? rte->checkAsUser : GetUserId();
 #endif
 
 	/* Get info about foreign table. */
@@ -1658,7 +1668,7 @@ create_foreign_modify(EState *estate,
 	user = GetUserMapping(userid, serverOid);
 
 	/* Open connection; report that we'll create a prepared statement. */
-	fmstate->store = griddb_get_connection(user, false, serverOid);
+	fmstate->store = griddb_get_connection(user, false, serverOid, userid);
 
 	/* Set up remote query information. */
 	fmstate->target_attrs = target_attrs;
@@ -2473,6 +2483,7 @@ griddbImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 	int32_t		partition_count;
 	int32_t		part_idx;
 	ListCell   *lc;
+	Oid			userid;
 
 	elog(DEBUG1, "griddb_fdw: %s", __func__);
 
@@ -2493,9 +2504,10 @@ griddbImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 	 * Get connection to the foreign server.  Connection manager will
 	 * establish new connection if necessary.
 	 */
+	userid = GetUserId();
 	server = GetForeignServer(serverOid);
-	mapping = GetUserMapping(GetUserId(), server->serverid);
-	store = griddb_get_connection(mapping, false, serverOid);
+	mapping = GetUserMapping(userid, server->serverid);
+	store = griddb_get_connection(mapping, false, serverOid, userid);
 
 	/* Create workspace for strings */
 	initStringInfo(&buf);
@@ -2822,7 +2834,11 @@ griddb_get_useful_ecs_for_relation(PlannerInfo *root, RelOptInfo *rel)
 
 static void
 griddb_add_paths_with_pathkeys_for_rel(PlannerInfo *root, RelOptInfo *rel,
+#if PG_VERSION_NUM >= 170000
+									   Path *epq_path, List *restrictlist)
+#else
 									   Path *epq_path)
+#endif
 {
 	List	   *useful_pathkeys_list = NIL; /* List of all pathkeys */
 	ListCell   *lc;
@@ -2915,6 +2931,10 @@ griddb_add_paths_with_pathkeys_for_rel(PlannerInfo *root, RelOptInfo *rel,
 											 useful_pathkeys,
 											 rel->lateral_relids,
 											 sorted_epq_path,
+#if PG_VERSION_NUM >= 170000
+											 NIL,	/* no fdw_restrictinfo
+													 * list */
+#endif
 											 NIL));
 		else
 			add_path(rel, (Path *)
@@ -2935,6 +2955,9 @@ griddb_add_paths_with_pathkeys_for_rel(PlannerInfo *root, RelOptInfo *rel,
 					  NULL,		/* no outer rel either */
 #endif
 					  sorted_epq_path,
+#if PG_VERSION_NUM >= 170000
+					  restrictlist,
+#endif
 					  NIL));
 	}
 }
@@ -3077,20 +3100,20 @@ griddb_foreign_grouping_ok(PlannerInfo *root, RelOptInfo *grouped_rel)
 	if (fpinfo->local_conds)
 	{
 		List	   *aggvars = NIL;
-		ListCell   *lc;
+		ListCell   *local_cond;
 
-		foreach(lc, fpinfo->local_conds)
+		foreach(local_cond, fpinfo->local_conds)
 		{
-			RestrictInfo *rinfo = lfirst_node(RestrictInfo, lc);
+			RestrictInfo *rinfo = lfirst_node(RestrictInfo, local_cond);
 
 			aggvars = list_concat(aggvars,
 								  pull_var_clause((Node *) rinfo->clause,
 												  PVC_INCLUDE_AGGREGATES));
 		}
 
-		foreach(lc, aggvars)
+		foreach(local_cond, aggvars)
 		{
-			Expr	   *expr = (Expr *) lfirst(lc);
+			Expr	   *expr = (Expr *) lfirst(local_cond);
 
 			/*
 			 * If aggregates within local conditions are not safe to push
@@ -3233,6 +3256,9 @@ griddb_add_foreign_grouping_paths(PlannerInfo *root, RelOptInfo *input_rel,
 										  total_cost,
 										  NIL,	/* no pathkeys */
 										  NULL,
+#if PG_VERSION_NUM >= 170000
+										  NIL,	/* no fdw_restrictinfo list */
+#endif
 										  NIL); /* no fdw_private */
 #else
 	grouppath = create_foreignscan_path(root,
@@ -3375,7 +3401,10 @@ griddb_add_foreign_final_paths(PlannerInfo *root, RelOptInfo *input_rel,
 													   path->total_cost,
 													   path->pathkeys,
 													   NULL,	/* no extra plan */
-													   NULL);	/* no fdw_private */
+#if PG_VERSION_NUM >= 170000
+													   NIL,	/* no fdw_restrictinfo list */
+#endif
+													   NIL);	/* no fdw_private */
 #else
 				final_path = create_foreignscan_path(root,
 													 input_rel,
@@ -3449,6 +3478,19 @@ griddb_add_foreign_final_paths(PlannerInfo *root, RelOptInfo *input_rel,
 	if (ifpinfo->local_conds)
 		return;
 
+#if PG_VERSION_NUM >= 130000
+	/*
+	 * In PostgreSQL version is v13 or later, If the query has FETCH FIRST .. WITH TIES,
+	 * 1) it must have ORDER BY as well, which is used to determine which additional rows
+	 * tie for the last place in the result set, and 2) ORDER BY must already have been
+	 * determined to be safe to push down before we get here. Since griddb_fdw
+	 * does not currently support ORDER BY and FETCH FIRST .. WITH TIES clauses, disable
+	 * pushing the FETCH clause.
+	 */
+	if (parse->limitOption == LIMIT_OPTION_WITH_TIES)
+		return;
+#endif
+
 	/*
 	 * When query contains OFFSET but no LIMIT, do not push down because
 	 * GridDB does not support.
@@ -3499,6 +3541,10 @@ griddb_add_foreign_final_paths(PlannerInfo *root, RelOptInfo *input_rel,
 										   total_cost,
 										   pathkeys,
 										   NULL,	/* no extra plan */
+#if PG_VERSION_NUM >= 170000
+										   NIL, /* no fdw_restrictinfo
+												 * list */
+#endif
 										   fdw_private);
 #else
 	final_path = create_foreignscan_path(root,
@@ -4488,10 +4534,7 @@ griddb_make_datum_from_row(GSRow * row, int32_t attid, GSType gs_type,
 		case GS_TYPE_DOUBLE_ARRAY:
 			{
 				const double *doubleVal;
-				size_t		size;
-				size_t		i;
 				Datum	   *value_datum;
-				ArrayType  *arry;
 
 				ret = gsGetRowFieldAsDoubleArray(row, attid, &doubleVal, &size);
 				if (!GS_SUCCEEDED(ret))
@@ -4822,9 +4865,6 @@ griddb_make_datum_record(StringInfoData *values, TupleDesc tupdesc, GSType * col
 			case GS_TYPE_DOUBLE_ARRAY:
 				{
 					const double *doubleVal;
-					size_t		size;
-					size_t		i;
-
 
 					ret = gsGetRowFieldAsDoubleArray(row, index, &doubleVal, &size);
 					if (!GS_SUCCEEDED(ret))
@@ -5020,8 +5060,6 @@ griddb_set_row_field(GSRow * row, Datum value, GSType gs_type, int pindex)
 		case GS_TYPE_STRING:
 			{
 				char	   *textVal;
-				Oid			outputFunctionId;
-				bool		typeVarLength;
 
 				getTypeOutputInfo(TEXTOID, &outputFunctionId, &typeVarLength);
 				textVal = OidOutputFunctionCall(outputFunctionId, value);
@@ -5035,8 +5073,6 @@ griddb_set_row_field(GSRow * row, Datum value, GSType gs_type, int pindex)
 		case GS_TYPE_GEOMETRY:
 			{
 				char	   *geomVal;
-				Oid			outputFunctionId;
-				bool		typeVarLength;
 
 				getTypeOutputInfo(TEXTOID, &outputFunctionId, &typeVarLength);
 				geomVal = OidOutputFunctionCall(outputFunctionId, value);
@@ -5622,16 +5658,17 @@ ExecForeignDDL(Oid serverOid,
 			   bool exists_flag)
 {
 	GSContainerInfo	containerinfo;
-	UserMapping *user = NULL;
-	GSGridStore *store = NULL;
-	GSContainer *container;
+	UserMapping	   *user = NULL;
+	GSGridStore	   *store = NULL;
+	GSContainer	   *container;
 	GSResult		ret = GS_RESULT_OK;
-	char *tbl_name = NULL;
-	ListCell   *lc = NULL;
-	ForeignTable *table;
-	bool RowKeyAssigned = false;
-	List *column_options;
-	bool isContainerExisted = false;
+	char		   *tbl_name = NULL;
+	ListCell	   *lc = NULL;
+	ForeignTable   *table;
+	bool			RowKeyAssigned = false;
+	List		   *column_options;
+	bool			isContainerExisted = false;
+	Oid				userid;
 
 	elog(DEBUG1, "griddb_fdw: %s", __func__);
 
@@ -5677,10 +5714,11 @@ ExecForeignDDL(Oid serverOid,
 	 * Get connection to the foreign server.  Connection manager will
 	 * establish new connection if necessary.
 	 */
-	user = GetUserMapping(GetUserId(), serverOid);
-	store = griddb_get_connection(user, false, RelationGetRelid(rel));
+	userid = GetUserId();
+	user = GetUserMapping(userid, serverOid);
+	store = griddb_get_connection(user, false, RelationGetRelid(rel), userid);
 
-	isContainerExisted = check_existed_container(serverOid, tbl_name);
+	isContainerExisted = check_existed_container(serverOid, tbl_name, userid);
 
 	/* create query */
 	if (operation == DDL_COMMAND_CREATE)
@@ -5755,7 +5793,7 @@ ExecForeignDDL(Oid serverOid,
 
 /* Check container is exised or not */
 static bool
-check_existed_container(Oid serverOid, char* tbl_name)
+check_existed_container(Oid serverOid, char* tbl_name, Oid userid)
 {
 	ForeignServer *server;
 	UserMapping *mapping;
@@ -5769,8 +5807,8 @@ check_existed_container(Oid serverOid, char* tbl_name)
 	 * establish new connection if necessary.
 	 */
 	server = GetForeignServer(serverOid);
-	mapping = GetUserMapping(GetUserId(), server->serverid);
-	store = griddb_get_connection(mapping, false, serverOid);
+	mapping = GetUserMapping(userid, server->serverid);
+	store = griddb_get_connection(mapping, false, serverOid, userid);
 
 	/* Get schema of container */
 	ret = gsGetContainerInfo(store, (GSChar *)tbl_name, &info, &exists);

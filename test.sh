@@ -7,6 +7,10 @@ cd ..
 
 sed -i 's/REGRESS =.*/REGRESS = griddb_fdw selectfunc griddb_fdw_data_type float4 float8 int4 int8 numeric join limit aggregates prepare select_having select insert update griddb_fdw_post/' Makefile
 
+if [[ "REGRESS_PREFIX=PGSpider" == $1 ]]; then
+    sed -i 's/griddb_fdw_post/griddb_fdw_post ddlcommand/' Makefile
+fi
+
 make clean
 make $1
 make check $1 | tee make_check.out

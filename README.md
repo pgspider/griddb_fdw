@@ -2,8 +2,7 @@ GridDB Foreign Data Wrapper for PostgreSQL
 ==========================================
 
 This is a foreign data wrapper (FDW) to connect [PostgreSQL](https://www.postgresql.org/)
-to [GridDB](https://github.com/griddb). This FDW works with PostgreSQL 12, 13, 14, 15, 16 and confirmed with GridDB 5.1.0.
-
+to [GridDB](https://github.com/griddb). This FDW works with PostgreSQL 13, 14, 15, 16, 17 and confirmed with GridDB 5.5.0.
 
 <img src="https://upload.wikimedia.org/wikipedia/commons/2/29/Postgresql_elephant.svg" align="center" height="100" alt="PostgreSQL"/>	+	<img src="https://docs.griddb.net/logo.png" align="center" height="100" alt="GridDB"/>
 
@@ -38,6 +37,9 @@ For PostgreSQL version 14 or later:
 - Support list cached connections to foreign servers by using function `griddb_get_connection()`.
 - Support discard cached connections to foreign servers by using function `griddb_disconnect('server_name')`, `griddb_disconnect_all()`.
 - Support deparse `ANY`/`ALL ARRAY` with the argument is constant.
+
+For PostgreSQL version 16 or later:
+- Support Bulk INSERT with COPY command
 
 ### Pushdowning
 
@@ -448,7 +450,7 @@ Reference FDW realisation, `postgres_fdw`
  
 License
 -------
-Copyright (c) 2018, TOSHIBA CORPORATION  
+Copyright (c) 2018, TOSHIBA CORPORATION
 Copyright (c) 2011-2016, EnterpriseDB Corporation
 
 Permission to use, copy, modify, and distribute this software and its

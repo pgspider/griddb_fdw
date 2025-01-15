@@ -88,7 +88,8 @@ static GSGridStore * griddb_connect_server(char *address, char *port,
 										   char *passwd);
 static void make_new_connection(ConnCacheEntry *entry,
 								UserMapping *user,
-								Oid foreigntableid);
+								Oid foreigntableid,
+								Oid userid);
 static void griddb_begin_xact(ConnCacheEntry *entry);
 static void griddb_end_xact(ConnCacheEntry *entry, bool isCommit,
 							GSGridStore * store);
@@ -109,7 +110,7 @@ static bool disconnect_cached_connections(Oid serverid);
  * is established if we don't already have a suitable one.
  */
 GSGridStore *
-griddb_get_connection(UserMapping *user, bool will_prep_stmt, Oid foreigntableid)
+griddb_get_connection(UserMapping *user, bool will_prep_stmt, Oid foreigntableid, Oid userid)
 {
 	bool		found;
 	ConnCacheEntry *entry;
@@ -182,7 +183,7 @@ griddb_get_connection(UserMapping *user, bool will_prep_stmt, Oid foreigntableid
 	 * connection.
 	 */
 	if (entry->store == NULL)
-		make_new_connection(entry, user, foreigntableid);
+		make_new_connection(entry, user, foreigntableid, userid);
 
 	/*
 	 * Start a new transaction if needed.
@@ -197,12 +198,12 @@ griddb_get_connection(UserMapping *user, bool will_prep_stmt, Oid foreigntableid
  * establish new connection to the remote server.
  */
 static void
-make_new_connection(ConnCacheEntry *entry, UserMapping *user, Oid foreigntableid)
+make_new_connection(ConnCacheEntry *entry, UserMapping *user, Oid foreigntableid, Oid userid)
 {
 	ForeignServer *server = GetForeignServer(user->serverid);
 
 	/* Fetch the options */
-	griddb_opt *opt = griddb_get_options(foreigntableid);
+	griddb_opt *opt = griddb_get_options(foreigntableid, userid);
 
 	/*
 	 * Determine whether to keep the connection that we're about to make here

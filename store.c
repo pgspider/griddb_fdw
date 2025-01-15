@@ -34,7 +34,7 @@ HTAB *
 griddb_rowkey_hash_create(GridDBFdwFieldInfo * field_info)
 {
 	HASHCTL		ctl;
-	int			(*comparator) (const void *, const void *) = griddb_get_comparator_datum(field_info->column_types[ROWKEY_ATTNO - 1]);
+	int			(*comparator) (const void *, const void *, Size keysize) = griddb_get_comparator_datum(field_info->column_types[ROWKEY_ATTNO - 1]);
 
 	MemSet(&ctl, 0, sizeof(ctl));
 	ctl.keysize = sizeof(GridDBFdwRowKeyHashKey);
