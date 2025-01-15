@@ -59,7 +59,7 @@ typedef enum
 {
 	FDW_COLLATE_NONE,			/* expression is of a noncollatable type */
 	FDW_COLLATE_SAFE,			/* collation derives from a foreign Var */
-	FDW_COLLATE_UNSAFE			/* collation derives from something else */
+	FDW_COLLATE_UNSAFE,			/* collation derives from something else */
 } FDWCollateState;
 
 typedef struct foreign_loc_cxt
@@ -1423,7 +1423,6 @@ foreign_expr_walker(Node *node,
 		case T_Const:
 			{
 				Const	   *c = (Const *) node;
-				HeapTuple	tuple;
 
 				if (c->consttype == INTERVALOID ||
 					c->consttype == BITOID ||
@@ -2910,6 +2909,7 @@ griddb_set_container_info(GSContainerInfo containerinfo, Relation rel)
 	GSColumnInfo *columnInfoList;
 
 	container_info = (GSContainerInfo) GS_CONTAINER_INFO_INITIALIZER;
+	columnInfo = (GSColumnInfo) GS_COLUMN_INFO_INITIALIZER;
 
 	/* count number of columns */
 	for (i = 0; i < tupdesc->natts; i++)

@@ -123,10 +123,12 @@ int			(*griddb_get_comparator_tuplekey(GSType gs_type)) (const void *, const voi
 /*
  * Comparison functions for hash key.
  * Arguments are a pointer of Datum.
+ * 		keysize is not used but is needed because of the signature of HashCompareFunc
+ * 		to avoid warnings when build source code.
  */
 
 static int
-griddb_compare_datum_string(const void *a, const void *b)
+griddb_compare_datum_string(const void *a, const void *b, Size keysize)
 {
 	Datum		val1 = *(Datum *) a;
 	Datum		val2 = *(Datum *) b;
@@ -143,7 +145,7 @@ griddb_compare_datum_string(const void *a, const void *b)
 }
 
 static int
-griddb_compare_datum_integer(const void *a, const void *b)
+griddb_compare_datum_integer(const void *a, const void *b, Size keysize)
 {
 	Datum		val1 = *(Datum *) a;
 	Datum		val2 = *(Datum *) b;
@@ -154,7 +156,7 @@ griddb_compare_datum_integer(const void *a, const void *b)
 }
 
 static int
-griddb_compare_datum_long(const void *a, const void *b)
+griddb_compare_datum_long(const void *a, const void *b, Size keysize)
 {
 	Datum		val1 = *(Datum *) a;
 	Datum		val2 = *(Datum *) b;
@@ -165,7 +167,7 @@ griddb_compare_datum_long(const void *a, const void *b)
 }
 
 static int
-griddb_compare_datum_timestamp(const void *a, const void *b)
+griddb_compare_datum_timestamp(const void *a, const void *b, Size keysize)
 {
 	Datum		val1 = *(Datum *) a;
 	Datum		val2 = *(Datum *) b;
@@ -176,7 +178,7 @@ griddb_compare_datum_timestamp(const void *a, const void *b)
 }
 
 /* Return comparator based on gs_type for hash used in griddb_fdw. */
-int			(*griddb_get_comparator_datum(GSType gs_type)) (const void *, const void *)
+int			(*griddb_get_comparator_datum(GSType gs_type)) (const void *, const void *, Size keysize)
 {
 	switch (gs_type)
 	{

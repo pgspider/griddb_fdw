@@ -263,7 +263,7 @@ griddb_is_valid_option(const char *option, Oid context)
  * Fetch the options for a griddb_fdw foreign table.
  */
 griddb_opt *
-griddb_get_options(Oid foreignoid)
+griddb_get_options(Oid foreignoid, Oid userid)
 {
 	ForeignTable *f_table = NULL;
 	ForeignServer *f_server = NULL;
@@ -271,6 +271,7 @@ griddb_get_options(Oid foreignoid)
 	List	   *options;
 	ListCell   *lc;
 	griddb_opt *opt;
+	List	   *user_mapping_options;
 
 	opt = (griddb_opt *) palloc(sizeof(griddb_opt));
 	memset(opt, 0, sizeof(griddb_opt));
@@ -290,13 +291,20 @@ griddb_get_options(Oid foreignoid)
 	}
 	PG_END_TRY();
 
-	f_mapping = GetUserMapping(GetUserId(), f_server->serverid);
-
 	options = NIL;
 	if (f_table)
 		options = list_concat(options, f_table->options);
 	options = list_concat(options, f_server->options);
-	options = list_concat(options, f_mapping->options);
+
+	if (userid == InvalidOid)
+		user_mapping_options = NULL;
+	else
+	{
+		f_mapping = GetUserMapping(userid, f_server->serverid);
+		user_mapping_options = f_mapping->options;
+	}
+
+	options = list_concat(options, user_mapping_options);
 
 	opt->use_remote_estimate = false;
 	opt->fdw_startup_cost = DEFAULT_FDW_STARTUP_COST;
